@@ -15,6 +15,9 @@ Multi-property campsite & accommodation booking platform built with a **Go 1.24 
 - [Admin REST API Reference (`/api/v1`)](docs/api.md)
 - [Operations, Hardening & Backup/Restore Runbook](docs/operations.md)
 - [Security Controls & Test Isolation](docs/security.md)
+- [Branding & Design System](docs/branding.md)
+- [ADR-0001: Public/Admin Separation & PWE Boundaries](docs/adr/0001-public-admin-separation-and-pwe-boundaries.md)
+- [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](docs/personalisation-workspace-experience.md)
 
 ## Quick Start (Local Development)
 

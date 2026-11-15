@@ -41,3 +41,12 @@ Defined in [`internal/branding/branding.go`](../internal/branding/branding.go) a
 | `--lovelace-charcoal` | `#1E211E` | Dark charcoal ink |
 
 Dark mode activates automatically via `@media (prefers-color-scheme: dark)`, shifting page/card surfaces to deep forest charcoal (`#151917` / `#1D2320`) while keeping accessible contrast and zero inline styles under strict CSP `style-src 'self'`.
+
+---
+
+## 4. Proposed Future Extension (`PROPOSED / FUTURE` — Not Implemented)
+
+The planned expansion of LOVELACE's design tokens, user appearance/accessibility preferences (`PWE-1`, `PWE-2`), property-level branding previews/terminology (`PWE-4` building on `properties.branding_config`), and three-way Platform / Property / User identity separation is documented in:
+
+- [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](personalisation-workspace-experience.md)
+- [ADR-0001: Public/Administrative Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md)
