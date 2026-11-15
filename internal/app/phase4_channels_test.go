@@ -806,3 +806,76 @@ func TestPhase4_WorkerLeaseFencingAndCrossPropertyIsolation(t *testing.T) {
 		t.Fatalf("expected 403 Forbidden for cross-property HTTP channel verify, got %d", crossHTTPResp.StatusCode)
 	}
 }
+
+func TestPhase4_SyncJobQueueUsesPostgreSQLClockAuthority(t *testing.T) {
+	srv, migratorStore, _, prop, _, _ := setupPhase4AppServer(t, "pub-p4-clock", channels.AdapterConfig{})
+	defer srv.Close()
+	ctx := context.Background()
+
+	connID := uuid.New()
+	tx, err := migratorStore.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	owner, _ := migratorStore.GetAdminUserByEmail(ctx, tx, "owner@tirbach.wales")
+	rec, err := migratorStore.UpsertChannelConnection(
+		ctx, tx, connID, prop.ID, "beds24", "Beds24",
+		channels.AuthToken, channels.StatusConnected,
+		map[string]string{"property_id": "1"}, []byte("cipher"), map[string]string{"refresh_token": "••••99"}, owner.ID,
+	)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("upsert connection: %v", err)
+	}
+
+	var pgNow time.Time
+	if err := tx.QueryRow(ctx, `SELECT NOW()`).Scan(&pgNow); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("query pg NOW(): %v", err)
+	}
+
+	// Zero NextAttemptAt must be stamped from PostgreSQL NOW() so immediate ClaimDueChannelSyncJobs
+	// never misses jobs when the Go host clock leads the PostgreSQL container/server clock.
+	immediateJob, inserted, err := migratorStore.EnqueueChannelSyncJob(ctx, tx, domain.ChannelSyncJob{
+		PropertyID:          prop.ID,
+		ChannelConnectionID: rec.Connection.ID,
+		ProviderCode:        "beds24",
+		JobType:             domain.ChannelJobPullReservations,
+		IdempotencyKey:      "clock-immediate-1",
+	})
+	if err != nil || !inserted {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("enqueue immediate job: inserted=%v err=%v", inserted, err)
+	}
+
+	// Explicit future NextAttemptAt must remain unclaimable until due.
+	futureAt := pgNow.Add(1 * time.Hour)
+	futureJob, insertedFuture, err := migratorStore.EnqueueChannelSyncJob(ctx, tx, domain.ChannelSyncJob{
+		PropertyID:          prop.ID,
+		ChannelConnectionID: rec.Connection.ID,
+		ProviderCode:        "beds24",
+		JobType:             domain.ChannelJobPullReservations,
+		IdempotencyKey:      "clock-future-1",
+		NextAttemptAt:       futureAt,
+	})
+	if err != nil || !insertedFuture {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("enqueue future job: inserted=%v err=%v", insertedFuture, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	var isDueInPG bool
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT next_attempt_at <= NOW() FROM channel_sync_jobs WHERE id = $1`, immediateJob.ID).Scan(&isDueInPG); err != nil || !isDueInPG {
+		t.Fatalf("expected immediate job next_attempt_at <= PG NOW() immediately after enqueue, got due=%v err=%v (next_attempt_at=%s)", isDueInPG, err, immediateJob.NextAttemptAt)
+	}
+
+	claimed, err := migratorStore.ClaimDueChannelSyncJobs(ctx, "worker-clock-test", 10, 30*time.Second)
+	if err != nil {
+		t.Fatalf("claim due jobs: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != immediateJob.ID {
+		t.Fatalf("expected only immediate job %s to be claimed, got %+v (future job=%s)", immediateJob.ID, claimed, futureJob.ID)
+	}
+}

@@ -335,8 +335,10 @@ func (s *Store) EnqueueChannelSyncJob(ctx context.Context, db DBTX, job domain.C
 	if len(job.ScopePayload) == 0 {
 		job.ScopePayload = json.RawMessage("{}")
 	}
-	if job.NextAttemptAt.IsZero() {
-		job.NextAttemptAt = time.Now().UTC()
+	var nextAttemptAt *time.Time
+	if !job.NextAttemptAt.IsZero() {
+		t := job.NextAttemptAt.UTC()
+		nextAttemptAt = &t
 	}
 
 	var insertedID uuid.UUID
@@ -348,13 +350,13 @@ func (s *Store) EnqueueChannelSyncJob(ctx context.Context, db DBTX, job domain.C
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8, 'PENDING', 0, $9,
-			$10, $11
+			COALESCE($10::timestamptz, NOW()), $11
 		)
 		ON CONFLICT (property_id, provider_code, idempotency_key) DO NOTHING
 		RETURNING id
 	`, job.ID, job.PropertyID, job.ChannelConnectionID, job.ListingMappingID, job.ProviderCode,
 		string(job.JobType), job.IdempotencyKey, job.ScopePayload, job.MaxAttempts,
-		job.NextAttemptAt.UTC(), job.CreatedBy,
+		nextAttemptAt, job.CreatedBy,
 	)
 	err := row.Scan(&insertedID)
 	if err == nil {
@@ -521,24 +523,21 @@ func (s *Store) CompleteChannelSyncJob(
 	errCode string,
 	errSummary string,
 ) (bool, error) {
-	var completedAt *time.Time
-	now := time.Now().UTC()
-	if nextStatus == domain.ChannelJobSucceeded || nextStatus == domain.ChannelJobFailedTerminal || nextStatus == domain.ChannelJobCancelled {
-		completedAt = &now
-	}
-	var nextAt time.Time
+	var nextAt *time.Time
 	if nextAttemptAt != nil {
-		nextAt = nextAttemptAt.UTC()
-	} else {
-		nextAt = now
+		t := nextAttemptAt.UTC()
+		nextAt = &t
 	}
+	isTerminal := nextStatus == domain.ChannelJobSucceeded ||
+		nextStatus == domain.ChannelJobFailedTerminal ||
+		nextStatus == domain.ChannelJobCancelled
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE channel_sync_jobs
 		SET status = $5,
-		    next_attempt_at = $6,
+		    next_attempt_at = COALESCE($6::timestamptz, NOW()),
 		    last_error_code = $7,
 		    last_error_summary = $8,
-		    completed_at = COALESCE($9, completed_at),
+		    completed_at = CASE WHEN $9 THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
 		    lease_token = NULL,
 		    lease_expires_at = NULL,
 		    updated_at = NOW()
@@ -548,7 +547,7 @@ func (s *Store) CompleteChannelSyncJob(
 		  AND lease_token = $3
 		  AND fence_epoch = $4
 		  AND lease_expires_at > NOW()
-	`, jobID, workerID, leaseToken, fenceEpoch, string(nextStatus), nextAt, errCode, errSummary, completedAt)
+	`, jobID, workerID, leaseToken, fenceEpoch, string(nextStatus), nextAt, errCode, errSummary, isTerminal)
 	if err != nil {
 		return false, MapErr(err)
 	}
