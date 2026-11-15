@@ -113,9 +113,41 @@ func (a *LodgifyAdapter) VerifyConnectionDetailed(ctx context.Context, publicCfg
 
 func (a *LodgifyAdapter) Disconnect(ctx context.Context, publicCfg, creds map[string]string) error {
 	if whID := strings.TrimSpace(publicCfg["webhook_id"]); whID != "" {
-		_ = a.DeleteWebhook(ctx, publicCfg, creds, whID)
+		if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err != nil {
+			return err
+		}
 	}
 	return newProviderError(ErrNotImplemented, "lodgify", "disconnect", 0, "NO_REMOTE_REVOKE", "Lodgify Public API keys cannot be remotely revoked")
+}
+
+func (a *LodgifyAdapter) DisconnectDetailed(ctx context.Context, publicCfg, creds map[string]string) (DisconnectOutcome, error) {
+	out := DisconnectOutcome{
+		TokenRevocationStatus:    CapabilityNotImplemented,
+		TokenRevocationDetail:    "Lodgify Public API keys cannot be remotely revoked.",
+		TokenRevocationErrorCode: "NO_REMOTE_REVOKE",
+	}
+	whID := strings.TrimSpace(publicCfg["webhook_id"])
+	out.WebhookID = whID
+	if whID == "" {
+		out.WebhookDeleteStatus = CapabilityNotApplicable
+		out.WebhookDeleteDetail = "No registered Lodgify webhook ID found on connection."
+		return out, nil
+	}
+	out.WebhookDeleteAttempted = true
+	if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err != nil {
+		code := ExtractErrorCode(err)
+		if code == "" {
+			code = "WEBHOOK_DELETE_FAILED"
+		}
+		out.WebhookDeleteStatus = CapabilityBlocked
+		out.WebhookDeleteErrorCode = code
+		out.WebhookDeleteDetail = fmt.Sprintf("Lodgify webhook deletion failed (%s); remote webhook may still exist.", code)
+		return out, err
+	}
+	out.WebhookDeleteStatus = CapabilitySupported
+	out.WebhookDeleteDetail = "Remote Lodgify webhook subscription deleted."
+	out.ClearedWebhookConfig = true
+	return out, nil
 }
 
 func (a *LodgifyAdapter) ListListings(ctx context.Context, publicCfg, creds map[string]string) ([]ExternalListing, error) {

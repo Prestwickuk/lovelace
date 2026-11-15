@@ -92,85 +92,106 @@ func (s *Store) GetOccupancyReport(ctx context.Context, prop domain.Property, st
 		Definitions: occupancyMetricDefinitions(),
 	}
 
-	// Daily inventory & occupancy rollup across all non-archived active/maintenance physical units.
+	// Daily inventory & occupancy rollup across effective-dated physical units from unit_status_history.
 	dailyRows, err := s.pool.Query(ctx, `
 		WITH days AS (
 			SELECT gs::date AS day_date
 			FROM generate_series($2::date, ($3::date - INTERVAL '1 day')::date, INTERVAL '1 day') AS gs
 		),
-		active_units AS (
-			SELECT id, status
-			FROM units
-			WHERE property_id = $1
-			  AND archived_at IS NULL
-			  AND status IN ('active', 'maintenance')
+		unit_day_state AS (
+			SELECT
+				d.day_date,
+				u.id AS unit_id,
+				ush.status AS effective_status
+			FROM days d
+			JOIN units u
+			  ON u.property_id = $1
+			CROSS JOIN LATERAL (
+				SELECT h.status, h.is_archived
+				FROM unit_status_history h
+				WHERE h.property_id = $1
+				  AND h.unit_id = u.id
+				  AND h.effective_from < ((d.day_date + 1)::timestamp AT TIME ZONE $4)
+				ORDER BY h.effective_from DESC, h.created_at DESC, h.id DESC
+				LIMIT 1
+			) ush
+			WHERE NOT ush.is_archived
+			  AND ush.status IN ('active', 'maintenance')
 		),
 		unit_day AS (
 			SELECT
 				d.day_date,
-				u.id AS unit_id,
+				uds.unit_id,
 				(
-					u.status = 'maintenance'
-					OR EXISTS (
-						SELECT 1 FROM inventory_claims ic
-						WHERE ic.property_id = $1
-						  AND ic.unit_id = u.id
-						  AND ic.status = 'ACTIVE'
-						  AND ic.claim_type IN ('MAINTENANCE', 'SEASONAL_CLOSURE', 'WEATHER_CLOSURE')
-						  AND ic.claim_range @> d.day_date
+					uds.unit_id IS NOT NULL AND (
+						uds.effective_status = 'maintenance'
+						OR EXISTS (
+							SELECT 1 FROM inventory_claims ic
+							WHERE ic.property_id = $1
+							  AND ic.unit_id = uds.unit_id
+							  AND ic.status = 'ACTIVE'
+							  AND ic.claim_type IN ('MAINTENANCE', 'SEASONAL_CLOSURE', 'WEATHER_CLOSURE')
+							  AND ic.claim_range @> d.day_date
+						)
 					)
 				) AS is_ooo,
-				EXISTS (
-					SELECT 1 FROM inventory_claims ic
-					WHERE ic.property_id = $1
-					  AND ic.unit_id = u.id
-					  AND ic.status = 'ACTIVE'
-					  AND ic.claim_type IN ('OWNER_USE', 'ADMINISTRATIVE_BLOCK', 'OPERATIONAL_BUFFER')
-					  AND ic.claim_range @> d.day_date
-				) AS is_owner_admin,
-				EXISTS (
-					SELECT 1
-					FROM reservation_units ru
-					JOIN reservations r ON r.id = ru.reservation_id
-					WHERE r.property_id = $1
-					  AND ru.unit_id = u.id
-					  AND r.status IN ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT')
-					  AND r.stay_range @> d.day_date
-				) AS is_occupied,
 				(
-					EXISTS (
+					uds.unit_id IS NOT NULL AND EXISTS (
+						SELECT 1 FROM inventory_claims ic
+						WHERE ic.property_id = $1
+						  AND ic.unit_id = uds.unit_id
+						  AND ic.status = 'ACTIVE'
+						  AND ic.claim_type IN ('OWNER_USE', 'ADMINISTRATIVE_BLOCK', 'OPERATIONAL_BUFFER')
+						  AND ic.claim_range @> d.day_date
+					)
+				) AS is_owner_admin,
+				(
+					uds.unit_id IS NOT NULL AND EXISTS (
 						SELECT 1
 						FROM reservation_units ru
 						JOIN reservations r ON r.id = ru.reservation_id
 						WHERE r.property_id = $1
-						  AND ru.unit_id = u.id
-						  AND r.status = 'PENDING'
+						  AND ru.unit_id = uds.unit_id
+						  AND r.status IN ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT')
 						  AND r.stay_range @> d.day_date
 					)
-					OR EXISTS (
-						SELECT 1 FROM inventory_claims ic
-						WHERE ic.property_id = $1
-						  AND ic.unit_id = u.id
-						  AND ic.status = 'ACTIVE'
-						  AND ic.claim_type = 'HOLD'
-						  AND ic.claim_range @> d.day_date
+				) AS is_occupied,
+				(
+					uds.unit_id IS NOT NULL AND (
+						EXISTS (
+							SELECT 1
+							FROM reservation_units ru
+							JOIN reservations r ON r.id = ru.reservation_id
+							WHERE r.property_id = $1
+							  AND ru.unit_id = uds.unit_id
+							  AND r.status = 'PENDING'
+							  AND r.stay_range @> d.day_date
+						)
+						OR EXISTS (
+							SELECT 1 FROM inventory_claims ic
+							WHERE ic.property_id = $1
+							  AND ic.unit_id = uds.unit_id
+							  AND ic.status = 'ACTIVE'
+							  AND ic.claim_type = 'HOLD'
+							  AND ic.claim_range @> d.day_date
+						)
 					)
 				) AS is_pending_hold
 			FROM days d
-			CROSS JOIN active_units u
+			LEFT JOIN unit_day_state uds ON uds.day_date = d.day_date
 		)
 		SELECT
 			day_date,
-			COUNT(*)::bigint AS physical_unit_nights,
-			COUNT(*) FILTER (WHERE is_ooo)::bigint AS ooo_nights,
-			COUNT(*) FILTER (WHERE NOT is_ooo AND is_owner_admin)::bigint AS owner_admin_nights,
-			COUNT(*) FILTER (WHERE NOT is_ooo AND NOT is_owner_admin)::bigint AS sellable_unit_nights,
-			COUNT(*) FILTER (WHERE is_occupied)::bigint AS occupied_unit_nights,
-			COUNT(*) FILTER (WHERE NOT is_occupied AND is_pending_hold)::bigint AS pending_hold_nights
+			COUNT(unit_id)::bigint AS physical_unit_nights,
+			COUNT(unit_id) FILTER (WHERE is_ooo)::bigint AS ooo_nights,
+			COUNT(unit_id) FILTER (WHERE NOT is_ooo AND is_owner_admin)::bigint AS owner_admin_nights,
+			COUNT(unit_id) FILTER (WHERE NOT is_ooo AND NOT is_owner_admin)::bigint AS sellable_unit_nights,
+			COUNT(unit_id) FILTER (WHERE is_occupied)::bigint AS occupied_unit_nights,
+			COUNT(unit_id) FILTER (WHERE NOT is_occupied AND is_pending_hold)::bigint AS pending_hold_nights
 		FROM unit_day
 		GROUP BY day_date
 		ORDER BY day_date ASC
-	`, prop.ID, startStr, endStr)
+	`, prop.ID, startStr, endStr, prop.Timezone)
 	if err != nil {
 		return domain.OccupancyReport{}, MapErr(err)
 	}
@@ -240,54 +261,68 @@ func (s *Store) GetOccupancyReport(ctx context.Context, prop domain.Property, st
 		})
 	}
 
-	// Unit-type breakdown
+	// Unit-type breakdown using exact same effective-dated unit_status_history supply rules.
 	utRows, err := s.pool.Query(ctx, `
 		WITH days AS (
 			SELECT gs::date AS day_date
 			FROM generate_series($2::date, ($3::date - INTERVAL '1 day')::date, INTERVAL '1 day') AS gs
 		),
-		active_units AS (
-			SELECT u.id AS unit_id, u.status, ut.id AS unit_type_id, ut.code AS unit_type_code, ut.name AS unit_type_name, ut.category
-			FROM units u
-			JOIN unit_types ut ON ut.id = u.unit_type_id
-			WHERE u.property_id = $1
-			  AND u.archived_at IS NULL
-			  AND u.status IN ('active', 'maintenance')
-		),
-		unit_counts AS (
-			SELECT unit_type_id, COUNT(*)::bigint AS unit_count FROM active_units GROUP BY unit_type_id
+		unit_day_state AS (
+			SELECT
+				d.day_date,
+				u.id AS unit_id,
+				ush.status AS effective_status,
+				ut.id AS unit_type_id,
+				ut.code AS unit_type_code,
+				ut.name AS unit_type_name,
+				ut.category
+			FROM days d
+			JOIN units u
+			  ON u.property_id = $1
+			CROSS JOIN LATERAL (
+				SELECT h.unit_type_id, h.status, h.is_archived
+				FROM unit_status_history h
+				WHERE h.property_id = $1
+				  AND h.unit_id = u.id
+				  AND h.effective_from < ((d.day_date + 1)::timestamp AT TIME ZONE $4)
+				ORDER BY h.effective_from DESC, h.created_at DESC, h.id DESC
+				LIMIT 1
+			) ush
+			JOIN unit_types ut ON ut.id = ush.unit_type_id
+			WHERE NOT ush.is_archived
+			  AND ush.status IN ('active', 'maintenance')
 		)
 		SELECT
 			au.unit_type_id,
 			au.unit_type_code,
 			au.unit_type_name,
 			au.category,
-			uc.unit_count,
+			COUNT(DISTINCT au.unit_id)::bigint AS unit_count,
 			COUNT(*)::bigint AS physical_unit_nights,
 			COUNT(*) FILTER (WHERE
-				au.status = 'maintenance'
+				au.effective_status = 'maintenance'
 				OR EXISTS (
 					SELECT 1 FROM inventory_claims ic
 					WHERE ic.property_id = $1 AND ic.unit_id = au.unit_id AND ic.status = 'ACTIVE'
 					  AND ic.claim_type IN ('MAINTENANCE', 'SEASONAL_CLOSURE', 'WEATHER_CLOSURE')
-					  AND ic.claim_range @> d.day_date
+					  AND ic.claim_range @> au.day_date
 				)
 			)::bigint AS ooo_nights,
 			COUNT(*) FILTER (WHERE
 				NOT (
-					au.status = 'maintenance'
+					au.effective_status = 'maintenance'
 					OR EXISTS (
 						SELECT 1 FROM inventory_claims ic
 						WHERE ic.property_id = $1 AND ic.unit_id = au.unit_id AND ic.status = 'ACTIVE'
 						  AND ic.claim_type IN ('MAINTENANCE', 'SEASONAL_CLOSURE', 'WEATHER_CLOSURE')
-						  AND ic.claim_range @> d.day_date
+						  AND ic.claim_range @> au.day_date
 					)
 				)
 				AND EXISTS (
 					SELECT 1 FROM inventory_claims ic
 					WHERE ic.property_id = $1 AND ic.unit_id = au.unit_id AND ic.status = 'ACTIVE'
 					  AND ic.claim_type IN ('OWNER_USE', 'ADMINISTRATIVE_BLOCK', 'OPERATIONAL_BUFFER')
-					  AND ic.claim_range @> d.day_date
+					  AND ic.claim_range @> au.day_date
 				)
 			)::bigint AS owner_admin_nights,
 			COUNT(*) FILTER (WHERE EXISTS (
@@ -296,7 +331,7 @@ func (s *Store) GetOccupancyReport(ctx context.Context, prop domain.Property, st
 				JOIN reservations r ON r.id = ru.reservation_id
 				WHERE r.property_id = $1 AND ru.unit_id = au.unit_id
 				  AND r.status IN ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT')
-				  AND r.stay_range @> d.day_date
+				  AND r.stay_range @> au.day_date
 			))::bigint AS occupied_unit_nights,
 			COUNT(*) FILTER (WHERE
 				NOT EXISTS (
@@ -305,7 +340,7 @@ func (s *Store) GetOccupancyReport(ctx context.Context, prop domain.Property, st
 					JOIN reservations r ON r.id = ru.reservation_id
 					WHERE r.property_id = $1 AND ru.unit_id = au.unit_id
 					  AND r.status IN ('CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT')
-					  AND r.stay_range @> d.day_date
+					  AND r.stay_range @> au.day_date
 				)
 				AND (
 					EXISTS (
@@ -314,22 +349,20 @@ func (s *Store) GetOccupancyReport(ctx context.Context, prop domain.Property, st
 						JOIN reservations r ON r.id = ru.reservation_id
 						WHERE r.property_id = $1 AND ru.unit_id = au.unit_id
 						  AND r.status = 'PENDING'
-						  AND r.stay_range @> d.day_date
+						  AND r.stay_range @> au.day_date
 					)
 					OR EXISTS (
 						SELECT 1 FROM inventory_claims ic
 						WHERE ic.property_id = $1 AND ic.unit_id = au.unit_id AND ic.status = 'ACTIVE'
 						  AND ic.claim_type = 'HOLD'
-						  AND ic.claim_range @> d.day_date
+						  AND ic.claim_range @> au.day_date
 					)
 				)
 			)::bigint AS pending_hold_nights
-		FROM days d
-		CROSS JOIN active_units au
-		JOIN unit_counts uc ON uc.unit_type_id = au.unit_type_id
-		GROUP BY au.unit_type_id, au.unit_type_code, au.unit_type_name, au.category, uc.unit_count
+		FROM unit_day_state au
+		GROUP BY au.unit_type_id, au.unit_type_code, au.unit_type_name, au.category
 		ORDER BY au.unit_type_code ASC
-	`, prop.ID, startStr, endStr)
+	`, prop.ID, startStr, endStr, prop.Timezone)
 	if err != nil {
 		return domain.OccupancyReport{}, MapErr(err)
 	}
@@ -352,7 +385,31 @@ func (s *Store) GetOccupancyReport(ctx context.Context, prop domain.Property, st
 		return domain.OccupancyReport{}, MapErr(err)
 	}
 
-	comp, err := s.GetReportCompleteness(ctx, prop.ID, nil)
+	var gapIncomplete bool
+	var gapReliableFrom *time.Time
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			EXISTS (
+				SELECT 1 FROM inventory_history_gaps g
+				WHERE g.property_id = $1
+				  AND (g.reliable_from AT TIME ZONE $3)::date > $2::date
+			),
+			MAX((g.reliable_from AT TIME ZONE $3)::date) FILTER (WHERE (g.reliable_from AT TIME ZONE $3)::date > $2::date)
+		FROM inventory_history_gaps g
+		WHERE g.property_id = $1
+	`, prop.ID, startStr, prop.Timezone).Scan(&gapIncomplete, &gapReliableFrom); err != nil {
+		return domain.OccupancyReport{}, MapErr(err)
+	}
+	var gapReliableStr *string
+	if gapIncomplete && gapReliableFrom != nil {
+		s := domain.FormatDate(*gapReliableFrom)
+		gapReliableStr = &s
+	}
+
+	comp, err := s.GetReportCompleteness(ctx, prop.ID, &completenessOverrides{
+		invHistoryIncomplete:   gapIncomplete,
+		invHistoryReliableFrom: gapReliableStr,
+	})
 	if err != nil {
 		return domain.OccupancyReport{}, err
 	}
@@ -375,7 +432,7 @@ func (s *Store) GetRevenueReport(ctx context.Context, prop domain.Property, star
 	if err != nil {
 		return domain.RevenueReport{}, err
 	}
-	refunds, unresolvedPartialRefunds, err := s.fetchPeriodRefunds(ctx, prop, startDate, endDate, currencyFilter)
+	refunds, err := s.fetchPeriodRefunds(ctx, prop, startDate, endDate, currencyFilter)
 	if err != nil {
 		return domain.RevenueReport{}, err
 	}
@@ -547,10 +604,12 @@ func (s *Store) GetRevenueReport(ctx context.Context, prop domain.Property, star
 	}
 
 	comp, err := s.GetReportCompleteness(ctx, prop.ID, &completenessOverrides{
-		manualUnquoted:           manualUnquotedCount,
-		zeroValueAccepted:        zeroValueAcceptedCount,
-		unresolvedPartialRefunds: unresolvedPartialRefunds,
-		currencies:               currencies,
+		manualUnquoted:         manualUnquotedCount,
+		zeroValueAccepted:      zeroValueAcceptedCount,
+		invHistoryIncomplete:   occ.Completeness.InventoryHistoryIncomplete,
+		invHistoryReliableFrom: occ.Completeness.InventoryHistoryReliableFrom,
+		currencyFilter:         currencyFilter,
+		currencies:             currencies,
 	})
 	if err != nil {
 		return domain.RevenueReport{}, err
@@ -866,29 +925,66 @@ func (s *Store) GetForecastReport(ctx context.Context, prop domain.Property, asO
 	trailingOccBPS, _ := domain.SafeBPS(histOcc.Summary.OccupiedUnitNights, histOcc.Summary.SellableUnitNights)
 	projOccBPS, _ := domain.SafeBPS(projTotalNights, futureOcc.Summary.SellableUnitNights)
 
-	// Per-currency projections merging OTB revenue + trailing ADR benchmark over projected incremental nights.
+	// Compute property-wide currency mix across trailing-90d + OTB accepted stay nights
+	// so projectedAdditionalNights is conserved (sum across all currencies == projectedAdditionalNights)
+	// and filtered single-currency queries receive only their proportional share.
+	var futureRevAll, histRevAll domain.RevenueReport
+	if currencyFilter == "" {
+		futureRevAll = futureRev
+		histRevAll = histRev
+	} else {
+		futureRevAll, err = s.GetRevenueReport(ctx, prop, asOfDate, windowEnd, "")
+		if err != nil {
+			return domain.ForecastReport{}, err
+		}
+		histRevAll, err = s.GetRevenueReport(ctx, prop, histStart, asOfDate, "")
+		if err != nil {
+			return domain.ForecastReport{}, err
+		}
+	}
+
 	otbByCur := map[string]domain.CurrencyRevenueMetrics{}
 	histByCur := map[string]domain.CurrencyRevenueMetrics{}
 	curSet := map[string]bool{}
-	for _, r := range futureRev.ByCurrency {
+	weights := map[string]int64{}
+	var totalWeight int64
+	for _, r := range futureRevAll.ByCurrency {
 		otbByCur[r.Currency] = r
 		curSet[r.Currency] = true
+		if r.OccupiedUnitNights > 0 {
+			weights[r.Currency] += r.OccupiedUnitNights
+			totalWeight += r.OccupiedUnitNights
+		}
 	}
-	for _, h := range histRev.ByCurrency {
+	for _, h := range histRevAll.ByCurrency {
 		histByCur[h.Currency] = h
 		curSet[h.Currency] = true
+		if h.OccupiedUnitNights > 0 {
+			weights[h.Currency] += h.OccupiedUnitNights
+			totalWeight += h.OccupiedUnitNights
+		}
 	}
 	if len(curSet) == 0 && prop.Currency != "" && (currencyFilter == "" || currencyFilter == prop.Currency) {
 		curSet[prop.Currency] = true
+		weights[prop.Currency] = 0
 	}
-	var currencies []string
+	var allCurrencies []string
 	for c := range curSet {
-		currencies = append(currencies, c)
+		if _, ok := weights[c]; !ok {
+			weights[c] = 0
+		}
+		allCurrencies = append(allCurrencies, c)
 	}
-	sort.Strings(currencies)
+	sort.Strings(allCurrencies)
+
+	allocatedNights := domain.AllocateProjectedAdditionalNights(projectedAdditionalNights, weights)
+	insufficientCurrencyMix := len(allCurrencies) > 1 && totalWeight == 0 && projectedAdditionalNights > 0
 
 	var curProjections []domain.ForecastCurrencyProjection
-	for _, c := range currencies {
+	for _, c := range allCurrencies {
+		if currencyFilter != "" && c != currencyFilter {
+			continue
+		}
 		otb := otbByCur[c]
 		hist := histByCur[c]
 		var benchADR *int64
@@ -899,23 +995,50 @@ func (s *Store) GetForecastReport(ctx context.Context, prop domain.Property, asO
 			v := *otb.ADRPence
 			benchADR = &v
 		}
+		allocNights := allocatedNights[c]
+		shareBPS, _ := domain.SafeBPS(weights[c], totalWeight)
 		var projIncr int64
 		if benchADR != nil {
-			projIncr = projectedAdditionalNights * (*benchADR)
+			projIncr = allocNights * (*benchADR)
 		}
 		lowIncr := (projIncr * 75) / 100
 		highIncr := (projIncr*125 + 50) / 100
+
+		note := ""
+		if insufficientCurrencyMix {
+			note = "Projected additional revenue set to unavailable/0 because multiple currencies exist with zero historical or OTB stay-night weights."
+		} else if len(allCurrencies) > 1 && projectedAdditionalNights > 0 {
+			note = fmt.Sprintf("Allocated %d of %d projected property additional nights from trailing-90d + OTB accepted unit-night currency mix.", allocNights, projectedAdditionalNights)
+		}
+
 		curProjections = append(curProjections, domain.ForecastCurrencyProjection{
 			Currency:                     c,
 			OnTheBooksAccommodationPence: otb.AccommodationNetPence,
 			OnTheBooksGrossTotalPence:    otb.GrossBookedTotalPence,
 			ProvisionalPendingPence:      otb.ProvisionalPendingPence,
 			TrailingBenchmarkADRPence:    benchADR,
+			AllocatedAdditionalNights:    allocNights,
+			NightShareBPS:                shareBPS,
 			ProjectedIncrementalPence:    projIncr,
 			ProjectedTotalPence:          otb.AccommodationNetPence + projIncr,
 			ProjectedLowPence:            otb.AccommodationNetPence + lowIncr,
 			ProjectedHighPence:           otb.AccommodationNetPence + highIncr,
+			ProjectionNote:               note,
 		})
+	}
+
+	comp := futureRev.Completeness
+	if histOcc.Completeness.InventoryHistoryIncomplete && !comp.InventoryHistoryIncomplete {
+		comp.InventoryHistoryIncomplete = true
+		comp.InventoryHistoryReliableFrom = histOcc.Completeness.InventoryHistoryReliableFrom
+		for _, w := range histOcc.Completeness.Warnings {
+			if strings.Contains(w, "Historical inventory state") {
+				comp.Warnings = append(comp.Warnings, w)
+			}
+		}
+	}
+	if insufficientCurrencyMix {
+		comp.Warnings = append(comp.Warnings, fmt.Sprintf("%d projected additional unit-nights could not be allocated across multiple currencies (%s) due to insufficient stay-night currency weights.", projectedAdditionalNights, strings.Join(allCurrencies, ", ")))
 	}
 
 	return domain.ForecastReport{
@@ -925,7 +1048,7 @@ func (s *Store) GetForecastReport(ctx context.Context, prop domain.Property, asO
 		HorizonDays:                horizonDays,
 		Window:                     futureOcc.Period,
 		ReadOnlyGuarantee:          "Strict read-only calculation; forecast execution performs zero mutations to inventory, rates, holds, or reservations.",
-		Method:                     "OTB (On-The-Books Confirmed/Checked-In) + Trailing 90-Day Same-Weekday Occupancy & Benchmark ADR Pace Projection (75%-125% uncertainty band)",
+		Method:                     "OTB (On-The-Books Confirmed/Checked-In) + Trailing 90-Day Same-Weekday Occupancy & Benchmark ADR Pace Projection (75%-125% uncertainty band; multi-currency nights apportioned proportionally without duplication)",
 		HistoricalBaselineWindow:   fmt.Sprintf("%s to %s (exclusive)", domain.FormatDate(histStart), domain.FormatDate(asOfDate)),
 		HistoricalSampleUnitNights: histOcc.Summary.OccupiedUnitNights,
 		TrailingOccupancyBPS:       trailingOccBPS,
@@ -943,7 +1066,7 @@ func (s *Store) GetForecastReport(ctx context.Context, prop domain.Property, asO
 			"Excludes MAINTENANCE, SEASONAL_CLOSURE, WEATHER_CLOSURE, OWNER_USE, and ADMINISTRATIVE_BLOCK nights from future sellable inventory.",
 		},
 		ByCurrency:   curProjections,
-		Completeness: futureRev.Completeness,
+		Completeness: comp,
 		Definitions:  forecastMetricDefinitions(),
 	}, nil
 }
@@ -1229,8 +1352,8 @@ func (s *Store) GetAccountingExport(
 		rows, err := s.pool.Query(ctx, `
 			SELECT
 				rf.id,
-				(rf.created_at AT TIME ZONE $4)::date AS refund_local_date,
-				rf.created_at,
+				(COALESCE(rf.occurred_at, rf.created_at) AT TIME ZONE $4)::date AS refund_local_date,
+				COALESCE(rf.occurred_at, rf.created_at) AS occurred_utc,
 				COALESCE(r.reference, '') AS reservation_reference,
 				COALESCE(r.channel_code, '') AS channel_code,
 				rf.provider,
@@ -1242,34 +1365,9 @@ func (s *Store) GetAccountingExport(
 			FROM refunds rf
 			LEFT JOIN reservations r ON r.id = rf.reservation_id
 			WHERE rf.property_id = $1
-			  AND (rf.created_at AT TIME ZONE $4)::date >= $2::date
-			  AND (rf.created_at AT TIME ZONE $4)::date < $3::date
+			  AND (COALESCE(rf.occurred_at, rf.created_at) AT TIME ZONE $4)::date >= $2::date
+			  AND (COALESCE(rf.occurred_at, rf.created_at) AT TIME ZONE $4)::date < $3::date
 			  AND ($5 = '' OR rf.currency = $5)
-			UNION ALL
-			SELECT
-				p.id AS id,
-				(p.paid_at AT TIME ZONE $4)::date AS refund_local_date,
-				p.paid_at AS created_at,
-				r.reference,
-				r.channel_code,
-				p.provider,
-				'SUCCEEDED' AS status,
-				'stripe_webhook_full_refund_fallback' AS reason,
-				p.currency,
-				p.amount_pence,
-				'payment_status_fallback' AS source
-			FROM payments p
-			JOIN reservations r ON r.id = p.reservation_id
-			WHERE p.property_id = $1
-			  AND p.status = 'REFUNDED'
-			  AND NOT EXISTS (
-				SELECT 1 FROM refunds rf2
-				WHERE rf2.payment_attempt_id = p.payment_attempt_id
-				  AND rf2.status = 'SUCCEEDED'
-			  )
-			  AND (p.paid_at AT TIME ZONE $4)::date >= $2::date
-			  AND (p.paid_at AT TIME ZONE $4)::date < $3::date
-			  AND ($5 = '' OR p.currency = $5)
 			ORDER BY 3 ASC, 4 ASC, 1 ASC
 			LIMIT $6
 		`, prop.ID, domain.FormatDate(startDate), domain.FormatDate(endDate), prop.Timezone, currencyFilter, domain.MaxAccountingExportRows+1)
@@ -1310,6 +1408,14 @@ func (s *Store) GetAccountingExport(
 		if err := rows.Err(); err != nil {
 			return domain.AccountingExportResult{}, MapErr(err)
 		}
+		comp, cErr := s.GetReportCompleteness(ctx, prop.ID, &completenessOverrides{currencyFilter: currencyFilter})
+		if cErr != nil {
+			return domain.AccountingExportResult{}, cErr
+		}
+		result.UnresolvedLegacyRefundPaymentsCount = comp.UnresolvedLegacyRefundPaymentsCount
+		if comp.UnresolvedLegacyRefundPaymentsCount > 0 {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%d REFUNDED/PARTIALLY_REFUNDED payment(s) lack a persisted refunds row; excluded from dated refund_ledger totals rather than backdating onto payment paid_at.", comp.UnresolvedLegacyRefundPaymentsCount))
+		}
 	}
 
 	result.RowCount = len(result.Rows)
@@ -1317,27 +1423,37 @@ func (s *Store) GetAccountingExport(
 }
 
 type completenessOverrides struct {
-	manualUnquoted           int64
-	zeroValueAccepted        int64
-	unresolvedPartialRefunds int64
-	currencies               []string
+	manualUnquoted         int64
+	zeroValueAccepted      int64
+	invHistoryIncomplete   bool
+	invHistoryReliableFrom *string
+	currencyFilter         string
+	currencies             []string
 }
 
 func (s *Store) GetReportCompleteness(ctx context.Context, propertyID uuid.UUID, ov *completenessOverrides) (domain.ReportDataCompleteness, error) {
 	var comp domain.ReportDataCompleteness
+	curFilter := ""
+	if ov != nil {
+		curFilter = ov.currencyFilter
+	}
 	err := s.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT COUNT(*) FROM channel_external_reservations WHERE property_id = $1 AND import_status = 'UNMAPPED')::bigint,
 			(SELECT COUNT(*) FROM channel_external_reservations WHERE property_id = $1 AND import_status = 'CONFLICT_OVERBOOKED')::bigint,
 			(SELECT COUNT(*) FROM channel_external_reservations WHERE property_id = $1 AND import_status = 'FAILED')::bigint,
 			(SELECT COUNT(*) FROM channel_sync_jobs WHERE property_id = $1 AND status IN ('PENDING', 'RUNNING', 'FAILED_RETRYABLE'))::bigint,
-			(SELECT COUNT(*) FROM payment_exceptions WHERE property_id = $1 AND status = 'OPEN')::bigint
-	`, propertyID).Scan(
+			(SELECT COUNT(*) FROM payment_exceptions WHERE property_id = $1 AND status = 'OPEN')::bigint,
+			(SELECT COUNT(*) FROM payments p WHERE p.property_id = $1 AND p.status = 'PARTIALLY_REFUNDED' AND ($2 = '' OR p.currency = $2) AND NOT EXISTS (SELECT 1 FROM refunds rf WHERE rf.payment_attempt_id = p.payment_attempt_id AND rf.status = 'SUCCEEDED'))::bigint,
+			(SELECT COUNT(*) FROM payments p WHERE p.property_id = $1 AND p.status IN ('REFUNDED', 'PARTIALLY_REFUNDED') AND ($2 = '' OR p.currency = $2) AND NOT EXISTS (SELECT 1 FROM refunds rf WHERE rf.payment_attempt_id = p.payment_attempt_id AND rf.status = 'SUCCEEDED'))::bigint
+	`, propertyID, curFilter).Scan(
 		&comp.UnmappedExternalReservations,
 		&comp.ConflictExternalReservations,
 		&comp.FailedExternalReservations,
 		&comp.PendingChannelSyncJobs,
 		&comp.OpenPaymentExceptions,
+		&comp.UnresolvedPartialRefundCount,
+		&comp.UnresolvedLegacyRefundPaymentsCount,
 	)
 	if err != nil {
 		return domain.ReportDataCompleteness{}, MapErr(err)
@@ -1345,7 +1461,8 @@ func (s *Store) GetReportCompleteness(ctx context.Context, propertyID uuid.UUID,
 	if ov != nil {
 		comp.ManualUnquotedBookingsCount = ov.manualUnquoted
 		comp.ZeroValueAcceptedStaysCount = ov.zeroValueAccepted
-		comp.UnresolvedPartialRefundCount = ov.unresolvedPartialRefunds
+		comp.InventoryHistoryIncomplete = ov.invHistoryIncomplete
+		comp.InventoryHistoryReliableFrom = ov.invHistoryReliableFrom
 		comp.Currencies = append([]string(nil), ov.currencies...)
 		comp.MultiCurrencyDetected = len(ov.currencies) > 1
 	}
@@ -1367,8 +1484,15 @@ func (s *Store) GetReportCompleteness(ctx context.Context, propertyID uuid.UUID,
 	if comp.ZeroValueAcceptedStaysCount > 0 {
 		comp.Warnings = append(comp.Warnings, fmt.Sprintf("%d accepted reservation(s) carry total_pence = 0; ADR/RevPAR reflect only recorded monetary values.", comp.ZeroValueAcceptedStaysCount))
 	}
-	if comp.UnresolvedPartialRefundCount > 0 {
-		comp.Warnings = append(comp.Warnings, fmt.Sprintf("%d PARTIALLY_REFUNDED payment(s) lack a matching refunds row; partial refund amount is not inferred.", comp.UnresolvedPartialRefundCount))
+	if comp.UnresolvedLegacyRefundPaymentsCount > 0 {
+		comp.Warnings = append(comp.Warnings, fmt.Sprintf("%d REFUNDED/PARTIALLY_REFUNDED payment(s) lack a persisted refunds row; refund date and/or amount cannot be established reliably and are excluded from dated refund totals rather than backdated onto payment paid_at.", comp.UnresolvedLegacyRefundPaymentsCount))
+	}
+	if comp.InventoryHistoryIncomplete {
+		sinceLabel := "migration tracking activation"
+		if comp.InventoryHistoryReliableFrom != nil {
+			sinceLabel = *comp.InventoryHistoryReliableFrom
+		}
+		comp.Warnings = append(comp.Warnings, fmt.Sprintf("Historical inventory state is incomplete prior to %s for units with unrecorded pre-0021 status/archive changes; pre-boundary capacity is not guessed.", sinceLabel))
 	}
 	if comp.MultiCurrencyDetected {
 		comp.Warnings = append(comp.Warnings, fmt.Sprintf("Multiple currencies detected (%s); totals are reported strictly per currency and never combined.", strings.Join(comp.Currencies, ", ")))
@@ -1485,10 +1609,10 @@ func (s *Store) fetchPeriodPayments(ctx context.Context, prop domain.Property, s
 	return out, MapErr(rows.Err())
 }
 
-func (s *Store) fetchPeriodRefunds(ctx context.Context, prop domain.Property, startDate, endDate time.Time, currencyFilter string) ([]reportCashRow, int64, error) {
+func (s *Store) fetchPeriodRefunds(ctx context.Context, prop domain.Property, startDate, endDate time.Time, currencyFilter string) ([]reportCashRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			(rf.created_at AT TIME ZONE $4)::date AS local_date,
+			(COALESCE(rf.occurred_at, rf.created_at) AT TIME ZONE $4)::date AS local_date,
 			rf.currency,
 			COALESCE(r.channel_code, '') AS channel_code,
 			COALESCE(SUM(rf.amount_pence), 0)::bigint AS amount_pence
@@ -1496,32 +1620,13 @@ func (s *Store) fetchPeriodRefunds(ctx context.Context, prop domain.Property, st
 		LEFT JOIN reservations r ON r.id = rf.reservation_id
 		WHERE rf.property_id = $1
 		  AND rf.status = 'SUCCEEDED'
-		  AND (rf.created_at AT TIME ZONE $4)::date >= $2::date
-		  AND (rf.created_at AT TIME ZONE $4)::date < $3::date
+		  AND (COALESCE(rf.occurred_at, rf.created_at) AT TIME ZONE $4)::date >= $2::date
+		  AND (COALESCE(rf.occurred_at, rf.created_at) AT TIME ZONE $4)::date < $3::date
 		  AND ($5 = '' OR rf.currency = $5)
-		GROUP BY 1, 2, 3
-		UNION ALL
-		SELECT
-			(p.paid_at AT TIME ZONE $4)::date AS local_date,
-			p.currency,
-			r.channel_code,
-			COALESCE(SUM(p.amount_pence), 0)::bigint AS amount_pence
-		FROM payments p
-		JOIN reservations r ON r.id = p.reservation_id
-		WHERE p.property_id = $1
-		  AND p.status = 'REFUNDED'
-		  AND NOT EXISTS (
-			SELECT 1 FROM refunds rf2
-			WHERE rf2.payment_attempt_id = p.payment_attempt_id
-			  AND rf2.status = 'SUCCEEDED'
-		  )
-		  AND (p.paid_at AT TIME ZONE $4)::date >= $2::date
-		  AND (p.paid_at AT TIME ZONE $4)::date < $3::date
-		  AND ($5 = '' OR p.currency = $5)
 		GROUP BY 1, 2, 3
 	`, prop.ID, domain.FormatDate(startDate), domain.FormatDate(endDate), prop.Timezone, currencyFilter)
 	if err != nil {
-		return nil, 0, MapErr(err)
+		return nil, MapErr(err)
 	}
 	defer rows.Close()
 
@@ -1529,32 +1634,14 @@ func (s *Store) fetchPeriodRefunds(ctx context.Context, prop domain.Property, st
 	for rows.Next() {
 		var r reportCashRow
 		if err := rows.Scan(&r.LocalDate, &r.Currency, &r.ChannelCode, &r.AmountPence); err != nil {
-			return nil, 0, MapErr(err)
+			return nil, MapErr(err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, MapErr(err)
+		return nil, MapErr(err)
 	}
-
-	var unresolvedPartial int64
-	if err := s.pool.QueryRow(ctx, `
-		SELECT COUNT(*)::bigint
-		FROM payments p
-		WHERE p.property_id = $1
-		  AND p.status = 'PARTIALLY_REFUNDED'
-		  AND NOT EXISTS (
-			SELECT 1 FROM refunds rf
-			WHERE rf.payment_attempt_id = p.payment_attempt_id
-			  AND rf.status = 'SUCCEEDED'
-		  )
-		  AND (p.paid_at AT TIME ZONE $4)::date >= $2::date
-		  AND (p.paid_at AT TIME ZONE $4)::date < $3::date
-		  AND ($5 = '' OR p.currency = $5)
-	`, prop.ID, domain.FormatDate(startDate), domain.FormatDate(endDate), prop.Timezone, currencyFilter).Scan(&unresolvedPartial); err != nil {
-		return nil, 0, MapErr(err)
-	}
-	return out, unresolvedPartial, nil
+	return out, nil
 }
 
 func buildOccupancyMetrics(phys, ooo, ownerAdm, sellable, occ, pend int64) domain.OccupancyMetrics {
@@ -1583,8 +1670,8 @@ func occupancyMetricDefinitions() []domain.ReportMetricDefinition {
 	return []domain.ReportMetricDefinition{
 		{
 			Metric:     "Sellable Unit-Nights",
-			Formula:    "Active + Maintenance physical units * days - (Out-of-Order [MAINTENANCE, SEASONAL_CLOSURE, WEATHER_CLOSURE] + Owner/Admin [OWNER_USE, ADMINISTRATIVE_BLOCK, OPERATIONAL_BUFFER])",
-			Exclusions: "Archived/inactive/retired units are excluded; MAINTENANCE unit status and active closure/blockout claims reduce sellable supply.",
+			Formula:    "Effective-dated active + maintenance physical unit-nights from unit_status_history - (Out-of-Order [maintenance unit status, MAINTENANCE, SEASONAL_CLOSURE, WEATHER_CLOSURE] + Owner/Admin [OWNER_USE, ADMINISTRATIVE_BLOCK, OPERATIONAL_BUFFER])",
+			Exclusions: "Units not yet commissioned, archived/inactive/retired on the target date, or pre-0021 units with incomplete transition history are excluded without guessing.",
 			TimeBasis:  "Property calendar night date [start_date, end_date)",
 		},
 		{
@@ -1606,9 +1693,9 @@ func revenueMetricDefinitions() []domain.ReportMetricDefinition {
 		},
 		{
 			Metric:     "Collected Cash & Refunds",
-			Formula:    "payments (SUCCEEDED, PARTIALLY_REFUNDED, REFUNDED) minus refunds (SUCCEEDED) and fallback REFUNDED payments",
-			Exclusions: "payment_attempts without settled payment rows are never counted as collected.",
-			TimeBasis:  "Payment/refund timestamp converted to property local timezone DATE",
+			Formula:    "payments (SUCCEEDED, PARTIALLY_REFUNDED, REFUNDED) minus persisted refunds (SUCCEEDED) attributed on refunds.occurred_at",
+			Exclusions: "payment_attempts without settled payment rows are never counted; legacy refund-status payments lacking a persisted refunds row are excluded from dated refund totals and surfaced in completeness warnings rather than backdated to payments.paid_at.",
+			TimeBasis:  "Payment paid_at / refund occurred_at converted to property local timezone DATE",
 		},
 	}
 }

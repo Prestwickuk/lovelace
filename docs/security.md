@@ -63,7 +63,7 @@ When `TIRBACH_ENV=production`, `internal/config/config.go` refuses startup if `T
 
 ---
 
-## 10. Phase 5 Reporting, Privacy & Export Hardening (`0020_phase5_reporting_bi.sql`)
+## 10. Phase 5 Reporting, Privacy & Export Hardening (`0020_phase5_reporting_bi.sql`, `0021_phase5_accuracy_remediation.sql`)
 
 - **Strict RBAC & Export Separation (`internal/auth/rbac.go`):**
   - Read-only reporting (`PermReportsRead`) is granted solely to roles permitted property-wide inventory/reservation reads (`owner_admin`, `manager`, `viewer`) and denied (`403`) to `staff`, `maintenance_staff`, and `housekeeping_staff`.

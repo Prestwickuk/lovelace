@@ -1217,17 +1217,36 @@ func (s *Store) RecordPaymentFailure(ctx context.Context, tx pgx.Tx, attemptID u
 	return MapErr(err)
 }
 
-func (s *Store) RecordRefundOutcome(ctx context.Context, tx pgx.Tx, paymentIntentID, refundID string, amountRefundedPence int64) error {
+type StripeRefundEntry struct {
+	ProviderRefundID string
+	AmountPence      int64
+	Currency         string
+	Status           string // PENDING | SUCCEEDED | FAILED
+	Reason           string
+	OccurredAt       time.Time
+	IdempotencyKey   string
+}
+
+func (s *Store) RecordRefundOutcome(
+	ctx context.Context,
+	tx pgx.Tx,
+	paymentIntentID, chargeID, eventID string,
+	eventOccurredAt time.Time,
+	amountRefundedPence int64,
+	chargeCurrency string,
+	entries []StripeRefundEntry,
+) error {
 	var attID, propID uuid.UUID
 	var resID *uuid.UUID
 	var paidAmt int64
+	var attCur string
 	err := tx.QueryRow(ctx, `
-		SELECT id, property_id, reservation_id, amount_pence
+		SELECT id, property_id, reservation_id, amount_pence, currency
 		FROM payment_attempts
 		WHERE provider_payment_intent_id = $1
 		LIMIT 1
 		FOR UPDATE
-	`, paymentIntentID).Scan(&attID, &propID, &resID, &paidAmt)
+	`, paymentIntentID).Scan(&attID, &propID, &resID, &paidAmt, &attCur)
 	if err == pgx.ErrNoRows {
 		return nil
 	}
@@ -1235,17 +1254,178 @@ func (s *Store) RecordRefundOutcome(ctx context.Context, tx pgx.Tx, paymentInten
 		return MapErr(err)
 	}
 
-	nextAttStatus := domain.AttemptStatusRefunded
-	nextPayStatus := domain.PaymentStatusRefunded
-	if amountRefundedPence > 0 && amountRefundedPence < paidAmt {
+	var payID *uuid.UUID
+	var currentPayStatus string
+	var pID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT id, status
+		FROM payments
+		WHERE payment_attempt_id = $1
+		LIMIT 1
+		FOR UPDATE
+	`, attID).Scan(&pID, &currentPayStatus)
+	if err == nil {
+		payID = &pID
+	} else if err != pgx.ErrNoRows {
+		return MapErr(err)
+	}
+
+	defaultCur := strings.ToUpper(strings.TrimSpace(chargeCurrency))
+	if defaultCur == "" {
+		defaultCur = strings.ToUpper(strings.TrimSpace(attCur))
+	}
+	if defaultCur == "" {
+		defaultCur = "GBP"
+	}
+	if eventOccurredAt.IsZero() {
+		eventOccurredAt = time.Now().UTC()
+	}
+
+	if len(entries) > 0 {
+		for idx, entry := range entries {
+			if entry.AmountPence <= 0 {
+				continue
+			}
+			cur := strings.ToUpper(strings.TrimSpace(entry.Currency))
+			if cur == "" {
+				cur = defaultCur
+			}
+			st := strings.ToUpper(strings.TrimSpace(entry.Status))
+			switch st {
+			case "PENDING", "SUCCEEDED", "FAILED":
+			default:
+				st = "SUCCEEDED"
+			}
+			occAt := entry.OccurredAt.UTC()
+			if occAt.IsZero() {
+				occAt = eventOccurredAt.UTC()
+			}
+			rfIDStr := strings.TrimSpace(entry.ProviderRefundID)
+			idem := strings.TrimSpace(entry.IdempotencyKey)
+			if idem == "" {
+				if rfIDStr != "" {
+					idem = "stripe_refund:" + rfIDStr
+				} else {
+					idem = fmt.Sprintf("stripe_event:%s:%d", eventID, idx)
+				}
+			}
+
+			if rfIDStr != "" {
+				newID, idErr := NewUUID()
+				if idErr != nil {
+					return idErr
+				}
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO refunds (
+						id, property_id, payment_attempt_id, payment_id, reservation_id,
+						provider, provider_refund_id, amount_pence, currency, reason, status,
+						idempotency_key, occurred_at, created_at, updated_at
+					) VALUES (
+						$1, $2, $3, $4, $5,
+						'stripe', $6, $7, $8, $9, $10,
+						$11, $12, $12, NOW()
+					)
+					ON CONFLICT (property_id, provider, provider_refund_id) WHERE provider_refund_id <> ''
+					DO UPDATE SET
+						payment_id = COALESCE(refunds.payment_id, EXCLUDED.payment_id),
+						status = EXCLUDED.status,
+						reason = CASE WHEN EXCLUDED.reason <> '' THEN EXCLUDED.reason ELSE refunds.reason END,
+						occurred_at = EXCLUDED.occurred_at,
+						updated_at = NOW()
+				`, newID, propID, attID, payID, resID, rfIDStr, entry.AmountPence, cur, entry.Reason, st, idem, occAt); err != nil {
+					return MapErr(err)
+				}
+			} else {
+				newID, idErr := NewUUID()
+				if idErr != nil {
+					return idErr
+				}
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO refunds (
+						id, property_id, payment_attempt_id, payment_id, reservation_id,
+						provider, provider_refund_id, amount_pence, currency, reason, status,
+						idempotency_key, occurred_at, created_at, updated_at
+					) VALUES (
+						$1, $2, $3, $4, $5,
+						'stripe', '', $6, $7, $8, $9,
+						$10, $11, $11, NOW()
+					)
+					ON CONFLICT (property_id, idempotency_key) DO NOTHING
+				`, newID, propID, attID, payID, resID, entry.AmountPence, cur, entry.Reason, st, idem, occAt); err != nil {
+					return MapErr(err)
+				}
+			}
+		}
+	} else if amountRefundedPence > 0 && eventID != "" {
+		// Legacy/compact webhook fixture omitting refunds.data[]: persist incremental delta using webhook event timestamp.
+		var existingSucceeded int64
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(amount_pence), 0)::bigint
+			FROM refunds
+			WHERE payment_attempt_id = $1 AND status = 'SUCCEEDED'
+		`, attID).Scan(&existingSucceeded); err != nil {
+			return MapErr(err)
+		}
+		if delta := amountRefundedPence - existingSucceeded; delta > 0 {
+			newID, idErr := NewUUID()
+			if idErr != nil {
+				return idErr
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO refunds (
+					id, property_id, payment_attempt_id, payment_id, reservation_id,
+					provider, provider_refund_id, amount_pence, currency, reason, status,
+					idempotency_key, occurred_at, created_at, updated_at
+				) VALUES (
+					$1, $2, $3, $4, $5,
+					'stripe', '', $6, $7, 'stripe_charge_refunded_webhook', 'SUCCEEDED',
+					$8, $9, $9, NOW()
+				)
+				ON CONFLICT (property_id, idempotency_key) DO NOTHING
+			`, newID, propID, attID, payID, resID, delta, defaultCur, "stripe_event:"+eventID, eventOccurredAt.UTC()); err != nil {
+				return MapErr(err)
+			}
+		}
+	}
+
+	var totalSucceeded int64
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_pence), 0)::bigint
+		FROM refunds
+		WHERE payment_attempt_id = $1 AND status = 'SUCCEEDED'
+	`, attID).Scan(&totalSucceeded); err != nil {
+		return MapErr(err)
+	}
+	effectiveRefunded := totalSucceeded
+	if amountRefundedPence > effectiveRefunded {
+		effectiveRefunded = amountRefundedPence
+	}
+
+	nextAttStatus := domain.AttemptStatusSucceeded
+	nextPayStatus := domain.PaymentStatusPaid
+	if (paidAmt > 0 && effectiveRefunded >= paidAmt) || currentPayStatus == domain.AttemptStatusRefunded {
+		nextAttStatus = domain.AttemptStatusRefunded
+		nextPayStatus = domain.PaymentStatusRefunded
+	} else if effectiveRefunded > 0 {
+		nextAttStatus = domain.AttemptStatusPartiallyRefunded
+		nextPayStatus = domain.PaymentStatusPartiallyRefunded
+	} else if currentPayStatus == domain.AttemptStatusPartiallyRefunded {
 		nextAttStatus = domain.AttemptStatusPartiallyRefunded
 		nextPayStatus = domain.PaymentStatusPartiallyRefunded
 	}
+
 	if _, err := tx.Exec(ctx, `UPDATE payment_attempts SET status = $2, updated_at = NOW() WHERE id = $1`, attID, nextAttStatus); err != nil {
 		return MapErr(err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE payments SET status = $2 WHERE payment_attempt_id = $1`, attID, nextAttStatus); err != nil {
-		return MapErr(err)
+	if payID != nil {
+		if _, err := tx.Exec(ctx, `
+			UPDATE payments
+			SET status = $2,
+			    provider_charge_id = CASE WHEN $3 <> '' AND provider_charge_id = '' THEN $3 ELSE provider_charge_id END
+			WHERE id = $1
+		`, *payID, nextAttStatus, strings.TrimSpace(chargeID)); err != nil {
+			return MapErr(err)
+		}
 	}
 	if resID != nil {
 		if _, err := tx.Exec(ctx, `UPDATE reservations SET payment_status = $2, version = version + 1, updated_at = NOW() WHERE id = $1`, *resID, nextPayStatus); err != nil {

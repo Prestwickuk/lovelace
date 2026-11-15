@@ -324,6 +324,17 @@ func (s *Service) GetSeasonalComparisonReport(ctx context.Context, actor Actor, 
 		})
 	}
 
+	comp := curRev.Completeness
+	if compOcc.Completeness.InventoryHistoryIncomplete && !comp.InventoryHistoryIncomplete {
+		comp.InventoryHistoryIncomplete = true
+		comp.InventoryHistoryReliableFrom = compOcc.Completeness.InventoryHistoryReliableFrom
+		for _, w := range compOcc.Completeness.Warnings {
+			if strings.Contains(w, "Historical inventory state") {
+				comp.Warnings = append(comp.Warnings, w)
+			}
+		}
+	}
+
 	return domain.SeasonalComparisonReport{
 		PropertyID:   prop.ID,
 		PropertyName: prop.Name,
@@ -345,7 +356,7 @@ func (s *Service) GetSeasonalComparisonReport(ctx context.Context, actor Actor, 
 		OccupancyDeltaBPS:   occDeltaBPS,
 		OccupancyDeltaLabel: occDeltaLabel,
 		CurrencyDeltas:      deltas,
-		Completeness:        curRev.Completeness,
+		Completeness:        comp,
 		Definitions:         revenueMetricDefinitionsCopy(curRev.Definitions),
 	}, nil
 }

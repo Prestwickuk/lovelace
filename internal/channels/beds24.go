@@ -272,6 +272,18 @@ func (a *Beds24Adapter) Disconnect(ctx context.Context, publicCfg, creds map[str
 	return newProviderError(ErrNotImplemented, "beds24", "disconnect", 0, "NO_REMOTE_REVOKE", "Beds24 API v2 does not expose remote token revocation")
 }
 
+func (a *Beds24Adapter) DisconnectDetailed(ctx context.Context, publicCfg, creds map[string]string) (DisconnectOutcome, error) {
+	return DisconnectOutcome{
+		WebhookDeleteAttempted:   false,
+		WebhookDeleteStatus:      CapabilityNotImplemented,
+		WebhookDeleteDetail:      "Beds24 webhooks are managed manually in Beds24 UI; no remote webhook deletion endpoint.",
+		WebhookDeleteErrorCode:   "MANUAL_WEBHOOK_CONFIG",
+		TokenRevocationStatus:    CapabilityNotImplemented,
+		TokenRevocationDetail:    "Beds24 API v2 does not expose remote token revocation.",
+		TokenRevocationErrorCode: "NO_REMOTE_REVOKE",
+	}, nil
+}
+
 func (a *Beds24Adapter) ListListings(ctx context.Context, publicCfg, creds map[string]string) ([]ExternalListing, error) {
 	return a.DiscoverListingsDetailed(ctx, publicCfg, creds)
 }

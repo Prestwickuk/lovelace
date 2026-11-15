@@ -108,10 +108,10 @@ Full JSON schemas are documented in [docs/openapi-admin-v1.yaml](openapi-admin-v
 
 ## Phase 5 — Reporting & Business Intelligence (Admin, Property-Scoped)
 - `GET /api/v1/properties/{propertyID}/reports/overview?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&currency=GBP&horizon_days=30` — Combined KPI snapshot (`reports:read`; `owner_admin`, `manager`, `viewer`).
-- `GET /api/v1/properties/{propertyID}/reports/occupancy` — Daily, monthly, unit-type, physical vs. closure/owner-block vs. sellable & accepted occupancy (`reports:read`).
-- `GET /api/v1/properties/{propertyID}/reports/revenue` — Strict per-currency stay-prorated booked revenue (accommodation, surcharge, extras, discount, tax, ADR, RevPAR) and timezone-localized cash collections/refunds (`reports:read`).
+- `GET /api/v1/properties/{propertyID}/reports/occupancy` — Date-aware daily, monthly, unit-type, physical vs. closure/owner-block vs. sellable & accepted occupancy from `unit_status_history` (`reports:read`).
+- `GET /api/v1/properties/{propertyID}/reports/revenue` — Strict per-currency stay-prorated booked revenue (accommodation, surcharge, extras, discount, tax, ADR, RevPAR using date-aware supply) and timezone-localized cash collections/persisted refunds (`refunds.occurred_at`, excluding undated legacy refunds with explicit completeness warnings) (`reports:read`).
 - `GET /api/v1/properties/{propertyID}/reports/channels` — Channel bookings, unit-nights, booked/cash revenue, ADR, avg lead time, and Phase 4 unmapped/conflict completeness flags (`reports:read`).
 - `GET /api/v1/properties/{propertyID}/reports/seasons?season=peak|shoulder|off_peak|custom&compare_start=...&compare_end=...` — Side-by-side seasonal comparison with baseline deltas (`reports:read`).
-- `GET /api/v1/properties/{propertyID}/reports/forecast?as_of_date=YYYY-MM-DD&horizon_days=30` — Strictly read-only OTB vs. trailing-90d weekday model with uncertainty bounds (`reports:read`).
+- `GET /api/v1/properties/{propertyID}/reports/forecast?as_of_date=YYYY-MM-DD&horizon_days=30` — Strictly read-only OTB vs. trailing-90d weekday model with uncertainty bounds and non-duplicating proportional multi-currency night allocation (`allocated_additional_nights`) (`reports:read`).
 - `GET /api/v1/properties/{propertyID}/reports/retention` — Strictly aggregate repeat-guest counts across canonical `merged_into_guest_id` lineage without guest PII (`reports:read`).
 - `GET /api/v1/properties/{propertyID}/reports/accounting-export?type=booking_line_items|payment_ledger|refund_ledger&format=csv|json` — Formula-safe repeatable accounting feed (`lovelace.accounting.v1`, audited as `report.exported`, `reports:export`; `owner_admin`, `manager` only).

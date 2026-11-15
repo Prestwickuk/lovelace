@@ -94,3 +94,45 @@ func TestRenderAccountingCSVFormulaAndUnicodeSafety(t *testing.T) {
 		t.Fatalf("expected non-numeric expression in numeric column neutralized, got %q", records[3][2])
 	}
 }
+
+func TestAllocateProjectedAdditionalNights_ConservationAndDeterminism(t *testing.T) {
+	// Conservation across multi-currency weights without duplicating projectedAdditionalNights.
+	alloc := AllocateProjectedAdditionalNights(10, map[string]int64{
+		"GBP": 5,
+		"EUR": 2,
+	})
+	if alloc["GBP"]+alloc["EUR"] != 10 {
+		t.Fatalf("expected allocated nights sum 10, got %+v", alloc)
+	}
+	if alloc["GBP"] != 7 || alloc["EUR"] != 3 {
+		t.Fatalf("expected Hamilton largest-remainder split GBP=7 EUR=3, got %+v", alloc)
+	}
+
+	// Deterministic tie-breaking across equal weights/remainders.
+	tieAlloc := AllocateProjectedAdditionalNights(5, map[string]int64{
+		"USD": 1,
+		"EUR": 1,
+		"GBP": 1,
+	})
+	if tieAlloc["EUR"]+tieAlloc["GBP"]+tieAlloc["USD"] != 5 {
+		t.Fatalf("expected tie-break sum 5, got %+v", tieAlloc)
+	}
+	if tieAlloc["EUR"] != 2 || tieAlloc["GBP"] != 2 || tieAlloc["USD"] != 1 {
+		t.Fatalf("expected alphabetical remainder tie-break EUR=2 GBP=2 USD=1, got %+v", tieAlloc)
+	}
+
+	// Zero weights across multiple currencies must NOT duplicate totalNights across each currency.
+	zeroMulti := AllocateProjectedAdditionalNights(8, map[string]int64{
+		"GBP": 0,
+		"EUR": 0,
+	})
+	if zeroMulti["GBP"] != 0 || zeroMulti["EUR"] != 0 {
+		t.Fatalf("expected 0 allocated nights when multi-currency history weights are empty, got %+v", zeroMulti)
+	}
+
+	// Single currency with zero weight keeps 100% single-currency behavior cleanly.
+	single := AllocateProjectedAdditionalNights(8, map[string]int64{"GBP": 0})
+	if single["GBP"] != 8 {
+		t.Fatalf("expected single-currency fallback 8, got %+v", single)
+	}
+}

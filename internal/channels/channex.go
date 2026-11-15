@@ -130,11 +130,41 @@ func (a *ChannexAdapter) VerifyConnectionDetailed(ctx context.Context, publicCfg
 
 func (a *ChannexAdapter) Disconnect(ctx context.Context, publicCfg, creds map[string]string) error {
 	if whID := strings.TrimSpace(publicCfg["webhook_id"]); whID != "" {
-		if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err == nil {
-			return nil
+		if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err != nil {
+			return err
 		}
 	}
 	return newProviderError(ErrNotImplemented, "channex", "disconnect", 0, "NO_REMOTE_REVOKE", "Channex user API keys are revoked in Channex Dashboard")
+}
+
+func (a *ChannexAdapter) DisconnectDetailed(ctx context.Context, publicCfg, creds map[string]string) (DisconnectOutcome, error) {
+	out := DisconnectOutcome{
+		TokenRevocationStatus:    CapabilityNotImplemented,
+		TokenRevocationDetail:    "Channex user API keys are revoked in Channex Dashboard.",
+		TokenRevocationErrorCode: "NO_REMOTE_REVOKE",
+	}
+	whID := strings.TrimSpace(publicCfg["webhook_id"])
+	out.WebhookID = whID
+	if whID == "" {
+		out.WebhookDeleteStatus = CapabilityNotApplicable
+		out.WebhookDeleteDetail = "No registered Channex webhook ID found on connection."
+		return out, nil
+	}
+	out.WebhookDeleteAttempted = true
+	if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err != nil {
+		code := ExtractErrorCode(err)
+		if code == "" {
+			code = "WEBHOOK_DELETE_FAILED"
+		}
+		out.WebhookDeleteStatus = CapabilityBlocked
+		out.WebhookDeleteErrorCode = code
+		out.WebhookDeleteDetail = fmt.Sprintf("Channex webhook deletion failed (%s); remote webhook may still exist.", code)
+		return out, err
+	}
+	out.WebhookDeleteStatus = CapabilitySupported
+	out.WebhookDeleteDetail = "Remote Channex webhook subscription deleted."
+	out.ClearedWebhookConfig = true
+	return out, nil
 }
 
 func (a *ChannexAdapter) ListListings(ctx context.Context, publicCfg, creds map[string]string) ([]ExternalListing, error) {

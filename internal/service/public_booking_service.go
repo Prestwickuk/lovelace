@@ -719,20 +719,33 @@ type WebhookResult struct {
 type stripeWebhookEnvelope struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
+	Created  int64  `json:"created"`
 	LiveMode *bool  `json:"livemode"`
 	Data     struct {
 		Object struct {
 			ID               string `json:"id"`
 			PaymentIntent    string `json:"payment_intent"`
+			Amount           int64  `json:"amount"`
 			AmountTotal      int64  `json:"amount_total"`
 			AmountReceived   int64  `json:"amount_received"`
 			AmountRefunded   int64  `json:"amount_refunded"`
 			Currency         string `json:"currency"`
+			Created          int64  `json:"created"`
 			PaymentStatus    string `json:"payment_status"`
 			LatestCharge     string `json:"latest_charge"`
 			LastPaymentError *struct {
 				Message string `json:"message"`
 			} `json:"last_payment_error"`
+			Refunds *struct {
+				Data []struct {
+					ID       string `json:"id"`
+					Amount   int64  `json:"amount"`
+					Currency string `json:"currency"`
+					Status   string `json:"status"`
+					Reason   string `json:"reason"`
+					Created  int64  `json:"created"`
+				} `json:"data"`
+			} `json:"refunds"`
 			Metadata map[string]string `json:"metadata"`
 		} `json:"object"`
 	} `json:"data"`
@@ -909,7 +922,52 @@ func (s *Service) ProcessStripeWebhook(ctx context.Context, meta Actor, rawBody 
 		case "charge.refunded":
 			piID := obj.PaymentIntent
 			if piID != "" {
-				if err := s.store.RecordRefundOutcome(ctx, tx, piID, obj.ID, obj.AmountRefunded); err != nil {
+				evtOccurredAt := nowUTC
+				if evt.Created > 0 {
+					evtOccurredAt = time.Unix(evt.Created, 0).UTC()
+				}
+				var entries []postgres.StripeRefundEntry
+				if obj.Refunds != nil {
+					for _, rf := range obj.Refunds.Data {
+						if rf.Amount <= 0 {
+							continue
+						}
+						st := "SUCCEEDED"
+						switch strings.ToLower(strings.TrimSpace(rf.Status)) {
+						case "pending", "requires_action":
+							st = "PENDING"
+						case "failed", "canceled":
+							st = "FAILED"
+						case "succeeded", "":
+							st = "SUCCEEDED"
+						}
+						rfOccurredAt := evtOccurredAt
+						if rf.Created > 0 {
+							rfOccurredAt = time.Unix(rf.Created, 0).UTC()
+						}
+						cur := strings.ToUpper(strings.TrimSpace(rf.Currency))
+						if cur == "" {
+							cur = strings.ToUpper(strings.TrimSpace(obj.Currency))
+						}
+						idem := ""
+						if strings.TrimSpace(rf.ID) != "" {
+							idem = "stripe_refund:" + strings.TrimSpace(rf.ID)
+						}
+						entries = append(entries, postgres.StripeRefundEntry{
+							ProviderRefundID: strings.TrimSpace(rf.ID),
+							AmountPence:      rf.Amount,
+							Currency:         cur,
+							Status:           st,
+							Reason:           strings.TrimSpace(rf.Reason),
+							OccurredAt:       rfOccurredAt,
+							IdempotencyKey:   idem,
+						})
+					}
+				}
+				if err := s.store.RecordRefundOutcome(
+					ctx, tx, piID, obj.ID, evt.ID, evtOccurredAt,
+					obj.AmountRefunded, strings.ToUpper(strings.TrimSpace(obj.Currency)), entries,
+				); err != nil {
 					return err
 				}
 			}

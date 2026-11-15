@@ -120,11 +120,41 @@ func (a *SmoobuAdapter) VerifyConnectionDetailed(ctx context.Context, _ map[stri
 
 func (a *SmoobuAdapter) Disconnect(ctx context.Context, publicCfg, creds map[string]string) error {
 	if whID := strings.TrimSpace(publicCfg["webhook_id"]); whID != "" {
-		if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err == nil {
-			return nil
+		if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err != nil {
+			return err
 		}
 	}
 	return newProviderError(ErrNotImplemented, "smoobu", "disconnect", 0, "NO_REMOTE_REVOKE", "Smoobu API keys cannot be remotely revoked via REST API")
+}
+
+func (a *SmoobuAdapter) DisconnectDetailed(ctx context.Context, publicCfg, creds map[string]string) (DisconnectOutcome, error) {
+	out := DisconnectOutcome{
+		TokenRevocationStatus:    CapabilityNotImplemented,
+		TokenRevocationDetail:    "Smoobu API keys cannot be remotely revoked via REST API.",
+		TokenRevocationErrorCode: "NO_REMOTE_REVOKE",
+	}
+	whID := strings.TrimSpace(publicCfg["webhook_id"])
+	out.WebhookID = whID
+	if whID == "" {
+		out.WebhookDeleteStatus = CapabilityNotApplicable
+		out.WebhookDeleteDetail = "No registered Smoobu webhook ID found on connection."
+		return out, nil
+	}
+	out.WebhookDeleteAttempted = true
+	if err := a.DeleteWebhook(ctx, publicCfg, creds, whID); err != nil {
+		code := ExtractErrorCode(err)
+		if code == "" {
+			code = "WEBHOOK_DELETE_FAILED"
+		}
+		out.WebhookDeleteStatus = CapabilityBlocked
+		out.WebhookDeleteErrorCode = code
+		out.WebhookDeleteDetail = fmt.Sprintf("Smoobu webhook deletion failed (%s); remote webhook may still exist.", code)
+		return out, err
+	}
+	out.WebhookDeleteStatus = CapabilitySupported
+	out.WebhookDeleteDetail = "Remote Smoobu webhook subscription deleted."
+	out.ClearedWebhookConfig = true
+	return out, nil
 }
 
 func (a *SmoobuAdapter) ListListings(ctx context.Context, publicCfg, creds map[string]string) ([]ExternalListing, error) {

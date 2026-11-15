@@ -39,10 +39,16 @@ type VerifyChannelResult struct {
 }
 
 type DisconnectChannelResult struct {
-	Connection       channels.ChannelConnection `json:"connection"`
-	RemoteRevoked    bool                       `json:"remote_revoked"`
-	CapabilityStatus channels.CapabilityStatus  `json:"capability_status"`
-	Detail           string                     `json:"detail"`
+	Connection               channels.ChannelConnection `json:"connection"`
+	RemoteRevoked            bool                       `json:"remote_revoked"`
+	CapabilityStatus         channels.CapabilityStatus  `json:"capability_status"`
+	WebhookDeleteAttempted   bool                       `json:"webhook_delete_attempted"`
+	WebhookDeleted           bool                       `json:"webhook_deleted"`
+	WebhookDeleteStatus      channels.CapabilityStatus  `json:"webhook_delete_status"`
+	WebhookErrorCode         string                     `json:"webhook_error_code,omitempty"`
+	TokenRevocationStatus    channels.CapabilityStatus  `json:"token_revocation_status"`
+	TokenRevocationErrorCode string                     `json:"token_revocation_error_code,omitempty"`
+	Detail                   string                     `json:"detail"`
 }
 
 type UpsertChannelMappingInput struct {
@@ -338,24 +344,40 @@ func (s *Service) DisconnectChannelConnection(ctx context.Context, actor Actor, 
 	}
 	creds, _ := s.openConnectionCreds(rec)
 
-	remoteRevoked := false
-	capStatus := channels.CapabilitySupported
-	detail := "Remote credentials/webhooks revoked and local encrypted secrets cleared."
-	if dErr := adapter.Disconnect(ctx, rec.Connection.PublicConfig, creds); dErr != nil {
-		if errors.Is(dErr, channels.ErrNotImplemented) {
-			capStatus = channels.CapabilityNotImplemented
-			detail = "Provider API does not expose remote token revocation; local encrypted credentials cleared and connection disabled."
-		} else {
-			capStatus = channels.CapabilityBlocked
-			detail = fmt.Sprintf("Remote cleanup encountered %s; local encrypted credentials cleared and connection disabled.", channels.ExtractErrorCode(dErr))
+	outcome, _ := adapter.DisconnectDetailed(ctx, rec.Connection.PublicConfig, creds)
+	remoteRevoked := outcome.TokenRevocationStatus == channels.CapabilitySupported
+	webhookDeleted := outcome.WebhookDeleteStatus == channels.CapabilitySupported
+
+	capStatus := channels.CapabilityNotImplemented
+	if outcome.WebhookDeleteStatus == channels.CapabilityBlocked || outcome.TokenRevocationStatus == channels.CapabilityBlocked {
+		capStatus = channels.CapabilityBlocked
+	} else if outcome.TokenRevocationStatus == channels.CapabilitySupported &&
+		(outcome.WebhookDeleteStatus == channels.CapabilitySupported || outcome.WebhookDeleteStatus == channels.CapabilityNotApplicable) {
+		capStatus = channels.CapabilitySupported
+	}
+
+	var detail string
+	lastErrCode := ""
+	lastErrMsg := ""
+	switch outcome.WebhookDeleteStatus {
+	case channels.CapabilityBlocked:
+		lastErrCode = outcome.WebhookDeleteErrorCode
+		if lastErrCode == "" {
+			lastErrCode = "WEBHOOK_DELETE_FAILED"
 		}
-	} else {
-		remoteRevoked = true
+		lastErrMsg = fmt.Sprintf("Remote webhook deletion failed (%s) during disconnect; orphaned webhook_id retained in public_config.", lastErrCode)
+		detail = fmt.Sprintf("Remote webhook deletion failed (%s); provider API does not expose remote token revocation. Local encrypted credentials cleared and connection disabled.", lastErrCode)
+	case channels.CapabilitySupported:
+		detail = "Remote webhook deleted; provider API does not expose remote token revocation. Local encrypted credentials cleared and connection disabled."
+	case channels.CapabilityNotApplicable:
+		detail = "No remote webhook registered and provider API does not expose remote token revocation; local encrypted credentials cleared and connection disabled."
+	default:
+		detail = "Provider API does not expose remote webhook deletion or token revocation; local encrypted credentials cleared and connection disabled."
 	}
 
 	var cleared postgres.ChannelConnectionRecord
 	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
-		cleared, err = s.store.ClearChannelConnectionCredentials(ctx, tx, rec.Connection.ID, actor.UserID)
+		cleared, err = s.store.ClearChannelConnectionCredentials(ctx, tx, rec.Connection.ID, actor.UserID, outcome.ClearedWebhookConfig, lastErrCode, lastErrMsg)
 		if err != nil {
 			return err
 		}
@@ -365,10 +387,16 @@ func (s *Service) DisconnectChannelConnection(ctx context.Context, actor Actor, 
 		return DisconnectChannelResult{}, err
 	}
 	return DisconnectChannelResult{
-		Connection:       cleared.Connection,
-		RemoteRevoked:    remoteRevoked,
-		CapabilityStatus: capStatus,
-		Detail:           detail,
+		Connection:               cleared.Connection,
+		RemoteRevoked:            remoteRevoked,
+		CapabilityStatus:         capStatus,
+		WebhookDeleteAttempted:   outcome.WebhookDeleteAttempted,
+		WebhookDeleted:           webhookDeleted,
+		WebhookDeleteStatus:      outcome.WebhookDeleteStatus,
+		WebhookErrorCode:         outcome.WebhookDeleteErrorCode,
+		TokenRevocationStatus:    outcome.TokenRevocationStatus,
+		TokenRevocationErrorCode: outcome.TokenRevocationErrorCode,
+		Detail:                   detail,
 	}, nil
 }
 

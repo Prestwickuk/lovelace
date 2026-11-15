@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -66,17 +67,20 @@ type ReportMetricDefinition struct {
 // ReportDataCompleteness surfaces gaps, manual unquoted stays, currency splits, or unmapped OTA items
 // so operators never mistake incomplete source records for clean totals.
 type ReportDataCompleteness struct {
-	UnmappedExternalReservations int64    `json:"unmapped_external_reservations"`
-	ConflictExternalReservations int64    `json:"conflict_external_reservations"`
-	FailedExternalReservations   int64    `json:"failed_external_reservations"`
-	PendingChannelSyncJobs       int64    `json:"pending_channel_sync_jobs"`
-	OpenPaymentExceptions        int64    `json:"open_payment_exceptions"`
-	ManualUnquotedBookingsCount  int64    `json:"manual_unquoted_bookings_count"`
-	ZeroValueAcceptedStaysCount  int64    `json:"zero_value_accepted_stays_count"`
-	UnresolvedPartialRefundCount int64    `json:"unresolved_partial_refund_count"`
-	MultiCurrencyDetected        bool     `json:"multi_currency_detected"`
-	Currencies                   []string `json:"currencies"`
-	Warnings                     []string `json:"warnings"`
+	UnmappedExternalReservations        int64    `json:"unmapped_external_reservations"`
+	ConflictExternalReservations        int64    `json:"conflict_external_reservations"`
+	FailedExternalReservations          int64    `json:"failed_external_reservations"`
+	PendingChannelSyncJobs              int64    `json:"pending_channel_sync_jobs"`
+	OpenPaymentExceptions               int64    `json:"open_payment_exceptions"`
+	ManualUnquotedBookingsCount         int64    `json:"manual_unquoted_bookings_count"`
+	ZeroValueAcceptedStaysCount         int64    `json:"zero_value_accepted_stays_count"`
+	UnresolvedPartialRefundCount        int64    `json:"unresolved_partial_refund_count"`
+	UnresolvedLegacyRefundPaymentsCount int64    `json:"unresolved_legacy_refund_payments_count"`
+	InventoryHistoryIncomplete          bool     `json:"inventory_history_incomplete"`
+	InventoryHistoryReliableFrom        *string  `json:"inventory_history_reliable_from,omitempty"`
+	MultiCurrencyDetected               bool     `json:"multi_currency_detected"`
+	Currencies                          []string `json:"currencies"`
+	Warnings                            []string `json:"warnings"`
 }
 
 // OccupancyMetrics summarizes inventory utilization for a period or slice.
@@ -240,10 +244,13 @@ type ForecastCurrencyProjection struct {
 	OnTheBooksGrossTotalPence    int64  `json:"on_the_books_gross_total_pence"`
 	ProvisionalPendingPence      int64  `json:"provisional_pending_pence"`
 	TrailingBenchmarkADRPence    *int64 `json:"trailing_benchmark_adr_pence"`
+	AllocatedAdditionalNights    int64  `json:"allocated_additional_nights"`
+	NightShareBPS                *int   `json:"night_share_bps,omitempty"`
 	ProjectedIncrementalPence    int64  `json:"projected_incremental_pence"`
 	ProjectedTotalPence          int64  `json:"projected_total_pence"`
 	ProjectedLowPence            int64  `json:"projected_low_pence"`
 	ProjectedHighPence           int64  `json:"projected_high_pence"`
+	ProjectionNote               string `json:"projection_note,omitempty"`
 }
 
 type ForecastReport struct {
@@ -312,17 +319,19 @@ type UnsupportedMetricEntry struct {
 
 // AccountingExportResult is returned cleanly by JSON and CSV accounting exports.
 type AccountingExportResult struct {
-	SchemaVersion     string                   `json:"schema_version"`
-	PropertyID        uuid.UUID                `json:"property_id"`
-	PropertyName      string                   `json:"property_name"`
-	ExportType        ReportExportType         `json:"export_type"`
-	Period            ReportPeriod             `json:"period"`
-	CurrencyFilter    string                   `json:"currency_filter,omitempty"`
-	RowCount          int                      `json:"row_count"`
-	Truncated         bool                     `json:"truncated"`
-	UnsupportedFields []UnsupportedMetricEntry `json:"unsupported_fields"`
-	Headers           []string                 `json:"headers"`
-	Rows              []map[string]string      `json:"rows"`
+	SchemaVersion                       string                   `json:"schema_version"`
+	PropertyID                          uuid.UUID                `json:"property_id"`
+	PropertyName                        string                   `json:"property_name"`
+	ExportType                          ReportExportType         `json:"export_type"`
+	Period                              ReportPeriod             `json:"period"`
+	CurrencyFilter                      string                   `json:"currency_filter,omitempty"`
+	RowCount                            int                      `json:"row_count"`
+	Truncated                           bool                     `json:"truncated"`
+	UnresolvedLegacyRefundPaymentsCount int64                    `json:"unresolved_legacy_refund_payments_count,omitempty"`
+	Warnings                            []string                 `json:"warnings,omitempty"`
+	UnsupportedFields                   []UnsupportedMetricEntry `json:"unsupported_fields"`
+	Headers                             []string                 `json:"headers"`
+	Rows                                []map[string]string      `json:"rows"`
 }
 
 // AccountingUnsupportedFields explicitly marks financial ledger concepts that do not exist yet.
@@ -573,4 +582,72 @@ func RenderAccountingCSV(export AccountingExportResult) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// AllocateProjectedAdditionalNights deterministically distributes property-wide projected
+// additional unit-nights across currencies using Hamilton largest-remainder apportionment over
+// observed unit-night weights so the allocated currency nights sum to totalNights (or zero when
+// no weighted currency history exists for multi-currency allocation).
+func AllocateProjectedAdditionalNights(totalNights int64, weights map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(weights))
+	if totalNights <= 0 || len(weights) == 0 {
+		for k := range weights {
+			out[k] = 0
+		}
+		return out
+	}
+
+	type share struct {
+		cur    string
+		weight int64
+		floor  int64
+		rem    int64
+	}
+
+	var totalWeight int64
+	shares := make([]share, 0, len(weights))
+	for c, w := range weights {
+		if w > 0 {
+			totalWeight += w
+			shares = append(shares, share{cur: c, weight: w})
+		} else {
+			out[c] = 0
+		}
+	}
+
+	if totalWeight <= 0 {
+		// Only assign 100% if a single currency exists and needs no cross-currency split.
+		if len(weights) == 1 {
+			for c := range weights {
+				out[c] = totalNights
+			}
+		}
+		return out
+	}
+
+	var sumFloor int64
+	for i := range shares {
+		num := totalNights * shares[i].weight
+		shares[i].floor = num / totalWeight
+		shares[i].rem = num % totalWeight
+		out[shares[i].cur] = shares[i].floor
+		sumFloor += shares[i].floor
+	}
+
+	sort.Slice(shares, func(i, j int) bool {
+		if shares[i].rem != shares[j].rem {
+			return shares[i].rem > shares[j].rem
+		}
+		if shares[i].weight != shares[j].weight {
+			return shares[i].weight > shares[j].weight
+		}
+		return shares[i].cur < shares[j].cur
+	})
+
+	remaining := totalNights - sumFloor
+	for i := 0; i < len(shares) && remaining > 0; i++ {
+		out[shares[i].cur]++
+		remaining--
+	}
+	return out
 }

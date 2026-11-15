@@ -86,6 +86,9 @@ func (s *Store) ClearChannelConnectionCredentials(
 	tx pgx.Tx,
 	connectionID uuid.UUID,
 	actorID uuid.UUID,
+	clearWebhookID bool,
+	lastErrCode string,
+	lastErr string,
 ) (ChannelConnectionRecord, error) {
 	row := tx.QueryRow(ctx, `
 		UPDATE channel_connections
@@ -93,14 +96,15 @@ func (s *Store) ClearChannelConnectionCredentials(
 		    encrypted_credentials = NULL,
 		    credential_hints = '{}'::jsonb,
 		    token_expires_at = NULL,
-		    last_error = '',
-		    last_sync_error_code = '',
+		    public_config = CASE WHEN $3 THEN public_config - 'webhook_id' ELSE public_config END,
+		    last_sync_error_code = $4,
+		    last_error = $5,
 		    updated_by = $2,
 		    version = version + 1,
 		    updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+channelConnectionSelectCols+`
-	`, connectionID, actorID)
+	`, connectionID, actorID, clearWebhookID, lastErrCode, lastErr)
 	rec, err := scanChannelConnection(row)
 	return rec, MapErr(err)
 }

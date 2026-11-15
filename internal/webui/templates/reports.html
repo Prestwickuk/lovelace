@@ -236,6 +236,7 @@
             <th>OTB Booked (Gross)</th>
             <th>Provisional Pending</th>
             <th>Trailing ADR</th>
+            <th>Allocated Add. Nights</th>
             <th>Projected Total Accom.</th>
             <th>Range (Low – High)</th>
           </tr>
@@ -247,11 +248,12 @@
             <td class="mono">{{formatMoneyCur .Currency .OnTheBooksGrossTotalPence}}</td>
             <td class="mono">{{formatMoneyCur .Currency .ProvisionalPendingPence}}</td>
             <td class="mono">{{formatMoneyCurPtr .Currency .TrailingBenchmarkADRPence}}</td>
+            <td class="mono">{{.AllocatedAdditionalNights}}</td>
             <td class="mono"><strong>{{formatMoneyCur .Currency .ProjectedTotalPence}}</strong></td>
             <td class="mono">{{formatMoneyCur .Currency .ProjectedLowPence}} – {{formatMoneyCur .Currency .ProjectedHighPence}}</td>
           </tr>
           {{else}}
-          <tr><td colspan="6">Insufficient currency data for forecast breakdown.</td></tr>
+          <tr><td colspan="7">Insufficient currency data for forecast breakdown.</td></tr>
           {{end}}
         </tbody>
       </table>

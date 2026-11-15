@@ -40,9 +40,22 @@ func TestPhase5_OccupancyRevenueChannelSeasonalForecastRetentionAndExports(t *te
 	}
 	unit1 := existingUnits[0]
 	unit2 := existingUnits[1]
-	// Retire any extra seeded units beyond unit1 and unit2 so sellable supply math is exact and deterministic.
+	// Retire any extra seeded units beyond unit1 and unit2 so sellable supply math is exact and deterministic,
+	// and anchor unit1/unit2 commissioning prior to the 2026-07-01 reporting window.
+	for i := 0; i < 2; i++ {
+		if _, err := migratorStore.Pool().Exec(ctx, `
+			UPDATE units SET created_at = '2026-01-01T00:00:00Z' WHERE id = $1
+		`, existingUnits[i].ID); err != nil {
+			t.Fatalf("anchor unit commissioning: %v", err)
+		}
+		if _, err := migratorStore.Pool().Exec(ctx, `
+			UPDATE unit_status_history SET effective_from = '2026-01-01T00:00:00Z' WHERE unit_id = $1 AND source = 'unit_created'
+		`, existingUnits[i].ID); err != nil {
+			t.Fatalf("anchor unit status history: %v", err)
+		}
+	}
 	for i := 2; i < len(existingUnits); i++ {
-		if _, err := migratorStore.Pool().Exec(ctx, `UPDATE units SET status = 'retired' WHERE id = $1`, existingUnits[i].ID); err != nil {
+		if _, err := migratorStore.Pool().Exec(ctx, `UPDATE units SET status = 'retired', updated_at = '2026-01-01T00:00:00Z' WHERE id = $1`, existingUnits[i].ID); err != nil {
 			t.Fatalf("retire extra seeded unit: %v", err)
 		}
 	}

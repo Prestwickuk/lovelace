@@ -411,3 +411,121 @@ func TestAllFourAdaptersOfflineFlows(t *testing.T) {
 		t.Fatalf("Channex rotated-key webhook verify failed: %+v err=%v", ev, err)
 	}
 }
+
+func TestAdapterDisconnect_WebhookDeleteFailureAndTokenRevokeSeparation(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		makeFn    func(baseURL string) LiveAdapter
+		pubCfg    map[string]string
+		creds     map[string]string
+		delPrefix string
+	}{
+		{
+			name: "smoobu",
+			makeFn: func(baseURL string) LiveAdapter {
+				return NewSmoobuAdapter(AdapterConfig{
+					AllowHTTPForTests: true,
+					MaxRetries:        0,
+					Clock:             func() time.Time { return now },
+					NonceFunc:         func() string { return "n1" },
+					ProviderBaseURLs:  map[string]string{"smoobu": baseURL},
+				})
+			},
+			pubCfg:    map[string]string{"webhook_id": "wh-sm-1"},
+			creds:     map[string]string{"api_key": "k", "api_secret": "s"},
+			delPrefix: "/users/webhooks/wh-sm-1",
+		},
+		{
+			name: "lodgify",
+			makeFn: func(baseURL string) LiveAdapter {
+				return NewLodgifyAdapter(AdapterConfig{
+					AllowHTTPForTests: true,
+					MaxRetries:        0,
+					Clock:             func() time.Time { return now },
+					ProviderBaseURLs:  map[string]string{"lodgify": baseURL},
+				})
+			},
+			pubCfg:    map[string]string{"webhook_id": "wh-lg-1"},
+			creds:     map[string]string{"api_key": "lg_k"},
+			delPrefix: "/webhooks/v1/wh-lg-1",
+		},
+		{
+			name: "channex",
+			makeFn: func(baseURL string) LiveAdapter {
+				return NewChannexAdapter(AdapterConfig{
+					AllowHTTPForTests: true,
+					MaxRetries:        0,
+					Clock:             func() time.Time { return now },
+					ProviderBaseURLs:  map[string]string{"channex": baseURL},
+				})
+			},
+			pubCfg:    map[string]string{"webhook_id": "wh-ch-1"},
+			creds:     map[string]string{"user_api_key": "ch_k"},
+			delPrefix: "/webhooks/wh-ch-1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name+"_webhook_delete_ok_token_unsupported", func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete && r.URL.Path == tc.delPrefix {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer srv.Close()
+
+			ad := tc.makeFn(srv.URL)
+			if err := ad.Disconnect(context.Background(), tc.pubCfg, tc.creds); !errors.Is(err, ErrNotImplemented) {
+				t.Fatalf("%s Disconnect expected ErrNotImplemented for unrevocable API keys after webhook delete, got %v", tc.name, err)
+			}
+			out, err := ad.DisconnectDetailed(context.Background(), tc.pubCfg, tc.creds)
+			if err != nil {
+				t.Fatalf("%s DisconnectDetailed unexpected err: %v", tc.name, err)
+			}
+			if !out.WebhookDeleteAttempted || out.WebhookDeleteStatus != CapabilitySupported || !out.ClearedWebhookConfig {
+				t.Fatalf("%s expected webhook deleted & config clearable, got %+v", tc.name, out)
+			}
+			if out.TokenRevocationStatus != CapabilityNotImplemented || out.TokenRevocationErrorCode != "NO_REMOTE_REVOKE" {
+				t.Fatalf("%s expected honest NO_REMOTE_REVOKE token status, got %+v", tc.name, out)
+			}
+		})
+
+		t.Run(tc.name+"_webhook_delete_failure_surfaces_blocked", func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer srv.Close()
+
+			ad := tc.makeFn(srv.URL)
+			dErr := ad.Disconnect(context.Background(), tc.pubCfg, tc.creds)
+			if dErr == nil || errors.Is(dErr, ErrNotImplemented) {
+				t.Fatalf("%s Disconnect must surface webhook delete failure instead of masking under ErrNotImplemented, got %v", tc.name, dErr)
+			}
+			out, outErr := ad.DisconnectDetailed(context.Background(), tc.pubCfg, tc.creds)
+			if outErr == nil {
+				t.Fatalf("%s DisconnectDetailed must return error on webhook delete HTTP 500", tc.name)
+			}
+			if !out.WebhookDeleteAttempted || out.WebhookDeleteStatus != CapabilityBlocked || out.WebhookDeleteErrorCode != "HTTP_500" || out.ClearedWebhookConfig {
+				t.Fatalf("%s expected BLOCKED/HTTP_500 webhook cleanup and ClearedWebhookConfig=false, got %+v", tc.name, out)
+			}
+			if out.TokenRevocationStatus != CapabilityNotImplemented {
+				t.Fatalf("%s expected TokenRevocationStatus=NOT_IMPLEMENTED, got %+v", tc.name, out)
+			}
+		})
+
+		t.Run(tc.name+"_no_webhook_id_not_applicable", func(t *testing.T) {
+			ad := tc.makeFn("https://example.invalid")
+			out, err := ad.DisconnectDetailed(context.Background(), map[string]string{}, tc.creds)
+			if err != nil {
+				t.Fatalf("%s DisconnectDetailed with no webhook failed: %v", tc.name, err)
+			}
+			if out.WebhookDeleteAttempted || out.WebhookDeleteStatus != CapabilityNotApplicable {
+				t.Fatalf("%s expected NOT_APPLICABLE when webhook_id absent, got %+v", tc.name, out)
+			}
+		})
+	}
+}

@@ -613,11 +613,11 @@ paths:
 
   /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/disconnect:
     post:
-      summary: Disconnect provider, clear encrypted secrets, cancel queued jobs, and report honest token revocation status (`channels:write`)
+      summary: Disconnect provider, attempt remote webhook deletion, clear local encrypted secrets, and report separated webhook cleanup and token revocation statuses (`channels:write`)
       parameters:
         - $ref: "#/components/parameters/PropertyID"
         - $ref: "#/components/parameters/ProviderCode"
-      responses: { "200": { description: Disconnected status and warnings (including NOT_IMPLEMENTED vendor revoke notes) } }
+      responses: { "200": { description: Disconnected connection with separated webhook_delete_status (SUPPORTED/BLOCKED/NOT_IMPLEMENTED/NOT_APPLICABLE) and token_revocation_status (NOT_IMPLEMENTED) } }
 
   /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/listings:
     get:

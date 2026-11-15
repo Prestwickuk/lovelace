@@ -14,7 +14,21 @@ const (
 	CapabilitySupported      CapabilityStatus = "SUPPORTED"
 	CapabilityBlocked        CapabilityStatus = "BLOCKED"
 	CapabilityNotImplemented CapabilityStatus = "NOT_IMPLEMENTED"
+	CapabilityNotApplicable  CapabilityStatus = "NOT_APPLICABLE"
 )
+
+// DisconnectOutcome separates remote webhook deletion outcome from remote credential/token revocation support.
+type DisconnectOutcome struct {
+	WebhookID                string           `json:"webhook_id,omitempty"`
+	WebhookDeleteAttempted   bool             `json:"webhook_delete_attempted"`
+	WebhookDeleteStatus      CapabilityStatus `json:"webhook_delete_status"`
+	WebhookDeleteDetail      string           `json:"webhook_delete_detail,omitempty"`
+	WebhookDeleteErrorCode   string           `json:"webhook_delete_error_code,omitempty"`
+	TokenRevocationStatus    CapabilityStatus `json:"token_revocation_status"`
+	TokenRevocationDetail    string           `json:"token_revocation_detail"`
+	TokenRevocationErrorCode string           `json:"token_revocation_error_code,omitempty"`
+	ClearedWebhookConfig     bool             `json:"cleared_webhook_config,omitempty"`
+}
 
 // CapabilityItem documents one provider capability and its operational constraints.
 type CapabilityItem struct {
@@ -150,4 +164,5 @@ type LiveAdapter interface {
 	VerifyWebhook(ctx context.Context, publicCfg, creds map[string]string, headers map[string]string, body []byte, checkNonce NonceChecker) (WebhookEvent, error)
 	RegisterWebhook(ctx context.Context, publicCfg, creds map[string]string, callbackURL string) (string, error)
 	DeleteWebhook(ctx context.Context, publicCfg, creds map[string]string, webhookID string) error
+	DisconnectDetailed(ctx context.Context, publicCfg, creds map[string]string) (DisconnectOutcome, error)
 }
