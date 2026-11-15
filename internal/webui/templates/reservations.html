@@ -1,0 +1,125 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Reservations</h1>
+    <p class="subtitle">Administrative reservation ledger (manual bookings, occupancy enforcement &amp; lifecycle tracking; payments deferred to Phase 2).</p>
+  </div>
+  {{if .CanWriteReservations}}
+  <a href="/reservations/new" class="btn btn-primary">+ Create Manual Reservation</a>
+  {{end}}
+</div>
+
+<div class="card">
+  <form method="get" action="/reservations" class="form-grid">
+    <div class="field">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">All Statuses</option>
+        {{range .Statuses}}
+        <option value="{{.}}" {{if eq (printf "%s" .) $.FilterStatus}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="channel_code">Channel</label>
+      <select id="channel_code" name="channel_code">
+        <option value="">All Channels</option>
+        {{range .Channels}}
+        <option value="{{.Code}}" {{if eq .Code $.FilterChannelCode}}selected{{end}}>{{.Code}} — {{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="start_date">Overlaps From</label>
+      <input id="start_date" name="start_date" type="date" value="{{.FilterStartDate}}">
+    </div>
+    <div class="field">
+      <label for="end_date">Overlaps To</label>
+      <input id="end_date" name="end_date" type="date" value="{{.FilterEndDate}}">
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-secondary">Filter Reservations</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Reservation List</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Reference</th>
+          <th>Guest</th>
+          <th>Stay [Arrival → Departure)</th>
+          <th>Units</th>
+          <th>Party</th>
+          <th>Channel</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Reservations}}
+        <tr>
+          <td class="mono"><a href="/reservations/{{.ID}}"><strong>{{.Reference}}</strong></a></td>
+          <td>
+            <strong>{{.GuestName}}</strong>
+            {{if .GuestEmail}}<br><span class="subtitle">{{.GuestEmail}}</span>{{end}}
+          </td>
+          <td class="mono">{{formatDate .ArrivalDate}} → {{formatDate .DepartureDate}}</td>
+          <td>
+            {{range .Units}}
+            <span class="badge badge-muted">{{.UnitCode}}</span>
+            {{end}}
+          </td>
+          <td>{{.Adults}}A / {{.Children}}C / {{.Infants}}I</td>
+          <td><span class="badge badge-info">{{.ChannelCode}}</span></td>
+          <td><span class="badge {{statusClass (printf "%s" .Status)}}">{{.Status}}</span></td>
+          <td><a href="/reservations/{{.ID}}" class="btn btn-secondary btn-sm">View / Manage</a></td>
+        </tr>
+        {{else}}
+        <tr><td colspan="8">No reservations matched the current filters.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{if .CanWriteReservations}}
+<div class="card">
+  <h2>Booking Sources / Channels</h2>
+  <p class="subtitle">Extensible booking-source classifications (external API sync remains Phase 4).</p>
+  <div class="days-row mb-2">
+    {{range .Channels}}
+    <span class="badge badge-muted">{{.Code}} ({{.Name}})</span>
+    {{end}}
+  </div>
+  <form method="post" action="/channels" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="field">
+      <label for="code">Channel Code</label>
+      <input id="code" name="code" type="text" placeholder="e.g. PITCHUP" required>
+    </div>
+    <div class="field">
+      <label for="name">Display Name</label>
+      <input id="name" name="name" type="text" placeholder="e.g. Pitchup.com" required>
+    </div>
+    <div class="field">
+      <label for="category">Category</label>
+      <select id="category" name="category">
+        <option value="ota">OTA</option>
+        <option value="direct">Direct</option>
+        <option value="manual">Manual</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-secondary">Add Booking Channel</button>
+    </div>
+  </form>
+</div>
+{{end}}
+{{end}}

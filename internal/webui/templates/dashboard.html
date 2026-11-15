@@ -1,0 +1,827 @@
+{{define "content"}}
+<div class="page-header ops-header">
+  <div>
+    <h1>{{.Property.Name}} — Operations Centre</h1>
+    <p class="subtitle">
+      {{if .Ops.IsToday}}<span class="badge badge-ok">Today</span>{{else}}<span class="badge badge-info">Viewing {{.DateStr}}</span>{{end}}
+      Operational Date <strong>{{.DateStr}}</strong> · Local Time <strong>{{.Ops.LocalTimeLabel}}</strong> ·
+      Check-in from <strong>{{.Property.CheckInTime}}</strong> · Check-out by <strong>{{.Property.CheckOutTime}}</strong>
+    </p>
+  </div>
+  <div class="ops-toolbar">
+    <div class="inline-row">
+      <a class="btn btn-secondary btn-sm" href="/?date={{.PrevDateStr}}&focus={{.Ops.Focus}}">&larr; Prev Day</a>
+      {{if not .Ops.IsToday}}
+      <a class="btn btn-secondary btn-sm" href="/?date={{.TodayDateStr}}&focus={{.Ops.Focus}}">Today</a>
+      {{end}}
+      <a class="btn btn-secondary btn-sm" href="/?date={{.NextDateStr}}&focus={{.Ops.Focus}}">Next Day &rarr;</a>
+    </div>
+    <form method="get" action="/" class="inline-row ops-date-form">
+      <input type="hidden" name="focus" value="{{.Ops.Focus}}">
+      <input type="date" name="date" value="{{.DateStr}}" class="input-auto" aria-label="Operational date">
+      <button type="submit" class="btn btn-secondary btn-sm">Go</button>
+    </form>
+    {{if .CanWriteReservations}}
+    <a class="btn btn-primary btn-sm" href="/reservations/new?arrival_date={{.DateStr}}">+ New Reservation</a>
+    {{end}}
+    {{if .CanReportMaintenance}}
+    <a class="btn btn-secondary btn-sm" href="/maintenance/new">+ Report Maintenance</a>
+    {{end}}
+    <a class="btn btn-secondary btn-sm" href="/calendar?view=day&start_date={{.DateStr}}">Day Calendar</a>
+  </div>
+</div>
+
+<div class="ops-focus-bar mb-3">
+  <span class="ops-focus-label">View Focus:</span>
+  <a href="/?date={{.DateStr}}&focus=all" class="ops-tab {{if eq .Ops.Focus "all"}}active{{end}}">All Operations</a>
+  <a href="/?date={{.DateStr}}&focus=front_desk" class="ops-tab {{if eq .Ops.Focus "front_desk"}}active{{end}}">Front Desk (Arrivals &amp; Departures)</a>
+  <a href="/?date={{.DateStr}}&focus=housekeeping" class="ops-tab {{if eq .Ops.Focus "housekeeping"}}active{{end}}">Daily Changeover Board</a>
+  <a href="/?date={{.DateStr}}&focus=attention" class="ops-tab {{if eq .Ops.Focus "attention"}}active{{end}}">Attention &amp; Alerts ({{.Ops.Summary.AttentionCount}})</a>
+</div>
+
+<div class="grid grid-4 mb-3">
+  <div class="card ops-kpi">
+    <div class="kpi-label">Occupied / Capacity</div>
+    <div class="kpi-value">{{.Ops.Occupancy.OccupiedUnits}} <span class="kpi-sub">/ {{.Ops.Occupancy.TotalUnits}} units</span></div>
+    <div class="ops-kpi-meta">
+      <span><strong>{{.Ops.Occupancy.AvailableUnits}}</strong> free</span> ·
+      <span><strong>{{.Ops.Occupancy.BlockedUnits}}</strong> blocked</span> ·
+      <span><strong>{{.Ops.Summary.InHouseStays}}</strong> stays in house</span>
+    </div>
+  </div>
+  <div class="card ops-kpi">
+    <div class="kpi-label">Arrivals &amp; Departures</div>
+    <div class="kpi-value">{{.Ops.Summary.ArrivalsTotal}} <span class="kpi-sub">confirmed in</span> · {{.Ops.Summary.DeparturesTotal}} <span class="kpi-sub">out</span></div>
+    <div class="ops-kpi-meta">
+      <span><strong>{{.Ops.Summary.ArrivalsPendingCheckIn}}</strong> awaiting check-in</span> ·
+      <span><strong>{{.Ops.Summary.DeparturesPendingOut}}</strong> still on site</span> ·
+      <span><strong>{{.Ops.Summary.PendingArrivalsCount}}</strong> pending</span> ·
+      <span><strong>{{.Ops.Summary.InquiriesCount}}</strong> inquiries</span>
+    </div>
+  </div>
+  <div class="card ops-kpi">
+    <div class="kpi-label">Daily Changeover</div>
+    <div class="kpi-value">{{.Ops.Summary.TasksOpenCount}} <span class="kpi-sub">open tasks</span></div>
+    <div class="ops-kpi-meta">
+      <span><strong>{{.Ops.ChangeoverBoard.ReadyForGuestsCount}}</strong> ready</span> ·
+      <span><strong>{{.Ops.ChangeoverBoard.InspectionRequiredCount}}</strong> to inspect</span> ·
+      <span><strong>{{.Ops.Summary.TasksOverdueCount}}</strong> overdue</span>
+    </div>
+  </div>
+  <div class="card ops-kpi {{if gt .Ops.Summary.UrgentAttentionCount 0}}ops-kpi-alert{{end}}">
+    <div class="kpi-label">Needs Attention</div>
+    <div class="kpi-value">{{.Ops.Summary.AttentionCount}} <span class="kpi-sub">items</span></div>
+    <div class="ops-kpi-meta">
+      <span><strong>{{.Ops.Summary.UrgentAttentionCount}}</strong> urgent</span> ·
+      <span><strong>{{.Ops.Summary.GuestsNeedingAttention}}</strong> guest alerts</span>
+    </div>
+  </div>
+</div>
+
+{{if .Ops.GuestCRM.Visible}}
+<div class="card mb-3">
+  <div class="ops-section-head">
+    <div>
+      <h2>Guest Relations &amp; Communications</h2>
+      <p class="subtitle">
+        <strong>{{.Ops.GuestCRM.NewEnquiriesCount}}</strong> new enquiries ·
+        <strong>{{.Ops.GuestCRM.UnassignedEnquiriesCount}}</strong> unassigned ·
+        <strong>{{.Ops.GuestCRM.OverdueFollowUpsCount}}</strong> follow-ups due ·
+        <strong>{{.Ops.GuestCRM.UnresolvedComplaints}}</strong> open complaints ·
+        <strong>{{.Ops.GuestCRM.UpcomingArrivalRequests}}</strong> upcoming arrival preferences ·
+        <strong>{{.Ops.GuestCRM.FailedEmailsCount}}</strong> failed emails ·
+        <strong>{{.Ops.GuestCRM.ScheduledAutoEmailsCount}}</strong> scheduled emails (48h)
+      </p>
+    </div>
+    <div class="inline-row">
+      <a href="/guests" class="btn btn-secondary btn-sm">Guest Directory</a>
+      <a href="/enquiries" class="btn btn-secondary btn-sm">Enquiries</a>
+      <a href="/communications/settings" class="btn btn-secondary btn-sm">Templates &amp; Queue</a>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{if or (eq .Ops.Focus "all") (eq .Ops.Focus "attention")}}
+<section class="card ops-attention-card" id="attention-queue">
+  <div class="ops-section-head">
+    <div>
+      <h2>What Needs Attention</h2>
+      <p class="subtitle">Cancellation requests, payment issues, overdue arrivals/departures, maintenance blocks, and unready arrival units.</p>
+    </div>
+    <span class="badge {{if gt .Ops.Summary.AttentionCount 0}}badge-warn{{else}}badge-ok{{end}}">
+      {{if gt .Ops.Summary.AttentionCount 0}}{{.Ops.Summary.AttentionCount}} open{{else}}All clear{{end}}
+    </span>
+  </div>
+  {{if .Ops.AttentionItems}}
+  <div class="ops-alert-list">
+    {{range .Ops.AttentionItems}}
+    <div class="ops-alert-row">
+      <div class="ops-alert-main">
+        <div class="inline-row">
+          <span class="badge {{attentionSeverityClass .Severity}}">{{.Severity}}</span>
+          <span class="badge badge-muted">{{.Category}}</span>
+          <strong>{{.Title}}</strong>
+        </div>
+        <div class="subtitle-tight">{{.Detail}}</div>
+      </div>
+      <div class="ops-alert-actions">
+        {{if gt .AmountPence 0}}
+        <span class="mono ops-amount-pill">{{formatMoney .AmountPence .Currency}}</span>
+        {{end}}
+        <a class="btn btn-secondary btn-sm" href="{{.ActionURL}}">{{.ActionLabel}}</a>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="subtitle">All clear — no unresolved operational alerts or payment exceptions for {{.DateStr}}.</p>
+  {{end}}
+</section>
+{{end}}
+
+{{if or (eq .Ops.Focus "all") (eq .Ops.Focus "front_desk")}}
+<div class="grid grid-2">
+  <section class="card" id="arrivals-panel">
+    <div class="ops-section-head">
+      <div>
+        <h2>Confirmed Arrivals ({{.Ops.Summary.ArrivalsTotal}})</h2>
+        <p class="subtitle">Accepted arrivals from {{.Property.CheckInTime}} · {{.Ops.Summary.ArrivalsPendingCheckIn}} waiting check-in · {{.Ops.Summary.ArrivalsCheckedIn}} checked in</p>
+      </div>
+      {{if .CanWriteReservations}}
+      <a class="btn btn-secondary btn-sm" href="/reservations?status=CONFIRMED">All Stays</a>
+      {{end}}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Guest &amp; Ref</th><th>Unit / Readiness</th><th>Stay &amp; Balance</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.Arrivals}}
+          <tr>
+            <td>
+              <a href="/reservations/{{.ReservationID}}"><strong>{{.GuestName}}</strong></a>
+              <div class="mono">{{.Reference}} · {{.ChannelCode}} · {{.Adults}}A{{if gt .Children 0}} {{.Children}}C{{end}}</div>
+              {{if .SpecialRequests}}<div class="ops-note-chip">Request: {{.SpecialRequests}}</div>{{end}}
+              {{if .InternalNotes}}<div class="ops-note-chip">Note: {{.InternalNotes}}</div>{{end}}
+            </td>
+            <td>
+              {{range .UnitLabels}}<div>{{.}}</div>{{end}}
+              <div class="mt-1">
+                {{if .HasUnreadyUnit}}<span class="badge badge-warn">Unit Not Ready</span>{{else}}<span class="badge badge-ok">Unit Ready</span>{{end}}
+                {{if .HasBlockedUnit}}<span class="badge badge-err">Maintenance Block</span>{{end}}
+              </div>
+              {{if .UnitReadinessSummary}}<div class="mono">{{.UnitReadinessSummary}}</div>{{end}}
+            </td>
+            <td>
+              <span class="badge {{statusClass (printf "%s" .Status)}}">{{.Status}}</span>
+              <div class="mono">{{.Nights}}n &rarr; {{formatDate .DepartureDate}}</div>
+              {{if gt .BalanceDuePence 0}}
+              <div class="badge badge-warn mt-1">Due {{formatMoney .BalanceDuePence .Currency}}</div>
+              {{else if eq .PaymentStatus "FAILED"}}
+              <div class="badge badge-err mt-1">Payment FAILED</div>
+              {{end}}
+            </td>
+            <td>
+              {{if and $.CanWriteReservations (eq .Status "CONFIRMED")}}
+              <form method="post" action="/reservations/{{.ReservationID}}/transition" class="inline">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="status" value="CHECKED_IN">
+                <input type="hidden" name="version" value="{{.Version}}">
+                <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+                <button type="submit" class="btn btn-primary btn-sm">Check In</button>
+              </form>
+              {{else}}
+              <a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Open</a>
+              {{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No arrivals scheduled for {{.DateStr}}.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="departures-panel">
+    <div class="ops-section-head">
+      <div>
+        <h2>Departures ({{.Ops.Summary.DeparturesTotal}})</h2>
+        <p class="subtitle">Check-out by {{.Property.CheckOutTime}} · {{.Ops.Summary.DeparturesPendingOut}} still on site · {{.Ops.Summary.DeparturesCheckedOut}} checked out</p>
+      </div>
+      <a class="btn btn-secondary btn-sm" href="#changeover-board">Changeover Board</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Guest &amp; Ref</th><th>Unit(s)</th><th>Status &amp; Balance</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.Departures}}
+          <tr>
+            <td>
+              <a href="/reservations/{{.ReservationID}}"><strong>{{.GuestName}}</strong></a>
+              <div class="mono">{{.Reference}} · {{.ChannelCode}}</div>
+              {{if .IsBackToBack}}<div class="badge badge-err mt-1">Same-Day Turnaround</div>{{end}}
+              {{if .AttentionReason}}<div class="ops-note-chip">{{.AttentionReason}}</div>{{end}}
+            </td>
+            <td>
+              {{range .UnitLabels}}<div>{{.}}</div>{{end}}
+              {{if .UnitReadinessSummary}}<div class="mono">{{.UnitReadinessSummary}}</div>{{end}}
+            </td>
+            <td>
+              <span class="badge {{statusClass (printf "%s" .Status)}}">{{.Status}}</span>
+              {{if gt .BalanceDuePence 0}}
+              <div class="badge badge-warn mt-1">Due {{formatMoney .BalanceDuePence .Currency}}</div>
+              {{end}}
+            </td>
+            <td>
+              {{if and $.CanWriteReservations (eq .Status "CHECKED_IN")}}
+              <form method="post" action="/reservations/{{.ReservationID}}/transition" class="inline">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="status" value="CHECKED_OUT">
+                <input type="hidden" name="version" value="{{.Version}}">
+                <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+                <button type="submit" class="btn btn-primary btn-sm">Check Out</button>
+              </form>
+              {{else}}
+              <a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Open</a>
+              {{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No departures scheduled for {{.DateStr}}.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="grid grid-2">
+  <section class="card" id="in-house-panel">
+    <h2>Currently In-House ({{.Ops.Summary.InHouseStays}})</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Guest &amp; Ref</th><th>Unit(s)</th><th>Departure</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.InHouse}}
+          <tr>
+            <td>
+              <a href="/reservations/{{.ReservationID}}"><strong>{{.GuestName}}</strong></a>
+              <div class="mono">{{.Reference}} · {{.Adults}}A{{if gt .Children 0}} {{.Children}}C{{end}}{{if gt .Infants 0}} {{.Infants}}I{{end}}</div>
+            </td>
+            <td>{{range .UnitLabels}}<div>{{.}}</div>{{end}}</td>
+            <td class="mono">{{formatDate .DepartureDate}} ({{.Nights}}n)</td>
+            <td><a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Open</a></td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No guests occupying units on {{.DateStr}}.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="attention-guests-panel">
+    <h2>Guests Requiring Attention ({{.Ops.Summary.GuestsNeedingAttention}})</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Guest &amp; Stay</th><th>Reason</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.AttentionGuests}}
+          <tr>
+            <td>
+              <a href="/reservations/{{.ReservationID}}"><strong>{{.GuestName}}</strong></a>
+              <div class="mono">{{.Reference}} · {{formatDate .ArrivalDate}} &rarr; {{formatDate .DepartureDate}}</div>
+            </td>
+            <td>
+              <div>{{.AttentionReason}}</div>
+              {{if .SpecialRequests}}<div class="ops-note-chip">Special request: {{.SpecialRequests}}</div>{{end}}
+              {{if .CancellationRequestNote}}<div class="ops-note-chip">Cancel note: {{.CancellationRequestNote}}</div>{{end}}
+            </td>
+            <td><a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Manage</a></td>
+          </tr>
+          {{else}}
+          <tr><td colspan="3">No guests flagged for special follow-up on {{.DateStr}}.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{{end}}
+
+{{if or (eq .Ops.Focus "all") (eq .Ops.Focus "front_desk") (eq .Ops.Focus "attention")}}
+<div class="grid grid-2" id="unconfirmed-follow-ups">
+  <section class="card" id="pending-arrivals-panel">
+    <div class="ops-section-head">
+      <div>
+        <h2>Pending / Provisional Arrivals ({{.Ops.Summary.PendingArrivalsCount}})</h2>
+        <p class="subtitle">Provisional holds arriving {{.DateStr}} awaiting confirmation (excluded from confirmed arrival KPI).</p>
+      </div>
+      {{if .CanWriteReservations}}
+      <a class="btn btn-secondary btn-sm" href="/reservations?status=PENDING">All Pending</a>
+      {{end}}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Guest &amp; Ref</th><th>Unit(s)</th><th>Balance</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.PendingArrivals}}
+          <tr>
+            <td>
+              <a href="/reservations/{{.ReservationID}}"><strong>{{.GuestName}}</strong></a>
+              <div class="mono">{{.Reference}} · <span class="badge badge-warn">{{.Status}}</span></div>
+            </td>
+            <td>{{range .UnitLabels}}<div>{{.}}</div>{{end}}</td>
+            <td>
+              {{if gt .BalanceDuePence 0}}<span class="badge badge-warn">Due {{formatMoney .BalanceDuePence .Currency}}</span>{{else}}<span class="mono">Settled</span>{{end}}
+            </td>
+            <td><a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Review</a></td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No pending provisional arrivals for {{.DateStr}}.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="inquiries-followup-panel">
+    <div class="ops-section-head">
+      <div>
+        <h2>Inquiries Requiring Follow-Up ({{.Ops.Summary.InquiriesCount}})</h2>
+        <p class="subtitle">Unconfirmed booking inquiries around {{.DateStr}} (+14d); inventory is not held until confirmed.</p>
+      </div>
+      {{if .CanWriteReservations}}
+      <a class="btn btn-secondary btn-sm" href="/reservations?status=INQUIRY">All Inquiries</a>
+      {{end}}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Guest &amp; Ref</th><th>Requested Dates</th><th>Unit(s)</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.Inquiries}}
+          <tr>
+            <td>
+              <a href="/reservations/{{.ReservationID}}"><strong>{{.GuestName}}</strong></a>
+              <div class="mono">{{.Reference}} · <span class="badge badge-warn">{{.Status}}</span></div>
+            </td>
+            <td class="mono">{{formatDate .ArrivalDate}} &rarr; {{formatDate .DepartureDate}} ({{.Nights}}n)</td>
+            <td>{{range .UnitLabels}}<div>{{.}}</div>{{else}}<span class="mono">Unassigned</span>{{end}}</td>
+            <td><a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Follow Up</a></td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No open inquiries requiring follow-up around {{.DateStr}}.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{{end}}
+
+{{if or (eq .Ops.Focus "all") (eq .Ops.Focus "housekeeping")}}
+<section class="card" id="changeover-board">
+  <div class="ops-section-head">
+    <div>
+      <h2>Daily Changeover Board</h2>
+      <p class="subtitle">
+        5-stage operational workflow: Guest departing &rarr; Cleaning required &rarr; Cleaning in progress &rarr; Inspection required &rarr; Ready for guests.
+        Reservation checkouts automatically queue cleaning tasks; maintenance blocks remain independent.
+      </p>
+    </div>
+    <div class="inline-row">
+      {{if gt .Ops.ChangeoverBoard.OverdueCount 0}}
+      <span class="badge badge-err">{{.Ops.ChangeoverBoard.OverdueCount}} Overdue</span>
+      {{end}}
+      <span class="badge badge-muted">{{.Ops.Occupancy.ReadyUnits}} / {{.Ops.Occupancy.TotalUnits}} Ready</span>
+    </div>
+  </div>
+
+  <div class="changeover-board">
+    <div class="changeover-col">
+      <div class="changeover-col-head">
+        <span>1. Guest departing</span>
+        <span class="badge badge-info">{{.Ops.ChangeoverBoard.GuestDepartingCount}}</span>
+      </div>
+      {{range .Ops.ChangeoverBoard.GuestDeparting}}
+      <div class="task-card">
+        <div class="task-card-top">
+          <strong>{{.UnitCode}} · {{.UnitName}}</strong>
+          {{if .LateDeparture}}<span class="badge badge-err">Late out</span>{{else}}<span class="badge badge-info">{{.ExpectedCheckOutTime}}</span>{{end}}
+        </div>
+        <div class="mono">{{.UnitTypeName}}</div>
+        <div class="mt-1">Guest: <a href="/reservations/{{.ReservationID}}">{{.GuestName}}</a> ({{.ReservationReference}})</div>
+        {{if .SameDayArrival}}
+        <div class="badge badge-err mt-1">Same-Day Arrival: {{.NextArrivalGuest}}</div>
+        {{end}}
+        {{if gt .BalanceDuePence 0}}
+        <div class="badge badge-warn mt-1">Balance {{formatMoney .BalanceDuePence .Currency}}</div>
+        {{end}}
+        {{if $.CanWriteReservations}}
+        <div class="btn-row">
+          <form method="post" action="/reservations/{{.ReservationID}}/transition" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="status" value="CHECKED_OUT">
+            <input type="hidden" name="version" value="{{.ReservationVersion}}">
+            <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+            <button type="submit" class="btn btn-primary btn-sm">Check Out &rarr; Clean</button>
+          </form>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="task-empty">No guests awaiting checkout.</div>
+      {{end}}
+    </div>
+
+    <div class="changeover-col">
+      <div class="changeover-col-head">
+        <span>2. Cleaning required</span>
+        <span class="badge badge-warn">{{.Ops.ChangeoverBoard.CleaningRequiredCount}}</span>
+      </div>
+      {{range .Ops.ChangeoverBoard.CleaningRequired}}
+      <div class="task-card">
+        <div class="task-card-top">
+          <strong>{{.UnitCode}} · {{.UnitName}}</strong>
+          <span class="badge {{if or (eq .Priority "URGENT") .Overdue}}badge-err{{else}}badge-warn{{end}}">{{if .Overdue}}OVERDUE{{else}}{{.Priority}}{{end}}</span>
+        </div>
+        <div class="mono">{{.UnitTypeName}} · {{.Title}}</div>
+        {{if .ReservationID}}
+        <div class="mt-1">From <a href="/reservations/{{.ReservationID}}">{{.ReservationReference}}</a> ({{.GuestName}})</div>
+        {{end}}
+        {{if .SameDayArrival}}
+        <div class="badge badge-err mt-1">Arrival Today: {{.NextArrivalGuest}}</div>
+        {{end}}
+        {{if .HasActiveBlock}}
+        <div class="badge badge-err mt-1">Blockout: {{.BlockSummary}}</div>
+        {{end}}
+        {{if .Notes}}<div class="ops-note-chip">{{.Notes}}</div>{{end}}
+        {{if $.CanWriteHousekeeping}}
+        <form method="post" action="/operations/housekeeping/tasks/{{.ID}}/assign" class="inline-row mt-1">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="version" value="{{.Version}}">
+          <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+          {{$taskAssigned := .AssignedTo}}
+          <select name="assigned_to" class="input-compact" aria-label="Assign staff">
+            <option value="">Unassigned</option>
+            {{range $.Ops.StaffMembers}}
+            <option value="{{.ID}}"{{if sameUUIDPtr .ID $taskAssigned}} selected{{end}}>{{.FullName}}</option>
+            {{end}}
+          </select>
+          <button type="submit" class="btn btn-secondary btn-sm">Assign</button>
+        </form>
+        {{if .AssigneeName}}<div class="mono mt-1">Assigned: <strong>{{.AssigneeName}}</strong></div>{{end}}
+        <div class="btn-row">
+          <form method="post" action="/operations/housekeeping/tasks/{{.ID}}/stage" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="stage" value="CLEANING_IN_PROGRESS">
+            <input type="hidden" name="version" value="{{.Version}}">
+            <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+            <button type="submit" class="btn btn-primary btn-sm">Start Cleaning</button>
+          </form>
+        </div>
+        {{else if .AssigneeName}}
+        <div class="mono mt-1">Assigned: {{.AssigneeName}}</div>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="task-empty">No units awaiting cleaning.</div>
+      {{end}}
+    </div>
+
+    <div class="changeover-col">
+      <div class="changeover-col-head">
+        <span>3. Cleaning in progress</span>
+        <span class="badge badge-info">{{.Ops.ChangeoverBoard.CleaningInProgressCount}}</span>
+      </div>
+      {{range .Ops.ChangeoverBoard.CleaningInProgress}}
+      <div class="task-card">
+        <div class="task-card-top">
+          <strong>{{.UnitCode}} · {{.UnitName}}</strong>
+          <span class="badge badge-info">Active</span>
+        </div>
+        <div class="mono">{{.UnitTypeName}}</div>
+        {{if .AssigneeName}}<div class="mt-1">Staff: <strong>{{.AssigneeName}}</strong></div>{{end}}
+        {{if .StartedAt}}<div class="mono">Started {{formatLocalTime .StartedAt}}</div>{{end}}
+        {{if .SameDayArrival}}
+        <div class="badge badge-err mt-1">Arrival Today: {{.NextArrivalGuest}}</div>
+        {{end}}
+        {{if .HasActiveBlock}}
+        <div class="badge badge-err mt-1">Blockout: {{.BlockSummary}}</div>
+        {{end}}
+        {{if $.CanWriteHousekeeping}}
+        <div class="btn-row">
+          <form method="post" action="/operations/housekeeping/tasks/{{.ID}}/stage" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="stage" value="INSPECTION_REQUIRED">
+            <input type="hidden" name="version" value="{{.Version}}">
+            <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+            <button type="submit" class="btn btn-primary btn-sm">Ready for Inspection</button>
+          </form>
+          <form method="post" action="/operations/housekeeping/tasks/{{.ID}}/stage" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="stage" value="CLEANING_REQUIRED">
+            <input type="hidden" name="version" value="{{.Version}}">
+            <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+            <button type="submit" class="btn btn-secondary btn-sm">Pause</button>
+          </form>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="task-empty">No units currently being cleaned.</div>
+      {{end}}
+    </div>
+
+    <div class="changeover-col">
+      <div class="changeover-col-head">
+        <span>4. Inspection required</span>
+        <span class="badge badge-info">{{.Ops.ChangeoverBoard.InspectionRequiredCount}}</span>
+      </div>
+      {{range .Ops.ChangeoverBoard.InspectionRequired}}
+      <div class="task-card">
+        <div class="task-card-top">
+          <strong>{{.UnitCode}} · {{.UnitName}}</strong>
+          <span class="badge badge-warn">Inspect</span>
+        </div>
+        <div class="mono">{{.UnitTypeName}}</div>
+        {{if .AssigneeName}}<div class="mt-1">Cleaned by: <strong>{{.AssigneeName}}</strong></div>{{end}}
+        {{if .SameDayArrival}}
+        <div class="badge badge-err mt-1">Arrival Today: {{.NextArrivalGuest}}</div>
+        {{end}}
+        {{if .HasActiveBlock}}
+        <div class="badge badge-err mt-1">Blockout: {{.BlockSummary}}</div>
+        {{end}}
+        {{if $.CanWriteHousekeeping}}
+        <div class="btn-row">
+          <form method="post" action="/operations/housekeeping/tasks/{{.ID}}/stage" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="stage" value="READY">
+            <input type="hidden" name="version" value="{{.Version}}">
+            <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+            <button type="submit" class="btn btn-primary btn-sm">Approve Ready</button>
+          </form>
+          <form method="post" action="/operations/housekeeping/tasks/{{.ID}}/stage" class="inline">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="stage" value="CLEANING_REQUIRED">
+            <input type="hidden" name="notes" value="Inspection failed — re-clean requested">
+            <input type="hidden" name="version" value="{{.Version}}">
+            <input type="hidden" name="return_to" value="{{$.ReturnURL}}">
+            <button type="submit" class="btn btn-danger btn-sm">Re-clean</button>
+          </form>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="task-empty">No inspections waiting.</div>
+      {{end}}
+    </div>
+
+    <div class="changeover-col">
+      <div class="changeover-col-head">
+        <span>5. Ready for guests</span>
+        <span class="badge badge-ok">{{.Ops.ChangeoverBoard.ReadyForGuestsCount}}</span>
+      </div>
+      {{range .Ops.ChangeoverBoard.ReadyForGuests}}
+      <div class="task-card">
+        <div class="task-card-top">
+          <strong>{{.UnitCode}} · {{.UnitName}}</strong>
+          <span class="badge badge-ok">Ready</span>
+        </div>
+        <div class="mono">{{.UnitTypeName}}</div>
+        {{if .InspectedByName}}
+        <div class="mono mt-1">Inspected by {{.InspectedByName}}</div>
+        {{end}}
+        {{if .SameDayArrival}}
+        <div class="badge badge-info mt-1">Arriving: {{.NextArrivalGuest}}</div>
+        {{end}}
+        {{if .HasActiveBlock}}
+        <div class="badge badge-err mt-1">Blocked independently: {{.BlockSummary}}</div>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="task-empty">No units currently marked ready.</div>
+      {{end}}
+    </div>
+  </div>
+
+  {{if .CanWriteHousekeeping}}
+  <div class="section-divider">
+    <h3 class="mt-0 mb-1">Queue Cleaning or Inspection Task</h3>
+    <form method="post" action="/operations/housekeeping/tasks" class="filter-bar">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="scheduled_date" value="{{.DateStr}}">
+      <input type="hidden" name="return_to" value="{{.ReturnURL}}">
+      <div class="field filter-field">
+        <label>Unit / Pitch</label>
+        <select name="unit_id" required>
+          {{range .Ops.Occupancy.Units}}
+          <option value="{{.UnitID}}">{{.UnitCode}} · {{.UnitName}} ({{changeoverStageLabel .HousekeepingStage}})</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label>Task Type</label>
+        <select name="task_type">
+          <option value="CHANGEOVER_CLEAN">Changeover Clean</option>
+          <option value="INSPECTION">Inspection</option>
+          <option value="MID_STAY_REFRESH">Mid-Stay Refresh</option>
+          <option value="DEEP_CLEAN">Deep Clean</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Priority</label>
+        <select name="priority">
+          <option value="NORMAL">Normal</option>
+          <option value="HIGH">High</option>
+          <option value="URGENT">Urgent</option>
+          <option value="LOW">Low</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Assign Staff</label>
+        <select name="assigned_to">
+          <option value="">Unassigned</option>
+          {{range .Ops.StaffMembers}}
+          <option value="{{.ID}}">{{.FullName}} ({{.Role}})</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field filter-field">
+        <label>Notes</label>
+        <input type="text" name="notes" placeholder="e.g. Check stove logs & linen">
+      </div>
+      <div class="field field-end">
+        <button type="submit" class="btn btn-primary">Queue Task</button>
+      </div>
+    </form>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{if .CanReadMaintenance}}
+<section class="card" id="maintenance-summary">
+  <div class="ops-section-head">
+    <div>
+      <h2>Maintenance &amp; Facilities Overview</h2>
+      <p class="subtitle">
+        Urgent, overdue, and safety jobs, repairs scheduled for {{.DateStr}}, units with active inventory closures, and completed work awaiting inspection.
+      </p>
+    </div>
+    <div class="inline-row">
+      <a class="btn btn-secondary btn-sm" href="/maintenance">All Maintenance ({{.Ops.Maintenance.OpenCount}})</a>
+      <a class="btn btn-secondary btn-sm" href="/maintenance/schedule">Schedule &amp; Workload</a>
+      {{if .CanReportMaintenance}}
+      <a class="btn btn-primary btn-sm" href="/maintenance/new">+ Report Maintenance</a>
+      {{end}}
+    </div>
+  </div>
+  <div class="quick-pills mb-2">
+    <a class="badge {{if gt .Ops.Maintenance.UrgentCount 0}}badge-err{{else}}badge-muted{{end}}" href="/maintenance?priority=URGENT&amp;status=OPEN">Urgent: {{.Ops.Maintenance.UrgentCount}}</a>
+    <a class="badge {{if gt .Ops.Maintenance.HighCount 0}}badge-warn{{else}}badge-muted{{end}}" href="/maintenance?priority=HIGH&amp;status=OPEN">High: {{.Ops.Maintenance.HighCount}}</a>
+    <a class="badge {{if gt .Ops.Maintenance.OverdueCount 0}}badge-err{{else}}badge-muted{{end}}" href="/maintenance?overdue=1">Overdue: {{.Ops.Maintenance.OverdueCount}}</a>
+    <a class="badge {{if gt .Ops.Maintenance.RestrictingUnitsCount 0}}badge-err{{else}}badge-muted{{end}}" href="/maintenance?restricted=1">Units Restricted: {{.Ops.Maintenance.RestrictingUnitsCount}}</a>
+    <a class="badge {{if gt .Ops.Maintenance.ScheduledTodayCount 0}}badge-info{{else}}badge-muted{{end}}" href="/maintenance?date_from={{.DateStr}}&amp;date_to={{.DateStr}}">Scheduled {{.DateStr}}: {{.Ops.Maintenance.ScheduledTodayCount}}</a>
+    <a class="badge {{if gt .Ops.Maintenance.AwaitingInspectionCount 0}}badge-warn{{else}}badge-muted{{end}}" href="/maintenance?status=AWAITING_INSPECTION">Awaiting Inspection: {{.Ops.Maintenance.AwaitingInspectionCount}}</a>
+    <a class="badge badge-ok" href="/maintenance?status=CLOSED">Recently Completed: {{.Ops.Maintenance.RecentlyCompletedCount}}</a>
+  </div>
+  {{if or .Ops.Maintenance.PriorityJobs .Ops.Maintenance.ScheduledToday .Ops.Maintenance.AwaitingInspection}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Ref &amp; Job</th><th>Location / Unit</th><th>Priority &amp; Status</th><th>Assigned</th><th>Target / Impact</th></tr>
+      </thead>
+      <tbody>
+        {{range .Ops.Maintenance.PriorityJobs}}
+        <tr>
+          <td>
+            <a href="/maintenance/{{.ID}}"><strong>{{.Reference}} · {{.Title}}</strong></a>
+            <div class="mono">{{.CategoryName}}</div>
+          </td>
+          <td>{{.LocationLabel}}</td>
+          <td>
+            <span class="badge {{maintPriorityClass .Priority}}">{{.Priority}}</span>
+            <span class="badge {{maintStatusClass .Status}}">{{.Status.Label}}</span>
+          </td>
+          <td>{{.AssigneeLabel}}</td>
+          <td>
+            {{if .Overdue}}<span class="badge badge-err">Overdue {{formatDatePtr .TargetDate}}</span>{{else}}<span class="mono">{{formatDatePtr .TargetDate}}</span>{{end}}
+            {{if .HasActiveRestriction}}<span class="badge badge-err">Unit Blocked</span>{{end}}
+            {{if .SafetyImpact}}<span class="badge badge-err">Safety</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+        {{range .Ops.Maintenance.AwaitingInspection}}
+        <tr>
+          <td>
+            <a href="/maintenance/{{.ID}}"><strong>{{.Reference}} · {{.Title}}</strong></a>
+            <div class="mono">{{.CategoryName}}</div>
+          </td>
+          <td>{{.LocationLabel}}</td>
+          <td>
+            <span class="badge badge-warn">Awaiting Inspection</span>
+          </td>
+          <td>{{.AssigneeLabel}}</td>
+          <td><a class="btn btn-secondary btn-sm" href="/maintenance/{{.ID}}#inspection">Inspect Repair</a></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="subtitle">No urgent, overdue, or inspection-pending maintenance jobs.</p>
+  {{end}}
+</section>
+{{end}}
+
+{{if ne .Ops.Focus "attention"}}
+<div class="grid grid-2" id="occupancy-overview">
+  <section class="card">
+    <div class="ops-section-head">
+      <div>
+        <h2>Daily Occupancy by Unit Type</h2>
+        <p class="subtitle">Live pitch/unit inventory availability vs housekeeping readiness for {{.DateStr}}.</p>
+      </div>
+      <a class="btn btn-secondary btn-sm" href="/calendar?view=day&start_date={{.DateStr}}">Open Calendar</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Accommodation Type</th><th class="num">Total</th><th class="num">Occupied</th><th class="num">Blocked</th><th class="num">Clean/Insp</th><th class="num">Free</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.Occupancy.ByUnitType}}
+          <tr>
+            <td><strong>{{.UnitTypeName}}</strong><br><span class="badge badge-muted">{{.Category}}</span></td>
+            <td class="num">{{.TotalUnits}}</td>
+            <td class="num">{{.OccupiedUnits}}</td>
+            <td class="num">{{.BlockedUnits}}</td>
+            <td class="num">{{.NeedingCleaning}}</td>
+            <td class="num"><strong>{{.AvailableUnits}}</strong></td>
+          </tr>
+          {{else}}
+          <tr><td colspan="6">No active unit types configured.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="ops-section-head">
+      <div>
+        <h2>Site Unit Status Snapshot</h2>
+        <p class="subtitle">Occupancy, housekeeping readiness, and independent maintenance restrictions per unit.</p>
+      </div>
+      <a class="btn btn-secondary btn-sm" href="/blocks">Manage Blockouts</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Unit</th><th>Occupancy</th><th>Housekeeping</th><th>Restrictions</th></tr>
+        </thead>
+        <tbody>
+          {{range .Ops.Occupancy.Units}}
+          <tr>
+            <td><strong>{{.UnitCode}}</strong> {{.UnitName}}<div class="mono">{{.UnitTypeName}}{{if .Zone}} · {{.Zone}}{{end}}</div></td>
+            <td>
+              <span class="badge {{occupancyStateClass .OccupancyState}}">{{.OccupancyState}}</span>
+              {{if .StayReservationID}}<div class="mono mt-1"><a href="/reservations/{{.StayReservationID}}">{{.StayReference}} · {{.StayGuestName}}</a></div>{{end}}
+            </td>
+            <td><span class="badge {{changeoverStageClass .HousekeepingStage}}">{{changeoverStageLabel .HousekeepingStage}}</span></td>
+            <td>
+              {{if .HasMaintenanceBlock}}
+              <span class="badge badge-err">{{.BlockCategory}}</span>
+              <div class="mono">{{.BlockReason}}</div>
+              {{else}}
+              <span class="mono">Clear</span>
+              {{end}}
+              {{if $.CanReportMaintenance}}
+              <div class="mt-1"><a href="/maintenance/new?unit_id={{.UnitID}}" class="mono">Report issue</a></div>
+              {{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No physical units available.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,41 @@
+{
+  "phase": "1.6.1",
+  "product": "LOVELACE Booking System",
+  "default_property": "Tir Bach Campsite",
+  "status": "complete",
+  "phase1_6_1_remediation": {
+    "bootstrap_secret_leakage_fixed": true,
+    "psql_getenv_gset_used": true,
+    "preserved_released_inventory_on_date_edit": true,
+    "explicit_reinstate_endpoint": "POST /api/v1/properties/{propertyID}/blockouts/{id}/reinstate",
+    "upgrade_and_backup_docs_updated": true
+  },
+  "privilege_separation": {
+    "bootstrap_role_isolated_from_app": true,
+    "migrator_role": "lovelace_migrator",
+    "app_role": "lovelace_app",
+    "app_is_superuser": false,
+    "app_can_create_db": false,
+    "app_can_create_role": false,
+    "app_can_create_public_schema": false,
+    "production_fail_closed_on_privileged_role": true
+  },
+  "migrations": [
+    "0001_init.sql",
+    "0002_phase1_1.sql",
+    "0003_phase1_5.sql",
+    "0004_phase1_6.sql"
+  ],
+  "brand_assets": {
+    "original_2048x2048_path": "assets/brand/lovelace-logo-original-2048x2048.jpg",
+    "original_sha256": "48efb3881fe19e2753349e6bba1a19fda78a44fa318b6781d027aa5230e7f154"
+  },
+  "provider_updates": {
+    "smoobu": {
+      "auth_method": "hmac_sha256",
+      "required_fields": ["api_key", "api_secret"],
+      "manual_user_id_removed": true,
+      "account_discovery_phase4": "GET /api/me"
+    }
+  }
+}

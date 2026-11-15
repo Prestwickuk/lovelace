@@ -1,0 +1,135 @@
+# Production-hardened Docker Compose stack for LOVELACE Booking System (standalone).
+# Do NOT combine with docker-compose.dev.yml (`-f docker-compose.yml -f docker-compose.dev.yml` is unsupported).
+# Fails closed unless required secrets (bootstrap, migrator, app passwords, TIRBACH_ENCRYPTION_KEY) are set.
+#
+# Fresh install vs Phase 1.5 volume upgrade:
+#   - Fresh volume: POSTGRES_BOOTSTRAP_USER defaults to `postgres`.
+#   - Pre-existing Phase 1.5 volume (initialized with POSTGRES_USER=tir_bach):
+#       Set POSTGRES_BOOTSTRAP_USER=tir_bach and match POSTGRES_BOOTSTRAP_PASSWORD to the existing DB role password
+#       before upgrading (PostgreSQL ignores init env vars on existing data volumes). Never delete/recreate volumes.
+#
+# Database identity separation:
+#   1. postgres / db-bootstrap -> bootstrap superuser (installs btree_gist, creates non-superuser roles via \getenv/\gset)
+#   2. migrate                 -> non-superuser lovelace_migrator (DDL / schema owner)
+#   3. app                     -> non-superuser lovelace_app (strictly DML-only; never receives bootstrap or migrator secrets)
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: tir-bach-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tir_bach}
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD must be set}
+      LOVELACE_MIGRATOR_USER: ${LOVELACE_MIGRATOR_USER:-lovelace_migrator}
+      LOVELACE_MIGRATOR_PASSWORD: ${LOVELACE_MIGRATOR_PASSWORD:?LOVELACE_MIGRATOR_PASSWORD must be set}
+      LOVELACE_APP_USER: ${LOVELACE_APP_USER:-lovelace_app}
+      LOVELACE_APP_PASSWORD: ${LOVELACE_APP_PASSWORD:?LOVELACE_APP_PASSWORD must be set}
+    volumes:
+      - tir_bach_pgdata:/var/lib/postgresql/data
+      - ./scripts/postgres/ensure-roles.sh:/usr/local/share/lovelace/ensure-roles.sh:ro
+      - ./scripts/postgres/01-init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_BOOTSTRAP_USER:-postgres} -d ${POSTGRES_DB:-tir_bach}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  db-bootstrap:
+    image: postgres:17-alpine
+    container_name: tir-bach-db-bootstrap
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGPASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-tir_bach}
+      POSTGRES_BOOTSTRAP_USER: ${POSTGRES_BOOTSTRAP_USER:-postgres}
+      LOVELACE_MIGRATOR_USER: ${LOVELACE_MIGRATOR_USER:-lovelace_migrator}
+      LOVELACE_MIGRATOR_PASSWORD: ${LOVELACE_MIGRATOR_PASSWORD:?LOVELACE_MIGRATOR_PASSWORD must be set}
+      LOVELACE_APP_USER: ${LOVELACE_APP_USER:-lovelace_app}
+      LOVELACE_APP_PASSWORD: ${LOVELACE_APP_PASSWORD:?LOVELACE_APP_PASSWORD must be set}
+    volumes:
+      - ./scripts/postgres/ensure-roles.sh:/usr/local/share/lovelace/ensure-roles.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/share/lovelace/ensure-roles.sh"]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lovelace:phase2
+    container_name: tir-bach-migrate
+    restart: "no"
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      MIGRATION_DATABASE_URL: postgres://${LOVELACE_MIGRATOR_USER:-lovelace_migrator}:${LOVELACE_MIGRATOR_PASSWORD:?LOVELACE_MIGRATOR_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-tir_bach}?sslmode=disable
+    entrypoint: ["/usr/local/bin/tirbach-migrate"]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lovelace:phase2
+    container_name: tir-bach-app
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      TIRBACH_ENV: ${TIRBACH_ENV:-production}
+      TIRBACH_LISTEN_ADDR: 0.0.0.0:8080
+      TIRBACH_COOKIE_SECURE: ${TIRBACH_COOKIE_SECURE:-true}
+      TIRBACH_TRUST_PROXY: ${TIRBACH_TRUST_PROXY:-true}
+      TIRBACH_TRUSTED_PROXIES: ${TIRBACH_TRUSTED_PROXIES:-127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8}
+      DATABASE_URL: postgres://${LOVELACE_APP_USER:-lovelace_app}:${LOVELACE_APP_PASSWORD:?LOVELACE_APP_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-tir_bach}?sslmode=disable
+      TIRBACH_ENCRYPTION_KEY: ${TIRBACH_ENCRYPTION_KEY:?TIRBACH_ENCRYPTION_KEY (64-hex / 32-byte key) must be set}
+      TIRBACH_AUTO_SEED: "false"
+      TIRBACH_PUBLIC_ORIGIN: ${TIRBACH_PUBLIC_ORIGIN:?TIRBACH_PUBLIC_ORIGIN must be explicitly set (e.g. https://book.tirbach.wales)}
+      TIRBACH_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:?TIRBACH_PUBLIC_API_SECRET must be set to isolate public API calls to BFF}
+      TIRBACH_STRIPE_SECRET_KEY: ${TIRBACH_STRIPE_SECRET_KEY:-}
+      TIRBACH_STRIPE_WEBHOOK_SECRET: ${TIRBACH_STRIPE_WEBHOOK_SECRET:-}
+      TIRBACH_STRIPE_SUCCESS_URL: ${TIRBACH_STRIPE_SUCCESS_URL:-}
+      TIRBACH_STRIPE_CANCEL_URL: ${TIRBACH_STRIPE_CANCEL_URL:-}
+      TIRBACH_STRIPE_SANDBOX: "false"
+      TIRBACH_REQUIRE_EMAIL: ${TIRBACH_REQUIRE_EMAIL:-true}
+      TIRBACH_EMAIL_FROM: ${TIRBACH_EMAIL_FROM:-bookings@tirbach.wales}
+      TIRBACH_SMTP_ADDR: ${TIRBACH_SMTP_ADDR:-}
+      TIRBACH_SMTP_USERNAME: ${TIRBACH_SMTP_USERNAME:-}
+      TIRBACH_SMTP_PASSWORD: ${TIRBACH_SMTP_PASSWORD:-}
+      TIRBACH_ATTACHMENT_DIR: ${TIRBACH_ATTACHMENT_DIR:-/var/lib/lovelace/attachments}
+      TIRBACH_MAX_ATTACHMENT_BYTES: ${TIRBACH_MAX_ATTACHMENT_BYTES:-10485760}
+    volumes:
+      - tir_bach_attachments:/var/lib/lovelace/attachments
+    ports:
+      - "${TIRBACH_BIND_ADDR:-127.0.0.1}:${TIRBACH_PORT:-8080}:8080"
+
+  # Completely separate public booking frontend (never receives DATABASE_URL or admin secrets).
+  public-web:
+    build:
+      context: ./apps/public-web
+      dockerfile: Dockerfile
+    image: lovelace-public-web:phase2
+    container_name: tir-bach-public-web
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      LOVELACE_API_BASE_URL: http://app:8080
+      LOVELACE_PROPERTY_SLUG: ${LOVELACE_PROPERTY_SLUG:-tir-bach}
+      LOVELACE_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:?TIRBACH_PUBLIC_API_SECRET must be set}
+      LOVELACE_TRUST_PROXY: ${LOVELACE_TRUST_PROXY:-true}
+      LOVELACE_TRUSTED_PROXIES: ${LOVELACE_TRUSTED_PROXIES:-127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8}
+      LOVELACE_STRIPE_SANDBOX: "false"
+      NEXT_PUBLIC_SITE_URL: ${TIRBACH_PUBLIC_ORIGIN:?TIRBACH_PUBLIC_ORIGIN must be explicitly set (e.g. https://book.tirbach.wales)}
+    ports:
+      - "${PUBLIC_WEB_BIND_ADDR:-127.0.0.1}:${PUBLIC_WEB_PORT:-3000}:3000"
+
+volumes:
+  tir_bach_pgdata:
+  tir_bach_attachments:

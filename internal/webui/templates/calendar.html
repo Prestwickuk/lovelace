@@ -1,0 +1,181 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Booking &amp; Availability Calendar</h1>
+    <p class="subtitle">
+      {{.Property.Name}} ({{.Property.Timezone}}) · Window {{formatDate .Calendar.StartDate}} → {{formatDate .Calendar.EndDate}}
+    </p>
+  </div>
+  <div class="days-row">
+    {{if .CanWriteReservations}}
+    <a href="/reservations/new" class="btn btn-primary">+ New Reservation</a>
+    {{end}}
+    {{if .CanWriteBlocks}}
+    <a href="/blocks" class="btn btn-secondary">Bulk Blockouts</a>
+    {{end}}
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/calendar" class="form-grid">
+    <div class="field">
+      <label for="view">View</label>
+      <select id="view" name="view">
+        <option value="month" {{if eq .Calendar.View "month"}}selected{{end}}>Month</option>
+        <option value="week" {{if eq .Calendar.View "week"}}selected{{end}}>Week (7 days)</option>
+        <option value="day" {{if eq .Calendar.View "day"}}selected{{end}}>Day</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="start_date">Start Date</label>
+      <input id="start_date" name="start_date" type="date" value="{{formatDate .Calendar.StartDate}}">
+    </div>
+    <div class="field">
+      <label for="unit_type_id">Accommodation Type</label>
+      <select id="unit_type_id" name="unit_type_id">
+        <option value="">All Unit Types</option>
+        {{range .Calendar.UnitTypes}}
+        <option value="{{.ID}}" {{if eq (printf "%v" .ID) $.FilterUnitTypeID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="channel_code">Channel Scope</label>
+      <select id="channel_code" name="channel_code">
+        <option value="">ALL (Default)</option>
+        {{range .Calendar.Channels}}
+        <option value="{{.Code}}" {{if eq .Code $.FilterChannelCode}}selected{{end}}>{{.Code}} — {{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="status">Highlight Status</label>
+      <select id="status" name="status">
+        <option value="">All States</option>
+        <option value="AVAILABLE" {{if eq $.FilterStatus "AVAILABLE"}}selected{{end}}>Available</option>
+        <option value="BOOKED" {{if eq $.FilterStatus "BOOKED"}}selected{{end}}>Booked</option>
+        <option value="PENDING" {{if eq $.FilterStatus "PENDING"}}selected{{end}}>Pending</option>
+        <option value="ALLOCATED" {{if eq $.FilterStatus "ALLOCATED"}}selected{{end}}>Channel Allocation</option>
+        <option value="BLOCKED" {{if eq $.FilterStatus "BLOCKED"}}selected{{end}}>Blocked / Restricted</option>
+        <option value="UNRELEASED" {{if eq $.FilterStatus "UNRELEASED"}}selected{{end}}>Unreleased Hold</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <div class="days-row">
+        <button type="submit" class="btn btn-primary">Apply Filters</button>
+        <a href="/calendar?view={{.Calendar.View}}&start_date={{.PrevStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">← Prev</a>
+        <a href="/calendar?view={{.Calendar.View}}&start_date={{.NextStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">Next →</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="grid grid-4 mb-3">
+  <div class="card">
+    <div class="kpi-label">Available Unit-Nights</div>
+    <div class="kpi-value">{{.Calendar.Summary.AvailableNights}}</div>
+  </div>
+  <div class="card">
+    <div class="kpi-label">Booked / Pending Nights</div>
+    <div class="kpi-value">{{.Calendar.Summary.BookedNights}} <span class="mono">/ {{.Calendar.Summary.PendingNights}}</span></div>
+  </div>
+  <div class="card">
+    <div class="kpi-label">Blocked Nights</div>
+    <div class="kpi-value">{{.Calendar.Summary.BlockedNights}}</div>
+  </div>
+  <div class="card">
+    <div class="kpi-label">Unreleased Hold Nights</div>
+    <div class="kpi-value">{{.Calendar.Summary.UnreleasedNights}}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="cal-toolbar">
+    <div class="cal-legend">
+      <span class="legend-item"><span class="legend-swatch cal-cell-AVAILABLE"></span> Available</span>
+      <span class="legend-item"><span class="legend-swatch cal-cell-BOOKED"></span> Booked</span>
+      <span class="legend-item"><span class="legend-swatch cal-cell-PENDING"></span> Pending</span>
+      <span class="legend-item"><span class="legend-swatch cal-cell-ALLOCATED"></span> Channel Allocation</span>
+      <span class="legend-item"><span class="legend-swatch cal-cell-BLOCKED"></span> Blocked / Restricted</span>
+      <span class="legend-item"><span class="legend-swatch cal-cell-UNRELEASED"></span> Unreleased (Scheduled Release)</span>
+    </div>
+    <div id="calendar-cell-inspector" class="badge badge-info hidden">
+      <span id="calendar-cell-reason"></span>&nbsp;·&nbsp;
+      <a id="calendar-cell-action" href="#" class="mono">Open</a>
+    </div>
+  </div>
+
+  {{if or .CanWriteBlocks .CanWriteReservations}}
+  <form method="post" action="/blocks/preview" id="calendar-bulk-form" class="cal-toolbar">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="scope_type" value="UNITS">
+    <input type="hidden" name="category" value="ADMINISTRATIVE_BLOCK">
+    <input type="hidden" name="channel_scope" value="ALL">
+    <input type="hidden" name="start_date" id="sel_start_date">
+    <input type="hidden" name="end_date" id="sel_end_date">
+    <div id="sel_units_inputs"></div>
+    <span id="calendar-selection-summary" class="subtitle"></span>
+    <div class="days-row">
+      {{if .CanWriteReservations}}
+      <button type="button" id="sel-reserve-btn" class="btn btn-primary btn-sm" disabled>Reserve Selected</button>
+      {{end}}
+      {{if .CanWriteBlocks}}
+      <button type="submit" id="sel-block-btn" class="btn btn-secondary btn-sm" disabled>Preview Bulk Blockout</button>
+      {{end}}
+      <button type="button" id="sel-clear-btn" class="btn btn-secondary btn-sm">Clear</button>
+    </div>
+  </form>
+  {{end}}
+
+  <div class="cal-grid-wrap">
+    <table class="cal-table" id="calendar-grid">
+      <thead>
+        <tr>
+          <th class="cal-unit-col">Unit / Pitch</th>
+          {{range .Calendar.Dates}}
+          <th>{{.Format "02 Jan"}}<br><span class="mono">{{.Format "Mon"}}</span></th>
+          {{end}}
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Calendar.Units}}
+        {{$unit := .Unit}}
+        <tr>
+          <td class="cal-unit-col">
+            <strong>{{$unit.Code}}</strong> {{$unit.Name}}<br>
+            <span class="subtitle">{{$unit.UnitTypeName}}</span>
+          </td>
+          {{range .Cells}}
+          <td class="cal-cell cal-cell-{{.Status}}{{if and $.FilterStatus (ne .Status $.FilterStatus)}} cal-cell-dim{{end}}"
+              title="{{$unit.Code}} · {{.Date}} · {{.Status}} — {{.Reason}}"
+              data-unit-id="{{$unit.ID}}"
+              data-unit-code="{{$unit.Code}}"
+              data-date="{{.Date}}"
+              data-status="{{.Status}}"
+              data-reason="{{.Reason}}"
+              {{if .ReservationID}}data-reservation-id="{{.ReservationID}}"{{end}}
+              {{if .BlockoutGroupID}}data-blockout-group-id="{{.BlockoutGroupID}}"{{end}}>
+            {{if .ReservationID}}
+              <a class="cal-cell-link" href="/reservations/{{.ReservationID}}">
+                {{if .IsCheckIn}}▶ {{end}}{{.Reference}}
+              </a>
+              <div class="subtitle">{{.GuestName}}</div>
+            {{else if .BlockoutGroupID}}
+              <span class="mono">{{.ClaimType}}</span>
+            {{else if eq .Status "UNRELEASED"}}
+              <span class="mono">HELD</span>
+            {{else}}
+              <span class="mono">Open</span>
+            {{end}}
+          </td>
+          {{end}}
+        </tr>
+        {{else}}
+        <tr><td colspan="2">No active units matched this filter.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,229 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Seasonal Rates &amp; Tariff Preview</h1>
+    <p class="subtitle">Half-open [Start, End) date ranges, weekday masks, and non-destructive nightly rate resolution.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Tariff Preview Calculator (Read-Only)</h2>
+  <form method="get" action="/rates" class="form-grid">
+    <div class="field">
+      <label for="preview_plan">Rate Plan</label>
+      <select id="preview_plan" name="preview_plan" required>
+        {{range .RatePlans}}
+        <option value="{{.ID}}" {{if eq (printf "%s" .ID) $.PreviewPlanID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="preview_unit_type">Unit Type</label>
+      <select id="preview_unit_type" name="preview_unit_type" required>
+        {{range .UnitTypes}}
+        <option value="{{.ID}}" {{if eq (printf "%s" .ID) $.PreviewUnitTypeID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="preview_start">Arrival Date (Inclusive)</label>
+      <input id="preview_start" name="preview_start" type="date" required value="{{.PreviewStart}}">
+    </div>
+    <div class="field">
+      <label for="preview_end">Departure Date (Exclusive)</label>
+      <input id="preview_end" name="preview_end" type="date" required value="{{.PreviewEnd}}">
+    </div>
+    <div class="field field-end">
+      <button type="submit" class="btn btn-primary">Preview Nights</button>
+    </div>
+  </form>
+
+  {{if .Preview}}
+  <div class="section-divider">
+    <p>
+      <strong>{{.Preview.UnitTypeName}}</strong> on <strong>{{.Preview.RatePlanName}}</strong> ·
+      {{.Preview.Nights}} night(s) · Total: <strong>{{formatMoney .Preview.TotalPence .Preview.Currency}}</strong> ·
+      Min stay required: <strong>{{.Preview.EffectiveMinNights}}</strong> night(s) ·
+      {{if .Preview.MeetsStayRules}}<span class="badge badge-ok">Meets Stay Rules</span>{{else}}<span class="badge badge-warn">Below Min / Above Max Stay</span>{{end}}
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Night Date</th><th>Day</th><th>Applied Rule</th><th class="num">Min Nights</th><th class="num">Rate</th></tr>
+        </thead>
+        <tbody>
+          {{range .Preview.Breakdown}}
+          <tr>
+            <td class="mono">{{.Date}}</td>
+            <td>{{.Weekday}}</td>
+            <td>{{.RuleName}}{{if .IsOverride}} <span class="badge badge-ok">Rule</span>{{else}} <span class="badge badge-muted">Base</span>{{end}}</td>
+            <td class="num">{{.MinNights}}</td>
+            <td class="num">{{formatMoney .RatePence $.Preview.Currency}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+{{if .CanWriteRates}}
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Create Rate Plan</h2>
+    <form method="post" action="/rate-plans">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="rp_code">Code</label>
+          <input id="rp_code" name="code" type="text" required placeholder="standard">
+        </div>
+        <div class="field">
+          <label for="rp_name">Name</label>
+          <input id="rp_name" name="name" type="text" required placeholder="Standard Flexible">
+        </div>
+        <div class="field">
+          <label for="rp_priority">Priority</label>
+          <input id="rp_priority" name="priority" type="number" value="100">
+        </div>
+        <div class="checkbox-row">
+          <input id="rp_default" name="is_default" type="checkbox" value="true">
+          <label for="rp_default" class="m-0">Default Plan</label>
+        </div>
+        <div class="field field-full">
+          <label for="rp_desc">Description</label>
+          <input id="rp_desc" name="description" type="text">
+        </div>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">Create Rate Plan</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Add Seasonal / Weekend Rate Rule</h2>
+    <form method="post" action="/rate-rules">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="rr_plan">Rate Plan</label>
+          <select id="rr_plan" name="rate_plan_id" required>
+            {{range .RatePlans}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label for="rr_ut">Unit Type</label>
+          <select id="rr_ut" name="unit_type_id" required>
+            {{range .UnitTypes}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label for="rr_name">Rule Name</label>
+          <input id="rr_name" name="name" type="text" required placeholder="Peak Summer Weekends">
+        </div>
+        <div class="field">
+          <label for="rr_rate">Nightly Rate (pence)</label>
+          <input id="rr_rate" name="nightly_rate_pence" type="number" min="0" required value="12500">
+        </div>
+        <div class="field">
+          <label for="rr_start">Start Date (Inclusive)</label>
+          <input id="rr_start" name="start_date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="rr_end">End Date (Exclusive)</label>
+          <input id="rr_end" name="end_date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="rr_min">Min Nights Override (Optional)</label>
+          <input id="rr_min" name="min_nights_override" type="number" min="1" placeholder="Leave blank for unit default">
+        </div>
+        <div class="field">
+          <label for="rr_priority">Priority (Higher Wins)</label>
+          <input id="rr_priority" name="priority" type="number" value="100">
+        </div>
+        <div class="field field-full">
+          <label>Applies to Nights</label>
+          <div class="days-row">
+            <label><input type="checkbox" name="days" value="1" checked> Mon</label>
+            <label><input type="checkbox" name="days" value="2" checked> Tue</label>
+            <label><input type="checkbox" name="days" value="4" checked> Wed</label>
+            <label><input type="checkbox" name="days" value="8" checked> Thu</label>
+            <label><input type="checkbox" name="days" value="16" checked> Fri</label>
+            <label><input type="checkbox" name="days" value="32" checked> Sat</label>
+            <label><input type="checkbox" name="days" value="64" checked> Sun</label>
+          </div>
+        </div>
+      </div>
+      <div class="mt-3">
+        <button type="submit" class="btn btn-primary">Create Rate Rule</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <h2>Rate Plans</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Code</th><th>Default</th><th class="num">Priority</th><th>Status</th></tr></thead>
+      <tbody>
+        {{range .RatePlans}}
+        <tr>
+          <td><strong>{{.Name}}</strong><br><span class="subtitle">{{.Description}}</span></td>
+          <td class="mono">{{.Code}}</td>
+          <td>{{if .IsDefault}}<span class="badge badge-ok">Default</span>{{else}}—{{end}}</td>
+          <td class="num">{{.Priority}}</td>
+          <td>{{if .IsActive}}<span class="badge badge-ok">Active</span>{{else}}<span class="badge badge-muted">Inactive</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Active Rate Rules</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Rule</th>
+          <th>Plan / Unit Type</th>
+          <th>Date Range [Start, End)</th>
+          <th>Days</th>
+          <th class="num">Priority</th>
+          <th class="num">Min Stay</th>
+          <th class="num">Rate</th>
+          {{if .CanWriteRates}}<th>Actions</th>{{end}}
+        </tr>
+      </thead>
+      <tbody>
+        {{range .RateRules}}
+        <tr>
+          <td><strong>{{.Name}}</strong></td>
+          <td>{{.RatePlanName}}<br><span class="subtitle">{{.UnitTypeName}}</span></td>
+          <td class="mono">{{formatDate .StartDate}} → {{formatDate .EndDate}}</td>
+          <td>{{.DaysOfWeek.Label}}</td>
+          <td class="num">{{.Priority}}</td>
+          <td class="num">{{if .MinNightsOverride}}{{.MinNightsOverride}}{{else}}Default{{end}}</td>
+          <td class="num">{{formatMoney .NightlyRatePence $.Property.Currency}}</td>
+          {{if $.CanWriteRates}}
+          <td>
+            <form method="post" action="/rate-rules/{{.ID}}/archive" class="inline">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-danger btn-sm">Archive</button>
+            </form>
+          </td>
+          {{end}}
+        </tr>
+        {{else}}
+        <tr><td colspan="8">No seasonal rate rules defined yet; unit type base rates apply.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

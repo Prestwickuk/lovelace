@@ -1,0 +1,88 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Duplicate Guest Merge Review</h1>
+    <p class="subtitle">Detect and intentionally merge duplicate records without losing reservations, communications, notes, consent logs, or audit history.</p>
+  </div>
+  <a href="/guests" class="btn btn-secondary">← Guest Directory</a>
+</div>
+
+<p class="subtitle mb-2">
+  Scan coverage: <strong>{{.DuplicateScan.ScannedGuests}}</strong> of <strong>{{.DuplicateScan.TotalActiveGuests}}</strong> active guest profile(s) checked.
+  {{if not .DuplicateScan.IsComplete}}<span class="badge badge-warn">Partial Scan Cap Reached</span>{{end}}
+</p>
+
+{{if .Duplicates}}
+<div class="card mb-3">
+  <h2>Detected Duplicate Candidates ({{len .Duplicates}})</h2>
+  <table>
+    <thead><tr><th>Primary Candidate</th><th>Possible Duplicate</th><th>Match Reasons</th><th>Action</th></tr></thead>
+    <tbody>
+      {{range .Duplicates}}
+      <tr>
+        <td>
+          <strong><a href="/guests/{{.GuestA.ID}}">{{.GuestA.FullName}}</a></strong><br>
+          <small class="mono">{{.GuestA.Email}} · {{.GuestA.Phone}}</small><br>
+          <small>{{.GuestA.TotalBookings}} booking(s)</small>
+        </td>
+        <td>
+          <strong><a href="/guests/{{.GuestB.ID}}">{{.GuestB.FullName}}</a></strong><br>
+          <small class="mono">{{.GuestB.Email}} · {{.GuestB.Phone}}</small><br>
+          <small>{{.GuestB.TotalBookings}} booking(s)</small>
+        </td>
+        <td>
+          <span class="badge badge-warn">Score {{.Score}}</span><br>
+          <small>{{joinStrings .MatchReasons "; "}}</small>
+        </td>
+        <td>
+          {{if $.CanMergeGuests}}
+          <form method="post" action="/guests/merge" class="mb-1">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="source_guest_id" value="{{.GuestB.ID}}">
+            <input type="hidden" name="target_guest_id" value="{{.GuestA.ID}}">
+            <input type="hidden" name="notes" value="Merged via duplicate queue (score {{.Score}})">
+            <button type="submit" class="btn btn-primary btn-sm">Keep Left, Merge Right → Left</button>
+          </form>
+          <form method="post" action="/guests/duplicates/dismiss">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="guest_a_id" value="{{.GuestA.ID}}">
+            <input type="hidden" name="guest_b_id" value="{{.GuestB.ID}}">
+            <input type="hidden" name="reason" value="Different guests">
+            <button type="submit" class="btn btn-secondary btn-sm">Not a Duplicate</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="card mb-3"><p class="subtitle">No automatic duplicate guest candidates detected right now.</p></div>
+{{end}}
+
+{{if .CanMergeGuests}}
+<div class="card">
+  <h2>Manual Guest Merge</h2>
+  <form method="post" action="/guests/merge" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="field">
+      <label>Duplicate Source Guest (will be marked MERGED)</label>
+      <select name="source_guest_id" required>
+        <option value="">Select source guest…</option>
+        {{range .AllGuests}}<option value="{{.ID}}">{{.FullName}} ({{.Email}})</option>{{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label>Canonical Target Guest (retains all combined history)</label>
+      <select name="target_guest_id" required>
+        <option value="">Select target guest…</option>
+        {{range .AllGuests}}<option value="{{.ID}}">{{.FullName}} ({{.Email}})</option>{{end}}
+      </select>
+    </div>
+    <div class="field field-full"><label>Merge Audit Note</label><input name="notes" type="text" placeholder="Reason for merging"></div>
+    <div class="field field-full"><button type="submit" class="btn btn-primary">Merge Guest Records</button></div>
+  </form>
+</div>
+{{end}}
+{{end}}

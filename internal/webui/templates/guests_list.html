@@ -1,0 +1,115 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Guest Directory</h1>
+    <p class="subtitle">Search returning guests, upcoming stays, preferences, open enquiries, and consent status.</p>
+  </div>
+  <div class="inline-row">
+    {{if gt .DuplicateCount 0}}
+    <a href="/guests/merge" class="btn btn-warn btn-sm">{{.DuplicateCount}} Possible Duplicate(s)</a>
+    {{else if .CanMergeGuests}}
+    <a href="/guests/merge" class="btn btn-secondary btn-sm">Duplicate Review</a>
+    {{end}}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <form method="get" action="/guests" class="inline-row filter-row">
+    <input type="text" name="q" value="{{.Filter.Query}}" placeholder="Search name, email, phone, booking ref, or ID" class="w-search">
+    <select name="segment">
+      <option value="ALL" {{if or (eq .Filter.Segment "") (eq .Filter.Segment "ALL")}}selected{{end}}>All Active Guests</option>
+      <option value="RETURNING" {{if eq .Filter.Segment "RETURNING"}}selected{{end}}>Returning Guests</option>
+      <option value="NEW" {{if eq .Filter.Segment "NEW"}}selected{{end}}>New / First-Time</option>
+      <option value="UPCOMING" {{if eq .Filter.Segment "UPCOMING"}}selected{{end}}>Upcoming Stays</option>
+      <option value="OUTSTANDING_REQUESTS" {{if eq .Filter.Segment "OUTSTANDING_REQUESTS"}}selected{{end}}>Outstanding Enquiries / Requests</option>
+      <option value="UNRESOLVED_COMPLAINTS" {{if eq .Filter.Segment "UNRESOLVED_COMPLAINTS"}}selected{{end}}>Unresolved Complaints</option>
+      <option value="OPTED_IN" {{if eq .Filter.Segment "OPTED_IN"}}selected{{end}}>Marketing Opted-In</option>
+    </select>
+    <label class="inline-row"><input type="checkbox" name="include_all" value="1" {{if .Filter.IncludeAll}}checked{{end}}> Include merged / anonymized</label>
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    {{if or .Filter.Query .Filter.Segment .Filter.IncludeAll}}
+    <a href="/guests" class="btn btn-secondary btn-sm">Reset</a>
+    {{end}}
+  </form>
+</div>
+
+<div class="card mb-3">
+  {{if .Guests}}
+  <table>
+    <thead>
+      <tr>
+        <th>Guest</th>
+        <th>Contact</th>
+        <th>Stay History</th>
+        <th>Next / Last Stay</th>
+        <th>Open Items</th>
+        <th>Marketing</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Guests}}
+      <tr>
+        <td>
+          <strong><a href="/guests/{{.ID}}">{{.FullName}}</a></strong><br>
+          {{if .IsReturningGuest}}<span class="badge badge-ok">Returning Guest</span>{{else}}<span class="badge badge-muted">New</span>{{end}}
+          {{if eq (printf "%s" .Status) "VIP"}}<span class="badge badge-info">VIP</span>{{end}}
+          {{if eq (printf "%s" .Status) "DO_NOT_CONTACT"}}<span class="badge badge-warn">Do Not Contact</span>{{end}}
+          {{if eq (printf "%s" .Status) "MERGED"}}<span class="badge badge-muted">Merged</span>{{end}}
+          {{if eq (printf "%s" .Status) "ANONYMIZED"}}<span class="badge badge-muted">Anonymised</span>{{end}}
+        </td>
+        <td>
+          {{if .Email}}<span class="mono">{{.Email}}</span><br>{{end}}
+          {{if .Phone}}<span class="mono">{{.Phone}}</span>{{end}}
+        </td>
+        <td>
+          <strong>{{.CompletedStays}}</strong> completed stay(s)<br>
+          <small>{{.TotalBookings}} total booking(s){{if gt .CancelledBookings 0}} · {{.CancelledBookings}} cancelled{{end}}</small>
+        </td>
+        <td class="mono">
+          {{if .NextArrivalDate}}Next: {{formatDate .NextArrivalDate}}<br>{{end}}
+          {{if .LastStayDate}}Last: {{formatDate .LastStayDate}}{{else}}—{{end}}
+        </td>
+        <td>
+          {{if gt .OpenComplaintsCount 0}}<span class="badge badge-err">{{.OpenComplaintsCount}} Complaint</span>{{end}}
+          {{if gt .OpenEnquiriesCount 0}}<span class="badge badge-warn">{{.OpenEnquiriesCount}} Enquiry</span>{{end}}
+          {{if and (eq .OpenComplaintsCount 0) (eq .OpenEnquiriesCount 0)}}—{{end}}
+        </td>
+        <td>
+          {{if eq .MarketingConsentState "GRANTED"}}<span class="badge badge-ok">Opted In</span>{{else if eq .MarketingConsentState "WITHDRAWN"}}<span class="badge badge-warn">Withdrawn</span>{{else}}<span class="badge badge-muted">Not Subscribed</span>{{end}}
+        </td>
+        <td><a href="/guests/{{.ID}}" class="btn btn-secondary btn-sm">Profile</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="subtitle">No guest profiles match your current search criteria.</p>
+  {{end}}
+</div>
+
+{{if .CanWriteGuests}}
+<div class="card">
+  <h2>Create Guest Profile</h2>
+  <form method="post" action="/guests" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="field"><label for="first_name">First Name</label><input id="first_name" name="first_name" type="text" required></div>
+    <div class="field"><label for="last_name">Last Name</label><input id="last_name" name="last_name" type="text" required></div>
+    <div class="field"><label for="email">Email</label><input id="email" name="email" type="email"></div>
+    <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="text"></div>
+    <div class="field">
+      <label for="preferred_contact_method">Preferred Contact</label>
+      <select id="preferred_contact_method" name="preferred_contact_method">
+        <option value="EMAIL">Email</option>
+        <option value="PHONE">Phone</option>
+        <option value="SMS">SMS</option>
+        <option value="POST">Post</option>
+      </select>
+    </div>
+    <div class="field"><label for="preferred_language">Language</label><input id="preferred_language" name="preferred_language" type="text" value="en"></div>
+    <div class="field field-full"><label for="notes">Summary Notes</label><input id="notes" name="notes" type="text"></div>
+    <div class="field field-full"><button type="submit" class="btn btn-primary">Create Guest</button></div>
+  </form>
+</div>
+{{end}}
+{{end}}

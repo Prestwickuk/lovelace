@@ -1,0 +1,57 @@
+{
+  "phase": "1.5",
+  "status": "READY_FOR_PHASE_2",
+  "platform": {
+    "name": "LOVELACE",
+    "descriptor": "Booking System",
+    "full_name": "LOVELACE Booking System",
+    "branding_package": "internal/branding",
+    "assets_dir": "internal/webui/static/brand"
+  },
+  "default_property": {
+    "slug": "tir-bach",
+    "name": "Tir Bach Campsite",
+    "region": "Pembrokeshire, Wales"
+  },
+  "stack": {
+    "go": "1.24",
+    "database": "PostgreSQL 17",
+    "driver": "pgx/v5",
+    "migrations": [
+      "0001_init.sql",
+      "0002_phase1_1.sql",
+      "0003_phase1_5.sql"
+    ]
+  },
+  "checks": {
+    "gofmt": "PASS",
+    "go_build": "PASS",
+    "go_vet": "PASS",
+    "go_test_race": {
+      "status": "PASS",
+      "packages_passed": [
+        "internal/app",
+        "internal/auth",
+        "internal/domain"
+      ],
+      "test_role": "tir_bach_test_runner",
+      "test_db": "tir_bach_test"
+    },
+    "docker_upgrade_0002_to_0003": "PASS",
+    "pg_dump_and_pg_restore": "PASS",
+    "browser_e2e_chromium": {
+      "status": "PASS",
+      "console_errors": 0,
+      "page_errors": 0,
+      "failed_assets": 0,
+      "mobile_overflow_on_calendar": false,
+      "screenshots_count": 10
+    }
+  },
+  "deferred_phases": [
+    "Phase 2: Public search, checkout journey, temporary HOLD expiry, payments & confirmations",
+    "Phase 3: Guest portal, automated communications, housekeeping & arrivals",
+    "Phase 4: Live external OTA adapters (Beds24, Smoobu HMAC, Lodgify, Channex)",
+    "Phase 5: BI reporting, RevPAR & accounting exports"
+  ]
+}

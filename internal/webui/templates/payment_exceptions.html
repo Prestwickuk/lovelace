@@ -1,0 +1,80 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Payment Reconciliation Exceptions</h1>
+    <p class="subtitle">Customer payments requiring manual review, reconciliation, or refund verification for {{.Property.Name}}.</p>
+  </div>
+  <div class="inline-row">
+    <span class="badge {{if gt .OpenCount 0}}badge-err{{else}}badge-ok{{end}}">{{.OpenCount}} Open</span>
+    <span class="badge badge-muted">{{.ResolvedCount}} Resolved</span>
+    <a class="btn btn-secondary btn-sm" href="/">Operations Centre</a>
+    {{if .CanWriteProperty}}
+    <a class="btn btn-secondary btn-sm" href="/property">Site Settings</a>
+    {{end}}
+  </div>
+</div>
+
+<section class="card" id="payment-exceptions-list">
+  {{if .PaymentExceptions}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Created (UTC)</th>
+          <th>Type &amp; Status</th>
+          <th>Amount</th>
+          <th>Details &amp; Notes</th>
+          <th>Resolution</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .PaymentExceptions}}
+        <tr id="ex-{{.ID}}">
+          <td class="mono">
+            {{formatTime .CreatedAt}}
+            {{if .ResolvedAt}}
+            <div class="subtitle-tight">Resolved {{formatTime .ResolvedAt}}</div>
+            {{end}}
+          </td>
+          <td>
+            <div class="mono"><strong>{{.ExceptionType}}</strong></div>
+            <div class="mt-1"><span class="badge {{statusClass .Status}}">{{.Status}}</span></div>
+          </td>
+          <td class="mono">{{formatMoney .AmountPence .Currency}}</td>
+          <td>
+            <div>{{if .Details}}{{.Details}}{{else}}Manual payment reconciliation required.{{end}}</div>
+            {{if .ReservationID}}
+            <div class="mt-1"><a href="/reservations/{{.ReservationID}}">Open linked reservation</a></div>
+            {{else if .HoldID}}
+            <div class="mono subtitle-tight">Hold: {{.HoldID}} (no reservation created)</div>
+            {{end}}
+            {{if .ResolutionNotes}}
+            <div class="ops-note-chip mt-1">Resolution note: {{.ResolutionNotes}}</div>
+            {{end}}
+          </td>
+          <td>
+            {{if eq .Status "OPEN"}}
+              {{if $.CanWriteReservations}}
+              <form method="post" action="/payment-exceptions/{{.ID}}/resolve" class="inline-row">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="return_to" value="/payment-exceptions#ex-{{.ID}}">
+                <input type="text" name="resolution_notes" required placeholder="e.g. Refunded in Stripe dashboard">
+                <button type="submit" class="btn btn-primary btn-sm">Mark Resolved</button>
+              </form>
+              {{else}}
+              <span class="badge badge-muted">Read-only (write permission required)</span>
+              {{end}}
+            {{else}}
+            <span class="badge badge-ok">Closed</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="subtitle">All clear — no payment reconciliation exceptions have been recorded for {{.Property.Name}}.</p>
+  {{end}}
+</section>
+{{end}}

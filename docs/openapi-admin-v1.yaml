@@ -1,0 +1,669 @@
+openapi: 3.1.0
+info:
+  title: LOVELACE Administrative Operations, Maintenance & Guest CRM API (Phase 3 Milestone 3)
+  version: 1.0.0
+  description: >
+    Authenticated administrative API for the LOVELACE Operations Centre, 5-stage Daily
+    Changeover Board (Phase 3 Milestone 1), Maintenance Management & Facilities
+    (Phase 3 Milestone 2), and Guest Management & Communications CRM (Phase 3 Milestone 3).
+    Requires valid admin session cookie (`tirbach_session`) and `X-CSRF-Token` header on
+    all state-changing admin requests. Delivery webhooks use HMAC-SHA256 `X-Email-Signature`.
+    Strictly separate from `/api/public/v1/*`.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local LOVELACE Administrative Console Origin
+security:
+  - adminSessionCookie: []
+paths:
+  /api/v1/properties/{propertyID}/operations:
+    get:
+      summary: Fetch Operations Centre daily view (occupancy, arrivals/pending/inquiries, departures, changeover board, attention items, maintenance summary)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: focus
+          in: query
+          schema:
+            type: string
+            enum: [all, front_desk, housekeeping, attention]
+      responses:
+        "200":
+          description: Operations Centre payload
+        "403":
+          description: Insufficient permissions (`ops:read` required)
+
+  /api/v1/properties/{propertyID}/housekeeping/tasks:
+    post:
+      summary: Manually create a housekeeping changeover task (`CLEANING_REQUIRED`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+      responses:
+        "201":
+          description: Created housekeeping task
+
+  /api/v1/properties/{propertyID}/housekeeping/tasks/{taskID}/stage:
+    post:
+      summary: Transition housekeeping task stage (clears started/inspected state if returned to CLEANING_REQUIRED)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200":
+          description: Updated housekeeping task
+
+  /api/v1/properties/{propertyID}/housekeeping/tasks/{taskID}/assign:
+    post:
+      summary: Assign housekeeping task to an active admin user
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200":
+          description: Assigned housekeeping task
+
+  /api/v1/properties/{propertyID}/operations/maintenance-summary:
+    get:
+      summary: Fetch compact maintenance summary for Operations Centre widgets
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+      responses:
+        "200":
+          description: `OpsMaintenanceSummary` counts and alerts
+
+  /api/v1/properties/{propertyID}/maintenance:
+    get:
+      summary: List maintenance requests with status/priority/safety/target/assignee filters
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: priority
+          in: query
+          schema: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+        - name: category_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: safety_only
+          in: query
+          schema: { type: boolean }
+        - name: overdue_only
+          in: query
+          schema: { type: boolean }
+        - name: open_only
+          in: query
+          schema: { type: boolean }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Filtered list of maintenance requests
+    post:
+      summary: Create a maintenance request (`MNT-YYYY-NNNN`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+      responses:
+        "201":
+          description: Created maintenance request (`maintenance:report` required)
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}:
+    get:
+      summary: Retrieve full maintenance request detail (work entries, inspections, history, attachments, inventory restrictions, affected bookings)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Maintenance request detail
+    patch:
+      summary: Update mutable maintenance request fields (priority, safety flags, due date, target)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Updated maintenance request
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/assign:
+    post:
+      summary: Assign internal staff member and/or external contractor
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Updated assignment
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/transition:
+    post:
+      summary: Transition maintenance request workflow status (`REPORTED` .. `COMPLETED` / `CLOSED` / `CANCELLED`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Updated request status
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/work-notes:
+    post:
+      summary: Append an immutable maintenance work note / time log entry
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "201":
+          description: Created work entry
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/inspection:
+    post:
+      summary: Record repair inspection (`PASSED` or `FAILED`); never auto-releases inventory blocks
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "201":
+          description: Recorded inspection (`maintenance:inspect` required)
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/attachments:
+    post:
+      summary: Upload PNG/JPEG/WEBP/PDF/TXT maintenance attachment (magic-byte validated)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "201":
+          description: Stored attachment metadata
+
+  /api/v1/properties/{propertyID}/maintenance/attachments/{attachmentID}:
+    get:
+      summary: Authenticated attachment download with `X-Content-Type-Options: nosniff`
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - name: attachmentID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Binary attachment stream
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/inventory-restriction:
+    post:
+      summary: Create an explicit `MAINTENANCE` `blockout_groups` + `inventory_claims` restriction (409 on confirmed booking overlap)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "201":
+          description: Linked active inventory restriction
+        "409":
+          description: Confirmed booking overlap (`date_overlap`)
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/inventory-restriction/{linkID}:
+    patch:
+      summary: Resize active inventory restriction dates without displacing confirmed bookings
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+        - name: linkID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Updated inventory restriction
+
+  /api/v1/properties/{propertyID}/maintenance/{requestID}/release-restriction:
+    post:
+      summary: Manually release an active maintenance inventory restriction (`maintenance:manage` + `blocks:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: Released restriction
+
+  /api/v1/properties/{propertyID}/maintenance/categories:
+    get:
+      summary: List maintenance categories
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Category list } }
+    post:
+      summary: Create maintenance category
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created category } }
+
+  /api/v1/properties/{propertyID}/maintenance/categories/{id}:
+    patch:
+      summary: Update maintenance category
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EntityID"
+      responses: { "200": { description: Updated category } }
+
+  /api/v1/properties/{propertyID}/maintenance/locations:
+    get:
+      summary: List site facilities / grounds locations
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Site location list } }
+    post:
+      summary: Create site location
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created site location } }
+
+  /api/v1/properties/{propertyID}/maintenance/locations/{id}:
+    patch:
+      summary: Update site location
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EntityID"
+      responses: { "200": { description: Updated site location } }
+
+  /api/v1/properties/{propertyID}/maintenance/assets:
+    get:
+      summary: List equipment / asset registry
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Asset list } }
+    post:
+      summary: Create maintenance asset
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created asset } }
+
+  /api/v1/properties/{propertyID}/maintenance/assets/{id}:
+    get:
+      summary: Get asset detail and open/linked maintenance history
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EntityID"
+      responses: { "200": { description: Asset detail } }
+    patch:
+      summary: Update asset metadata
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EntityID"
+      responses: { "200": { description: Updated asset } }
+
+  /api/v1/properties/{propertyID}/maintenance/contractors:
+    get:
+      summary: List external contractors directory
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Contractor list } }
+    post:
+      summary: Create contractor entry
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created contractor } }
+
+  /api/v1/properties/{propertyID}/maintenance/contractors/{id}:
+    patch:
+      summary: Update contractor details
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EntityID"
+      responses: { "200": { description: Updated contractor } }
+
+  /api/v1/properties/{propertyID}/maintenance/schedules:
+    get:
+      summary: List preventative maintenance schedules
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Schedule list } }
+    post:
+      summary: Create preventative maintenance schedule
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created schedule } }
+
+  /api/v1/properties/{propertyID}/maintenance/schedules/{id}:
+    patch:
+      summary: Update preventative maintenance schedule
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EntityID"
+      responses: { "200": { description: Updated schedule } }
+
+  /api/v1/properties/{propertyID}/maintenance/schedules/run:
+    post:
+      summary: Idempotently generate due preventative maintenance requests (`uq_maintenance_schedule_occurrence`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses:
+        "200":
+          description: Generated request count and updated next-due schedules
+
+  /api/v1/webhooks/email-events:
+    post:
+      summary: Signed inbound email delivery event webhook (DELIVERED, BOUNCED, FAILED, COMPLAINT)
+      security: []
+      responses:
+        "200": { description: Webhook processed idempotently }
+        "401": { description: Invalid or missing X-Email-Signature HMAC }
+
+  /api/v1/properties/{propertyID}/guests:
+    get:
+      summary: Search and filter property guest directory (`NEW`, `RETURNING`, `UPCOMING`, `OUTSTANDING_REQUESTS`, `UNRESOLVED_COMPLAINTS`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Guest directory items and summary counters } }
+    post:
+      summary: Create or look up a guest profile manually
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created guest profile } }
+
+  /api/v1/properties/{propertyID}/guests/duplicates:
+    get:
+      summary: List heuristic duplicate guest candidates with scan completeness metadata (`guests:read`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Candidate duplicate pairs plus scanned_guests, total_active_guests, and is_complete flags } }
+
+  /api/v1/properties/{propertyID}/guests/duplicates/dismiss:
+    post:
+      summary: Dismiss a false-positive duplicate guest pair
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Dismissal recorded } }
+
+  /api/v1/properties/{propertyID}/guests/merge:
+    post:
+      summary: Atomically merge duplicate guest profile into target guest
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Target guest profile after transactional merge } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}:
+    get:
+      summary: Fetch guest 360 profile (identity, stays, preferences, internal notes gated by RBAC, enquiries, comms timeline, consent)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "200": { description: Full guest profile view } }
+    patch:
+      summary: Update guest profile details
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "200": { description: Updated guest profile } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/preferences:
+    post:
+      summary: Record structured operational guest preference
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "201": { description: Created preference } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/preferences/{prefID}:
+    delete:
+      summary: Remove a structured guest preference
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+        - $ref: "#/components/parameters/PrefID"
+      responses: { "200": { description: Removed preference } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/notes:
+    post:
+      summary: Add staff-only internal guest note (`guests:notes`, never exposed in outbound comms; included in operational CRM export with staff attribution minimized)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "201": { description: Created internal note } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/notes/{noteID}:
+    delete:
+      summary: Remove an internal guest note (`guests:notes`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+        - $ref: "#/components/parameters/NoteID"
+      responses: { "200": { description: Removed note } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/consent:
+    post:
+      summary: Record explicit marketing consent opt-in or withdrawal
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "201": { description: Recorded consent entry } }
+
+  /api/v1/properties/{propertyID}/audit-logs/{auditLogID}/redact:
+    post:
+      summary: Privately redact legacy raw PII from a historical audit log via append-only overlay (`guests:anonymize` + `audit:read`; logs `audit_log.redacted`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - name: auditLogID
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200": { description: Effective redacted audit entry }
+        "409": { description: Audit entry was already redacted }
+        "422": { description: Specific legal/privacy redaction reason missing or invalid }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/export:
+    get:
+      summary: Export unbounded operational guest CRM JSON data (`guests:export`; includes linked `booking_holds`, `duplicate_dismissals`, multi-hop `merge_history`, SAR exemption-review notice, and minimized staff metadata)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "200": { description: Operational guest CRM export JSON payload } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/anonymize:
+    post:
+      summary: GDPR anonymisation resolving merged aliases to canonical guest and scrubbing cluster/outbox/delivery/job PII while preserving financial ledgers (`guests:anonymize`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses:
+        "200": { description: Anonymised guest record }
+        "409": { description: Active upcoming/checked-in reservation blocks anonymisation }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/interactions:
+    post:
+      summary: Log manual phone, in-person, or written guest interaction on timeline
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "201": { description: Logged interaction } }
+
+  /api/v1/properties/{propertyID}/guests/{guestID}/emails:
+    post:
+      summary: Queue outbound email to guest via outbox (`text/plain` + optional templated `text/html`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/GuestID"
+      responses: { "201": { description: Outbound email queued } }
+
+  /api/v1/properties/{propertyID}/communications/{commID}/complete-followup:
+    post:
+      summary: Mark a pending communication follow-up completed
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/CommID"
+      responses: { "200": { description: Updated communication item } }
+
+  /api/v1/properties/{propertyID}/failed-emails:
+    get:
+      summary: List FAILED or BOUNCED email outbox items for property retry review
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Failed email list } }
+
+  /api/v1/properties/{propertyID}/failed-emails/{outboxID}/retry:
+    post:
+      summary: Re-queue a failed or bounced outbox email for delivery
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/OutboxID"
+      responses: { "200": { description: Re-queued email item } }
+
+  /api/v1/properties/{propertyID}/outbox/{outboxID}/reconcile:
+    post:
+      summary: Resolve an indeterminate DISPATCH_UNKNOWN outbox item (`CONFIRMED_SENT`, `CONFIRMED_FAILED`, or `CANCEL`) with required external evidence (`comms:reconcile`) so pending guest anonymisation can finalise
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/OutboxID"
+      responses:
+        "200": { description: Reconciled outbox item with persisted actor, timestamp, decision, reason_code, and evidence }
+        "403": { description: Forbidden (`comms:reconcile` restricted to owner_admin and manager, active account, property scope) }
+        "409": { description: Outbox item is actively DISPATCHING or not in DISPATCH_UNKNOWN state }
+        "422": { description: Invalid resolution, missing failure evidence, or PII detected in reason/evidence fields }
+
+  /api/v1/properties/{propertyID}/enquiries:
+    get:
+      summary: Filter and list guest enquiries, special requests, and complaints
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Enquiry list } }
+    post:
+      summary: Create new guest enquiry / request / complaint (`ENQ-YYYY-NNNN`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created enquiry } }
+
+  /api/v1/properties/{propertyID}/enquiries/{enquiryID}:
+    get:
+      summary: Fetch enquiry detail and thread messages
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EnquiryID"
+      responses: { "200": { description: Enquiry detail } }
+    patch:
+      summary: Update enquiry workflow status, SLA due time, assignee, or linked maintenance request
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EnquiryID"
+      responses: { "200": { description: Updated enquiry } }
+
+  /api/v1/properties/{propertyID}/enquiries/{enquiryID}/messages:
+    post:
+      summary: Append internal note or outbound reply to an enquiry thread
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/EnquiryID"
+      responses: { "201": { description: Added enquiry message } }
+
+  /api/v1/properties/{propertyID}/communication-templates:
+    get:
+      summary: List versioned message templates for the property (`comms:templates` or `comms:read`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Template list } }
+    post:
+      summary: Create new versioned communication template (`comms:templates`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created template } }
+
+  /api/v1/properties/{propertyID}/communication-templates/{templateID}:
+    patch:
+      summary: Update template with optimistic version locking (`comms:templates`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/TemplateID"
+      responses: { "200": { description: Updated template } }
+
+  /api/v1/properties/{propertyID}/communication-templates/{templateID}/preview:
+    post:
+      summary: Safely preview a template against allowlisted placeholders with optional `guest_id`, `reservation_id`, and `enquiry_id` cross-ownership validation (internal notes excluded)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/TemplateID"
+      responses: { "200": { description: Rendered subject and text/HTML preview } }
+
+  /api/v1/properties/{propertyID}/automation-rules:
+    get:
+      summary: List booking communication automation rules
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Automation rule list } }
+    post:
+      summary: Create booking communication automation rule (`comms:templates`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "201": { description: Created rule } }
+
+  /api/v1/properties/{propertyID}/automation-rules/{ruleID}:
+    patch:
+      summary: Update automation rule schedule, offset, or active flag (`comms:templates`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/RuleID"
+      responses: { "200": { description: Updated rule } }
+
+  /api/v1/properties/{propertyID}/communication-jobs:
+    get:
+      summary: Inspect scheduled, queued, superseded, or cancelled automated communication jobs
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Communication job list } }
+
+  /api/v1/properties/{propertyID}/retention-policy:
+    get:
+      summary: Fetch advisory property GDPR data retention policy settings (`execution_mode=ADVISORY_ONLY`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Advisory retention policy } }
+    put:
+      summary: Update advisory property GDPR data retention policy settings (`comms:templates`; rejects `auto_anonymize_enabled=true`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses:
+        "200": { description: Updated advisory retention policy }
+        "422": { description: Validation error (including auto_anonymize_enabled=true when worker is inactive) }
+
+components:
+  securitySchemes:
+    adminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: tirbach_session
+  parameters:
+    PropertyID:
+      name: propertyID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RequestID:
+      name: requestID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TaskID:
+      name: taskID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EntityID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    GuestID:
+      name: guestID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PrefID:
+      name: prefID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    NoteID:
+      name: noteID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CommID:
+      name: commID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OutboxID:
+      name: outboxID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EnquiryID:
+      name: enquiryID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateID:
+      name: templateID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RuleID:
+      name: ruleID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }

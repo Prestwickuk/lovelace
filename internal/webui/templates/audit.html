@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Administrative Audit Log</h1>
+    <p class="subtitle">Append-only trail of every inventory, rate, block, and authentication mutation.</p>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/audit-logs" class="filter-bar">
+    <div class="field filter-field">
+      <label for="resource_type">Filter by Resource Type</label>
+      <select id="resource_type" name="resource_type">
+        <option value="" {{if eq .FilterResource ""}}selected{{end}}>All Resources</option>
+        <option value="property" {{if eq .FilterResource "property"}}selected{{end}}>property</option>
+        <option value="unit_type" {{if eq .FilterResource "unit_type"}}selected{{end}}>unit_type</option>
+        <option value="unit" {{if eq .FilterResource "unit"}}selected{{end}}>unit</option>
+        <option value="extra" {{if eq .FilterResource "extra"}}selected{{end}}>extra</option>
+        <option value="rate_plan" {{if eq .FilterResource "rate_plan"}}selected{{end}}>rate_plan</option>
+        <option value="rate_rule" {{if eq .FilterResource "rate_rule"}}selected{{end}}>rate_rule</option>
+        <option value="availability_block" {{if eq .FilterResource "availability_block"}}selected{{end}}>availability_block</option>
+        <option value="admin_user" {{if eq .FilterResource "admin_user"}}selected{{end}}>admin_user</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-secondary">Filter</button>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Resource</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Logs}}
+        <tr>
+          <td class="mono">{{formatTime .CreatedAt}}</td>
+          <td>{{.ActorEmail}}<br><span class="mono">{{.ActorRole}}</span></td>
+          <td class="mono"><strong>{{.Action}}</strong></td>
+          <td><span class="badge badge-muted">{{.ResourceType}}</span><br><span class="mono">{{.ResourceID}}</span></td>
+          <td class="mono">{{.IPAddress}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5">No audit entries recorded yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

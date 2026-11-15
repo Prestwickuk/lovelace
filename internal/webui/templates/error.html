@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="{{.Brand.FullName}}">
+  <meta name="theme-color" content="{{.Brand.Palette.CoastalTeal}}">
+  <title>{{.Title}} — {{.Brand.ConsoleTitle}}</title>
+  <link rel="icon" type="image/png" href="{{.Brand.Assets.Favicon}}">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card error-card">
+      <div class="login-logo-wrap">
+        <img src="{{.Brand.Assets.EmblemLogo}}" alt="{{.Brand.Assets.AltText}}" class="error-emblem">
+      </div>
+      <div class="badge badge-err mb-1">HTTP {{.Status}}</div>
+      <h1>{{.Title}}</h1>
+      <p class="subtitle mt-2">{{.Message}}</p>
+      <div class="mt-4">
+        <a href="/" class="btn btn-primary">Return to LOVELACE Console</a>
+      </div>
+      <div class="login-footer">{{.Brand.FullName}}</div>
+    </div>
+  </div>
+</body>
+</html>

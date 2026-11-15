@@ -1,0 +1,266 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Bulk Blackouts &amp; Operational Blockouts</h1>
+    <p class="subtitle">Unified central <span class="mono">inventory_claims</span> with conflict preview, atomic multi-unit commits, partial unit releases, and future unit inheritance.</p>
+  </div>
+  <a href="/blocks?include_released={{if .IncludeReleased}}false{{else}}true{{end}}" class="btn btn-secondary">
+    {{if .IncludeReleased}}Hide Historical Released{{else}}Show Historical Released{{end}}
+  </a>
+</div>
+
+{{if .Preview}}
+<div class="card">
+  <h2>Blockout Impact Preview</h2>
+  <p>
+    <strong>Scope:</strong> <span class="mono">{{.PreviewInput.ScopeType}}</span> ·
+    <strong>Category:</strong> <span class="badge badge-warn">{{.PreviewInput.Category}}</span> ·
+    <strong>Dates:</strong> <span class="mono">{{formatDate .PreviewInput.StartDate}} → {{formatDate .PreviewInput.EndDate}}</span> ·
+    <strong>Channel Scope:</strong> <span class="mono">{{.PreviewInput.ChannelScope}}</span> ·
+    <strong>Affected Units:</strong> {{len .Preview.AffectedUnits}}
+  </p>
+
+  <div class="days-row mb-2">
+    {{range .Preview.AffectedUnits}}
+    <span class="badge badge-muted">{{.Code}} — {{.Name}}</span>
+    {{end}}
+  </div>
+
+  {{if .Preview.Conflicts}}
+  <div class="alert alert-err">
+    <strong>Blocking Conflicts Detected ({{len .Preview.Conflicts}}):</strong> Bulk operation will roll back automatically until conflicts are resolved.
+  </div>
+  <div class="table-wrap mb-2">
+    <table>
+      <thead><tr><th>Unit</th><th>Conflict Type</th><th>Dates</th><th>Detail</th></tr></thead>
+      <tbody>
+        {{range .Preview.Conflicts}}
+        <tr>
+          <td><span class="mono">{{.UnitCode}}</span> {{.UnitName}}</td>
+          <td><span class="badge badge-err">{{.ClaimType}}</span></td>
+          <td class="mono">{{formatDate .StartDate}} → {{formatDate .EndDate}}</td>
+          <td>{{if .Reference}}{{.Reference}} ({{.GuestName}}){{else}}{{.Reason}}{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="alert alert-ok">Zero conflicts detected across all {{len .Preview.AffectedUnits}} selected unit(s). Ready to commit atomically.</div>
+  <form method="post" action="/blocks/bulk">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="scope_type" value="{{.PreviewInput.ScopeType}}">
+    {{if .PreviewInput.UnitTypeID}}<input type="hidden" name="unit_type_id" value="{{.PreviewInput.UnitTypeID}}">{{end}}
+    {{range .PreviewInput.UnitIDs}}<input type="hidden" name="unit_ids" value="{{.}}">{{end}}
+    <input type="hidden" name="category" value="{{.PreviewInput.Category}}">
+    <input type="hidden" name="channel_scope" value="{{.PreviewInput.ChannelScope}}">
+    <input type="hidden" name="start_date" value="{{formatDate .PreviewInput.StartDate}}">
+    <input type="hidden" name="end_date" value="{{formatDate .PreviewInput.EndDate}}">
+    <input type="hidden" name="reason" value="{{.PreviewInput.Reason}}">
+    {{if .PreviewInput.ApplyToFutureUnits}}<input type="hidden" name="apply_to_future_units" value="on">{{end}}
+    <button type="submit" class="btn btn-primary">Confirm &amp; Commit Bulk Blockout</button>
+  </form>
+  {{end}}
+</div>
+{{end}}
+
+{{if .CanWriteBlocks}}
+<div class="card">
+  <h2>Create Bulk Blockout (Step 1: Preview Impact)</h2>
+  <form method="post" action="/blocks/preview">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="bulk_scope_type">Target Scope</label>
+        <select id="bulk_scope_type" name="scope_type">
+          <option value="UNIT">Single Unit</option>
+          <option value="UNITS" selected>Selected Multiple Units</option>
+          <option value="UNIT_TYPE">Entire Accommodation Type</option>
+          <option value="PROPERTY">All Units on Property</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="category">Restriction Category</label>
+        <select id="category" name="category">
+          <option value="OWNER_USE">OWNER_USE</option>
+          <option value="MAINTENANCE" selected>MAINTENANCE</option>
+          <option value="SEASONAL_CLOSURE">SEASONAL_CLOSURE</option>
+          <option value="WEATHER_CLOSURE">WEATHER_CLOSURE</option>
+          <option value="CHANNEL_ALLOCATION">CHANNEL_ALLOCATION (Allocate Exclusively to Channel)</option>
+          <option value="CHANNEL_RESTRICTION">CHANNEL_RESTRICTION (Stop-Sell on Specific Channel)</option>
+          <option value="OPERATIONAL_BUFFER">OPERATIONAL_BUFFER</option>
+          <option value="ADMINISTRATIVE_BLOCK">ADMINISTRATIVE_BLOCK</option>
+          <option value="HOLD">HOLD</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="channel_scope">Channel Scope</label>
+        <select id="channel_scope" name="channel_scope">
+          <option value="ALL" selected>ALL Channels</option>
+          {{range .Channels}}
+          <option value="{{.Code}}">{{.Code}} — {{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field" id="bulk_unit_type_wrap">
+        <label for="bulk_unit_type_id">Accommodation Type (for UNIT_TYPE scope)</label>
+        <select id="bulk_unit_type_id" name="unit_type_id">
+          <option value="">Select unit type...</option>
+          {{range .UnitTypes}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="start_date">Start Date (Inclusive)</label>
+        <input id="start_date" name="start_date" type="date" required>
+      </div>
+      <div class="field">
+        <label for="end_date">End / Reopen Date (Exclusive)</label>
+        <input id="end_date" name="end_date" type="date" required>
+      </div>
+      <div class="field field-full" id="bulk_units_wrap">
+        <label>Select Units (for UNIT or UNITS scope)</label>
+        <div class="unit-checklist">
+          {{range .Units}}
+          <label>
+            <input type="checkbox" name="unit_ids" value="{{.ID}}">
+            <span><strong class="mono">{{.Code}}</strong> {{.Name}}</span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+      <div class="field field-full">
+        <label for="reason">Operational Reason</label>
+        <input id="reason" name="reason" type="text" placeholder="e.g. Winter storm maintenance closure">
+      </div>
+      <div class="checkbox-row field-full">
+        <input id="apply_to_future_units" name="apply_to_future_units" type="checkbox">
+        <label for="apply_to_future_units">Apply automatically to future units created/reassigned into matching scope</label>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary">Preview Affected Inventory &amp; Conflicts</button>
+    </div>
+  </form>
+</div>
+{{end}}
+
+<div class="card">
+  <h2>Blockout Groups</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scope &amp; Category</th>
+          <th>Dates [Start → Reopen)</th>
+          <th>Claims (Active/Total)</th>
+          <th>Channel &amp; Reason</th>
+          <th>Status</th>
+          <th>Manage Claims &amp; Dates</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Groups}}
+        <tr>
+          <td>
+            <span class="badge badge-warn">{{.Category}}</span>
+            <div class="mono">{{.ScopeType}}</div>
+            {{if .ApplyToFutureUnits}}<div class="subtitle">Inherits to future units</div>{{end}}
+          </td>
+          <td class="mono">{{formatDate .StartDate}} → {{formatDate .EndDate}}</td>
+          <td class="mono">
+            {{.ActiveClaimCount}} active / {{.TotalClaimCount}} total
+            {{if or (gt .ConsumedClaimCount 0) (gt .ReleasedClaimCount 0)}}
+            <div class="subtitle">
+              {{if gt .ConsumedClaimCount 0}}{{.ConsumedClaimCount}} consumed{{end}}
+              {{if and (gt .ConsumedClaimCount 0) (gt .ReleasedClaimCount 0)}}·{{end}}
+              {{if gt .ReleasedClaimCount 0}}{{.ReleasedClaimCount}} released{{end}}
+            </div>
+            {{end}}
+          </td>
+          <td>
+            <span class="badge badge-muted">{{.ChannelScope}}</span>
+            {{if .Reason}}<div>{{.Reason}}</div>{{end}}
+          </td>
+          <td>
+            {{if eq .Status "RELEASED"}}<span class="badge badge-muted">RELEASED</span>
+            {{else if eq .Status "PARTIALLY_RELEASED"}}<span class="badge badge-warn">PARTIALLY RELEASED</span>
+            {{else if eq .Status "PARTIALLY_CONSUMED"}}<span class="badge badge-warn">PARTIALLY CONSUMED</span>
+            {{else if eq .Status "CONSUMED"}}<span class="badge badge-ok">CONSUMED</span>
+            {{else}}<span class="badge badge-err">ACTIVE</span>{{end}}
+          </td>
+          <td>
+            <div class="days-row">
+              <a href="/blocks?group_id={{.ID}}&include_released={{$.IncludeReleased}}" class="btn btn-secondary btn-sm">Inspect Units</a>
+              {{if and $.CanWriteBlocks (gt .ActiveClaimCount 0)}}
+              <form method="post" action="/blocks/groups/{{.ID}}/release" class="inline">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <button type="submit" class="btn btn-danger btn-sm">Release All</button>
+              </form>
+              {{end}}
+            </div>
+            {{if and $.CanWriteBlocks (ne .Status "RELEASED") (or (gt .ActiveClaimCount 0) (gt .ConsumedClaimCount 0))}}
+            <form method="post" action="/blocks/groups/{{.ID}}/dates" class="days-row mt-1">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="version" value="{{.Version}}">
+              <input type="date" name="start_date" value="{{formatDate .StartDate}}" required>
+              <input type="date" name="end_date" value="{{formatDate .EndDate}}" required>
+              <button type="submit" class="btn btn-secondary btn-sm">Update Dates</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6">No blockout groups recorded.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{if .SelectedGroup}}
+<div class="card">
+  <h2>Unit Claims for Blockout <span class="mono">{{.SelectedGroup.Category}}</span> ({{formatDate .SelectedGroup.StartDate}} → {{formatDate .SelectedGroup.EndDate}})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Unit</th><th>Claim Status</th><th>Dates</th><th>Provenance / Booking</th><th>Action</th></tr></thead>
+      <tbody>
+        {{range .SelectedClaims}}
+        <tr>
+          <td><span class="mono">{{.UnitCode}}</span> {{.UnitName}}</td>
+          <td>
+            {{if eq (printf "%s" .Status) "ACTIVE"}}<span class="badge badge-err">ACTIVE</span>
+            {{else if eq (printf "%s" .Status) "CONSUMED"}}<span class="badge badge-ok">CONSUMED</span>
+            {{else}}<span class="badge badge-muted">{{.Status}}</span>{{end}}
+          </td>
+          <td class="mono">{{formatDate .StartDate}} → {{formatDate .EndDate}}</td>
+          <td>
+            {{if .ConsumedByReservationID}}
+            <a href="/reservations/{{.ConsumedByReservationID}}" class="mono">{{if .ReservationRef}}{{.ReservationRef}}{{else}}View Booking{{end}}</a>
+            {{if .GuestName}}<div class="subtitle">{{.GuestName}} ({{.ReservationStat}})</div>{{end}}
+            {{else}}—{{end}}
+          </td>
+          <td>
+            {{if and $.CanWriteBlocks (eq (printf "%s" .Status) "ACTIVE")}}
+            <form method="post" action="/blocks/groups/{{$.SelectedGroup.ID}}/release">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="unit_ids" value="{{.UnitID}}">
+              <button type="submit" class="btn btn-secondary btn-sm">Release This Unit</button>
+            </form>
+            {{else if and $.CanWriteBlocks (eq (printf "%s" .Status) "RELEASED")}}
+            <form method="post" action="/blocks/groups/{{$.SelectedGroup.ID}}/reinstate">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="claim_ids" value="{{.ID}}">
+              <button type="submit" class="btn btn-secondary btn-sm">Reinstate Claim</button>
+            </form>
+            {{else}}—{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+{{end}}

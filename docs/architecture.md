@@ -1,0 +1,130 @@
+# LOVELACE Booking System — Platform Architecture & Five-Phase Blueprint
+
+**Platform Identity:** LOVELACE Booking System (`internal/branding`)  
+**Initial Managed Property:** Tir Bach Campsite, Pembrokeshire, Wales  
+**Current Scope:** Phase 3 Milestone 3 — Guest Management & Communications CRM + Maintenance Management + Operations Centre on top of Phase 1–2.1.1  
+**Stack:** Go 1.24 (`net/http`, `html/template`, `embed`) + PostgreSQL 17 (`pgx/v5`, `btree_gist`) + Next.js 16 Public Frontend (`apps/public-web/`)
+
+---
+
+## 1. Architectural Rationale
+
+### 1.1 Mandatory Public vs. Administrative Frontend Separation (Phases 2–5)
+
+Throughout Phases 2–5, the **LOVELACE Public Booking Application** and **LOVELACE Administrative Application** MUST remain **two completely separate frontend applications** built, deployed, and served on **separate origins**:
+
+- **Administrative Application (Current):**
+  - Consistently branded **LOVELACE Booking System** (`internal/branding`, `internal/webui`).
+  - Handles inventory administration, reservations, pricing/rate rules, availability blocks/restrictions/allocations, channel manager configuration, guest administration, reporting, and platform/property settings.
+  - Protected exclusively behind administrative authentication (`admin_sessions`, `tirbach_session` host-only cookie), RBAC (`internal/auth`), and protected `/api/v1/*` administrative endpoints.
+- **Public Application (Phases 2–3+):**
+  - Completely separate frontend build/deployment and separate origin (supporting configurable per-property branding via `properties.branding_config`, custom domains, and multi-property routing).
+  - Supports property-specific branding, accommodation discovery, availability search, pricing quotes, customer booking, checkout/payment, and guest-facing booking management.
+  - Must **never** mount administrative routes, embed admin assets/bundles, call administrative APIs, or rely on hidden routes/menus as a security control.
+- **Shared Backend, Strictly Scoped Surfaces:**
+  - Both applications share backend domain rules (`internal/domain`, `internal/service`) and the authoritative PostgreSQL database (`internal/store/postgres`, `inventory_claims` GiST exclusions) so inventory allocation/pricing logic is never duplicated in frontend code.
+  - Public requests may only invoke explicitly scoped public/customer API endpoints (e.g., a physically/logically isolated public API surface such as `/api/public/v1/*` on a separate listener/router or strict edge route), never `/api/v1/*` admin operations, admin credentials, or channel manager secrets.
+
+### 1.2 Why Go + PostgreSQL (Modular Backend)
+For an independent glamping and camping business like Tir Bach, operational reliability, low hosting overhead, and long-term maintainability matter more than distributed-service complexity:
+
+- **Go Modular Monolith:** Compiles to a single static binary with embedded SQL migrations and server-rendered Admin templates. Clear package boundaries (`domain`, `store/postgres`, `service`, `auth`, `secrets`, `channels`, `audit`, `httpapi`, `webui`) allow Phases 2–5 to be built incrementally without schema churn or rewrites.
+- **PostgreSQL as the Integrity Backbone:**
+  - **Unified Central Inventory Claims (`inventory_claims`) with Partial GiST Constraints (`0003_phase1_5.sql`):**
+    1. Exclusive claims (`RESERVATION`, `PENDING_RESERVATION`, `MAINTENANCE`, `OWNER_USE`, `SEASONAL_CLOSURE`, `WEATHER_CLOSURE`, `OPERATIONAL_BUFFER`, `ADMINISTRATIVE_BLOCK`, `CHANNEL_ALLOCATION`, `HOLD`):
+       ```sql
+       EXCLUDE USING gist (unit_id WITH =, claim_range WITH &&)
+         WHERE (status = 'ACTIVE' AND claim_type <> 'CHANNEL_RESTRICTION')
+       ```
+    2. Channel stop-sell restrictions (`CHANNEL_RESTRICTION` — allows distinct channels like `AIRBNB` + `BOOKING_COM` to overlap without blocking `DIRECT` or each other):
+       ```sql
+       EXCLUDE USING gist (unit_id WITH =, channel_scope WITH =, claim_range WITH &&)
+         WHERE (status = 'ACTIVE' AND claim_type = 'CHANNEL_RESTRICTION')
+       ```
+    3. **Channel Allocation Atomic Consumption:** Matching-channel reservations (`r.ChannelCode == claim.ChannelScope`) inside an active `CHANNEL_ALLOCATION` lock claims `FOR UPDATE`, transition the parent allocation claim to `CONSUMED` (`consumed_by_reservation_id = r.ID`), insert preserved `ACTIVE` prefix/suffix residual segments linked to the same `blockout_group_id`, and insert the reservation's `RESERVATION`/`PENDING_RESERVATION` claim atomically. Non-matching channels continue hitting `409 date_overlap`.
+  - **Integer Minor Currency Units:** Monetary values (`*_pence` + ISO-4217 `currency`) and tax rates (`tax_rate_bps`) eliminate floating-point rounding bugs ahead of Phase 2/3 payments.
+  - **Append-Only Audit Triggers:** `trg_audit_logs_immutable` (`UPDATE`/`DELETE`) + `trg_audit_logs_no_truncate` (`TRUNCATE` blocked outside scoped test GUC resets).
+  - **Occupancy & Lifecycle Validation:** Reservation creation/amendment/`INQUIRY -> CONFIRMED` validates `adults <= max_adults`, `children <= max_children`, `infants <= max_infants`, and `adults+children+infants <= max_guests` against either summed multi-unit capacity or explicit per-unit allocations on `reservation_units (adults, children, infants)`. Inactive, retired, and archived units are rejected across reservations, blocks, bulk blockouts, and unit release rules.
+
+---
+
+## 2. Five-Phase Roadmap & Current Scope
+
+> **Phase 3 Milestone 3 Boundary:** Built on top of Phases 1–2.1.1 and Milestones 1–2 (+ 3.2.1/3.2.2 Maintenance Integrity), Milestone 3 introduces **Guest Management & Communications CRM** (`/guests`, `/enquiries`, `/communications/settings`, and `/api/v1/properties/{propertyID}/guests|enquiries|communications|communication-templates|automation-rules*`) inside the LOVELACE admin console with strict separation from `apps/public-web/` and `/api/public/v1/*`. Milestone 4 (Public Guest Portal) and Phases 4–5 (live OTA sync and BI analytics) remain deferred.
+
+| Phase | Name | Scope & Status |
+|---|---|---|
+| **Phase 1.1 – 1.6.1** | **Core Inventory, Reservations & Administration** | **Implemented:** Multi-property anchor, unit types, physical units, extras, rate plans & seasonal rules + previewer, manual multi-unit reservations & lifecycle, `guests`, `booking_channels`, unified `inventory_claims`, bulk blockout workflow & future-unit inheritance, `availability_release_rules`, Admin Booking Calendar (`/calendar`), Channel Manager encrypted config vault, RBAC + forced password rotation + append-only audit logs. |
+| **Phase 2 / 2.1 / 2.1.1** | **Direct Customer Booking Engine** | **Implemented:** Isolated Next.js public storefront (`apps/public-web/`), `/api/public/v1/*` API with HMAC BFF auth, live availability search, immutable quotes, atomic `HOLD` claims, Stripe Checkout Sessions + signed webhook verification (`livemode` enforced in prod), transactional `email_outbox`, confirmation lookup & cancellation requests, admin payment ledger & exception resolution (`/payment-exceptions`). |
+| **Phase 3 (Milestone 1 + 3.1)** | **Operations Centre & Daily Changeover** | **Implemented (Milestone 1):** Role-focused **Operations Centre** (`/` & `/operations`) answering who is arriving/departing/in-house, what needs cleaning/inspection, and what needs immediate attention; strict separation of Confirmed Arrivals (`CONFIRMED`/`CHECKED_IN`), Pending/Provisional Holds (`PENDING`), and Inquiries (`INQUIRY`); **5-stage Daily Changeover Board** (`GUEST_DEPARTING` → `CLEANING_REQUIRED` → `CLEANING_IN_PROGRESS` → `INSPECTION_REQUIRED` → `READY`); automatic checkout changeover task creation; completed inspection tracking (`inspected_at`/`inspected_by` recorded on `READY`, cleared on re-clean; `started_at`/`started_by` also cleared on re-clean in Milestone 2). |
+| **Phase 3 (Milestone 2 + 3.2.1/3.2.2)** | **Maintenance Management & Facilities** | **Implemented (Milestone 2):** Admin-only maintenance ledger (`maintenance_requests`, `MNT-YYYY-NNNN`), taxonomy (`maintenance_categories`), site facilities (`maintenance_locations`), equipment registry (`maintenance_assets`), contractor directory (`maintenance_contractors`), append-only work log (`maintenance_work_entries`), repair inspections (`maintenance_inspections`), local attachment store (`maintenance_attachments`), explicit non-auto-releasing `MAINTENANCE` inventory restrictions (`maintenance_restriction_links` → `blockout_groups` → `inventory_claims`) with booking-overlap protection, idempotent calendar-aware preventative schedules (`maintenance_schedules`) with assignee deactivation/cross-property validation, Operations Centre KPIs & alerts, and `maintenance_staff` / `housekeeping_staff` RBAC roles. |
+| **Phase 3 (Milestone 3 + 3.3.1)** | **Guest Management & Communications CRM** | **Implemented (Milestone 3 + 3.3.1 Remediation):** 360 Guest Profiles & search/segmentation (`NEW`, `RETURNING` from completed stays, `UPCOMING`, `OUTSTANDING_REQUESTS`, `UNRESOLVED_COMPLAINTS`), generic edit lifecycle restriction (`ACTIVE`/`VIP`/`DO_NOT_CONTACT` only; `MERGED`/`ANONYMIZED` reserved for dedicated workflows + DB checks), paginated duplicate detection across >250 active guests with completeness metadata & atomic transactional merge (`guest_merge_events`, `MERGED` redirects), structured preferences & party `occupant_details` separated from permission-gated `guest_notes`, enquiries/requests/complaints (`ENQ-YYYY-NNNN`) with `INTERNAL` message isolation & same-property maintenance linking, unified `guest_communications` timeline linked to `email_outbox` with DB-enforced canonical guest/reservation consistency, signed delivery webhooks (`communication_delivery_events`), versioned allowlisted templates (`communication_templates`), timezone-aware pre-arrival/post-stay automation (`communication_automation_rules`, `communication_jobs`), append-only `guest_consent_records` (server timestamps, `NOT_SUBSCRIBED` initial state), unbounded operational GDPR CRM export with SAR review framing, canonical-resolving anonymisation across merge clusters/outbox/delivery events/jobs, advisory-only `property_retention_policies`, and Operations Centre CRM alerts.<br>**Deferred (Phase 3 Milestone 4):** Self-service public guest portal & accounts (`apps/public-web/`). |
+| **Phase 4 (Future)** | **External Channels & Distribution** | Deferred: Live Airbnb/Booking.com/channel manager adapter implementations (`internal/channels.Adapter`), OTA sync jobs, external reservation imports, webhooks, automated rate/availability distribution. |
+| **Phase 5 (Future)** | **Reporting & Business Intelligence** | Deferred: Historical occupancy trends, RevPAR & average nightly rate analytics, revenue graphs/forecasting, booking channel comparisons, seasonal reporting, guest retention analytics, accounting exports. |
+
+---
+
+## 3. Domain & Database Design (Through Phase 3 Milestone 2)
+
+```text
+properties (1)
+ ├──< unit_types (1) ──< units (1) ──< inventory_claims (GiST active overlap exclusion)
+ │                         │               ▲                    ▲
+ │                         ├──< housekeeping_tasks (5-stage changeover, independent of claims)
+ │                         │               │                    │
+ │                         ├──< reservation_units >── reservations (M) >── guests
+ │                         │               │                    │
+ │                         │               └── blockout_groups ─┘
+ │                         │                     ▲
+ │                         │                     └──< maintenance_restriction_links >── maintenance_requests
+ │                         │
+ │                         └──< availability_release_rules (UNIT / UNIT_TYPE / PROPERTY + channel)
+ │
+ ├──< maintenance_categories / maintenance_locations / maintenance_assets / maintenance_contractors
+ ├──< maintenance_requests (──< assignments, work_entries, inspections, status_history, attachments)
+ ├──< maintenance_schedules (idempotent occurrence key -> maintenance_requests)
+ ├──< booking_channels
+ ├──< rate_plans ──< rate_rules >── unit_types
+ ├──< extras
+ ├──< property_booking_policies / booking_holds / payment_attempts / payment_exceptions / email_outbox
+ ├──< channel_connections (AES-256-GCM encrypted_credentials + credential_hints)
+ ├──< admin_users ──< admin_sessions
+ └──< audit_logs (immutable BEFORE UPDATE OR DELETE trigger)
+```
+
+### 3.1 Unified Claim & Housekeeping Independence Rules
+- **Reservations:**
+  - `INQUIRY` does not insert active `inventory_claims` (inquiry-only; excluded from confirmed arrival counts on the Operations Centre and surfaced in Inquiries Requiring Follow-Up).
+  - `PENDING` creates `PENDING_RESERVATION` active claims (surfaced separately from accepted `CONFIRMED`/`CHECKED_IN` arrivals).
+  - `CONFIRMED` and `CHECKED_IN` hold `RESERVATION` active claims and represent accepted arrivals.
+  - `CANCELLED` and `NO_SHOW` transition claims to `RELEASED` (`released_at` set), freeing inventory immediately.
+  - `CHECKED_OUT` transitions claims to `COMPLETED` and automatically queues `CLEANING_REQUIRED` tasks in `housekeeping_tasks` (`AutoCreateCheckoutHousekeepingTasks`) without automatically marking any unit `READY`.
+- **Housekeeping vs. Inventory Independence (`0008_phase3_ops_centre.sql`):**
+  - `housekeeping_tasks` and `units.housekeeping_status` track physical readiness independently from `inventory_claims` maintenance/weather closures or live inventory sellability. Approving a unit `READY` never removes a maintenance block, and resolving a maintenance block does not skip cleaning/inspection.
+- **Bulk Blockouts:**
+  - `blockout_groups` tracks `UNIT`, `UNITS`, `UNIT_TYPE`, or `PROPERTY` operations (`OWNER_USE`, `MAINTENANCE`, `SEASONAL_CLOSURE`, `WEATHER_CLOSURE`, `CHANNEL_ALLOCATION`, `OPERATIONAL_BUFFER`, `ADMINISTRATIVE_BLOCK`).
+  - Partial/unit releases update individual `inventory_claims.status = 'RELEASED'` and recalculate `blockout_groups.status` (`ACTIVE`, `PARTIALLY_RELEASED`, `RELEASED`).
+  - When `apply_to_future_units = TRUE` on active `PROPERTY` or `UNIT_TYPE` groups, newly created or reassigned units automatically inherit matching claims transactionally.
+
+### 3.2 Phase 3 Milestone 2 & 3.2.1 — Maintenance Management, Integrity & Preventative Scheduling (`0009` / `0010`)
+- **Single-Binary Boundary:** Maintenance entities (`maintenance_categories`, `maintenance_locations`, `maintenance_assets`, `maintenance_contractors`, `maintenance_requests`, `maintenance_assignments`, `maintenance_work_entries`, `maintenance_inspections`, `maintenance_status_history`, `maintenance_attachments`, `maintenance_restriction_links`, `maintenance_schedules`) reside strictly in LOVELACE admin routes (`/maintenance*`, `/api/v1/properties/{propertyID}/maintenance*`). `apps/public-web/` and `/api/public/v1/*` have zero access to maintenance data or attachment blobs.
+- **Composite Property-Level Data Isolation (`0010_phase3_2_1_maintenance_integrity.sql`):** All maintenance foreign-key relationships across locations, assets, requests, assignments, work entries, inspections, history, attachments (composite `(property_id, request_id, work_entry_id)`), restriction links, and preventative schedules enforce composite `(property_id, ...)` constraints in PostgreSQL in addition to service/repository checks validating same-property ownership, active contractors, and property/global staff scope.
+- **Post-Completion Inspection Cycle Integrity:** `CLOSED` requires a `PASSED` inspection whose `inspected_at` is strictly later than the current repair cycle's `completed_at`. Reopening a completed or closed request clears `completed_at` and `closed_at` while keeping historical inspection records intact.
+- **Explicit Non-Auto-Releasing Restrictions:** Linking an accommodation block from a maintenance request creates a genuine `blockout_groups` + `inventory_claims` (`MAINTENANCE`) record enforced by the PostgreSQL GiST exclusion constraint. Overlapping confirmed bookings fail cleanly (`409 date_overlap`) and are surfaced on the request as affected bookings requiring coordinator decision rather than silently displacing guests. Completing, approving inspection on, or closing a maintenance request **never** releases the inventory block; an authorized user with `maintenance:manage` and `blocks:write` must release it explicitly (`release-restriction`).
+- **Attachment Storage & Readiness:** Evidence files are validated with HTTP `DetectContentType` magic-byte sniffing (`image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf`, `text/plain` only; `.svg`/HTML/scripts/executables rejected), stored outside the web root under `TIRBACH_ATTACHMENT_DIR` via SHA-256 content-addressed keys, verified writable during startup and `/readyz` (`attachments` health component), and served only behind authenticated `maintenance:read` handlers with `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+- **Calendar-Aware Consolidated Preventative Scheduling:** Background worker (`cmd/server/main.go` 30s ticker) and manual `/schedules/run` acquire due schedules via `FOR UPDATE OF ms SKIP LOCKED`, clamp calendar dates to month length while preserving `anchor_day`, consolidate overdue missed runs into at most one catch-up work order on the latest aligned due date (`<= asOfDate`), advance `next_due_date` strictly beyond `asOfDate`, and enforce `UNIQUE (schedule_id, scheduled_occurrence_date)` (`uq_maintenance_schedule_occurrence`).
+
+### 3.3 Phase 3 Milestone 3, 3.3.1 & 3.3.2 — Guest CRM, Communications Safety & Privacy Integrity (`0011`–`0017`)
+- **Isolated Guest CRM:** Guest profiles, merge history, preferences, internal notes, enquiries (`INTERNAL` message isolation), unified timeline communications, templated outbox sends, consent ledger (`NOT_SUBSCRIBED` default), operational export (`ExportGuestData`), and canonical erasure (`AnonymizeGuest`) live exclusively in the LOVELACE admin app and `/api/v1/properties/{propertyID}/*`.
+- **Audit PII Minimisation & Controlled Historical Redaction (`0013`–`0018`):** `Service.recordAudit` persists minimal operational snapshots via `audit_sanitizer.go` and pseudonymous `guest@public.lovelace` actor attribution on public booking flows while keeping `audit_logs` strictly append-only (`BEFORE UPDATE OR DELETE OR TRUNCATE`). Legacy historical PII entries can be masked for authorized readers through `audit_log_redactions`, `redact_audit_log_entry(...)` (`SECURITY DEFINER`), and `audit_logs_effective` gated behind `PermGuestsAnonymize` + `PermAuditRead` (`POST /api/v1/properties/{propertyID}/audit-logs/{auditLogID}/redact`), with controlled `reason_category`, PG `validate_non_pii_reason(...)` (email, international/UK phone, control-char checks), strict **resource-type-aware allowlist** JSONB validation (`validate_audit_redaction_snapshot` + `audit_resource_key_rule` in `0018` replacing the `0017` denylist, authoritatively looking up `audit_logs.resource_type`, synchronized 1:1 with `audit_sanitizer.go`), and `BEFORE INSERT` table triggers (`0016`–`0018`).
+- **Booking Hold & Dismissal Privacy Completeness:** Confirmed checkout (`ConfirmPaymentAndHold`) populates `booking_holds.guest_id` while unconfirmed abandoned holds stay `NULL` (requiring time-based expiry rather than email-guessing erasure). `ExportGuestData` includes linked `BookingHolds` (minus session secret hashes), `DuplicateDismissals` (without staff attribution), and recursive multi-hop `MergeHistory` (`A -> B -> ... -> Z`); `AnonymizeGuest` scrubs linked holds across all statuses and clears dismissal free-text reasons (`reason_category = 'ANONYMISED'`).
+- **Outbox Worker Liveness, Bounded SMTP & Evidence-Backed Reconciliation (`0015`–`0017`):** `BeginOutboxDispatchLease` claims `DISPATCHING` with a monotonic `dispatch_fence_epoch` and renewable `dispatch_lease_expires_at` (`RenewOutboxDispatchHeartbeat`) under PostgreSQL `clock_timestamp()` authority prior to outside-transaction `SMTPSender.Send(ctx, msg)` (canonical `DefaultDispatchConfig()`: `60s` lease, `20s` heartbeat, `30s` transport timeout). Heartbeat rejection (`renewed=false`) or DB error cancels `sendCtx` immediately, while expired leases cannot be renewed or settled even prior to sweeping. Only expired leases are fenced by `SweepStaleOutboxDispatches` (`WORKER_FENCED` -> `DISPATCH_UNKNOWN`); pre-DATA cancellations settle via `TERMINATED_BEFORE_SEND` while post-DATA timeouts settle as `UNCERTAIN_TIMEOUT` (`DISPATCH_UNKNOWN`). Manual reconciliation requires `comms:reconcile` (`owner_admin`/`manager` only), active non-rotating `admin_users` (`must_rotate_password = FALSE`) verified in PostgreSQL, no live lease, and non-PII external proof (`MTA_REJECTED`/`PROVIDER_WEBHOOK_FAILED`/`PROVIDER_NOT_SUBMITTED` for failure/cancel), while `guests.erasure_requested_at` blocks premature erasure completion. `enforce_guest_consent_append_only()` allows `guest_consent_records.guest_id` reassignment strictly for verified merges while `guest_consent_redactions` masks historical consent notes via `guest_consent_records_effective`. See [Privacy & PII Inventory](privacy-pii-inventory.md).
+
+---
+
+## 4. Security Architecture
+
+- **Authentication & Password Rotation:** Argon2id password hashing (`m=65536, t=3, p=1`), CSPRNG 256-bit `HttpOnly`/`SameSite=Lax` session cookies (stored as SHA-256 hashes in `admin_sessions`), sliding idle & absolute expiry. Accounts flagged `must_rotate_password = TRUE` are blocked from all operational API/Web routes until password rotation succeeds, which atomically revokes all prior sessions.
+- **CSRF & Headers:** Constant-time per-session CSRF token validation on all cookie-authenticated mutations; CSP (`default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`.
+- **Channel Credential Vault:** AES-256-GCM encryption keyed by `TIRBACH_ENCRYPTION_KEY` (32 bytes); responses expose only `credential_hints` (e.g. `••••9988`).
+- **Fail-Closed Production Startup:** When `TIRBACH_ENV=production`, startup refuses insecure cookies (`TIRBACH_COOKIE_SECURE=false`), `TIRBACH_AUTO_SEED=true`, missing/weak `TIRBACH_ENCRYPTION_KEY`, and known dev Postgres credentials.

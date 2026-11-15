@@ -1,0 +1,188 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Maintenance &amp; Facilities</h1>
+    <p class="subtitle">Reactive repairs, planned preventative jobs, inspections, and unit availability restrictions for {{.Property.Name}}.</p>
+  </div>
+  <div class="inline-row">
+    <a href="/maintenance/schedule" class="btn btn-secondary btn-sm">Workload &amp; Schedule</a>
+    <a href="/maintenance/facilities" class="btn btn-secondary btn-sm">Facilities, Assets &amp; Config</a>
+    {{if .CanReportMaintenance}}
+    <a href="/maintenance/new" class="btn btn-primary">+ Report Maintenance</a>
+    {{end}}
+  </div>
+</div>
+
+<div class="grid grid-4 mb-3">
+  <div class="card ops-kpi">
+    <div class="kpi-label">Open Requests</div>
+    <div class="kpi-value">{{.Summary.OpenCount}}</div>
+    <div class="ops-kpi-meta"><span><strong>{{.Summary.ScheduledTodayCount}}</strong> scheduled today</span></div>
+  </div>
+  <div class="card ops-kpi {{if gt .Summary.UrgentCount 0}}ops-kpi-alert{{end}}">
+    <div class="kpi-label">Urgent &amp; High Priority</div>
+    <div class="kpi-value">{{.Summary.UrgentCount}} <span class="kpi-sub">urgent · {{.Summary.HighCount}} high</span></div>
+    <div class="ops-kpi-meta"><span><strong>{{.Summary.OverdueCount}}</strong> overdue</span></div>
+  </div>
+  <div class="card ops-kpi">
+    <div class="kpi-label">Awaiting Inspection</div>
+    <div class="kpi-value">{{.Summary.AwaitingInspectionCount}}</div>
+    <div class="ops-kpi-meta"><span><strong>{{.Summary.RecentlyCompletedCount}}</strong> completed recently</span></div>
+  </div>
+  <div class="card ops-kpi">
+    <div class="kpi-label">Inventory Restrictions</div>
+    <div class="kpi-value">{{.Summary.RestrictingUnitsCount}}</div>
+    <div class="ops-kpi-meta"><span>Explicit release required</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="quick-pills mb-2">
+    <span class="ops-focus-label">Quick Views:</span>
+    <a href="/maintenance?status=OPEN" class="ops-tab {{if eq .Filter.Status "OPEN"}}active{{end}}">Open ({{.Summary.OpenCount}})</a>
+    <a href="/maintenance?status=OPEN&amp;priority=URGENT" class="ops-tab {{if eq .Filter.Priority "URGENT"}}active{{end}}">Urgent ({{.Summary.UrgentCount}})</a>
+    <a href="/maintenance?overdue=1" class="ops-tab {{if .Filter.Overdue}}active{{end}}">Overdue ({{.Summary.OverdueCount}})</a>
+    <a href="/maintenance?restricted=1" class="ops-tab {{if .Filter.Restricted}}active{{end}}">Restricting Units ({{.Summary.RestrictingUnitsCount}})</a>
+    <a href="/maintenance?status=AWAITING_INSPECTION" class="ops-tab {{if eq .Filter.Status "AWAITING_INSPECTION"}}active{{end}}">Awaiting Inspection ({{.Summary.AwaitingInspectionCount}})</a>
+    <a href="/maintenance?status=COMPLETED" class="ops-tab {{if eq .Filter.Status "COMPLETED"}}active{{end}}">Completed</a>
+    <a href="/maintenance?status=CLOSED" class="ops-tab {{if eq .Filter.Status "CLOSED"}}active{{end}}">Closed</a>
+    <a href="/maintenance?status=ALL" class="ops-tab {{if eq .Filter.Status "ALL"}}active{{end}}">All History</a>
+  </div>
+
+  <form method="get" action="/maintenance" class="filter-bar">
+    <div class="field filter-field">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="OPEN" {{if eq .Filter.Status "OPEN"}}selected{{end}}>All Open</option>
+        <option value="ALL" {{if eq .Filter.Status "ALL"}}selected{{end}}>All Statuses</option>
+        <option value="REPORTED" {{if eq .Filter.Status "REPORTED"}}selected{{end}}>Reported</option>
+        <option value="TRIAGED" {{if eq .Filter.Status "TRIAGED"}}selected{{end}}>Triaged</option>
+        <option value="SCHEDULED" {{if eq .Filter.Status "SCHEDULED"}}selected{{end}}>Scheduled</option>
+        <option value="IN_PROGRESS" {{if eq .Filter.Status "IN_PROGRESS"}}selected{{end}}>In Progress</option>
+        <option value="AWAITING_PARTS" {{if eq .Filter.Status "AWAITING_PARTS"}}selected{{end}}>Awaiting Parts</option>
+        <option value="ON_HOLD" {{if eq .Filter.Status "ON_HOLD"}}selected{{end}}>On Hold</option>
+        <option value="AWAITING_INSPECTION" {{if eq .Filter.Status "AWAITING_INSPECTION"}}selected{{end}}>Awaiting Inspection</option>
+        <option value="COMPLETED" {{if eq .Filter.Status "COMPLETED"}}selected{{end}}>Completed</option>
+        <option value="CLOSED" {{if eq .Filter.Status "CLOSED"}}selected{{end}}>Closed</option>
+        <option value="CANCELLED" {{if eq .Filter.Status "CANCELLED"}}selected{{end}}>Cancelled</option>
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="priority">Priority</label>
+      <select id="priority" name="priority">
+        <option value="">All Priorities</option>
+        <option value="URGENT" {{if eq .Filter.Priority "URGENT"}}selected{{end}}>Urgent</option>
+        <option value="HIGH" {{if eq .Filter.Priority "HIGH"}}selected{{end}}>High</option>
+        <option value="NORMAL" {{if eq .Filter.Priority "NORMAL"}}selected{{end}}>Normal</option>
+        <option value="LOW" {{if eq .Filter.Priority "LOW"}}selected{{end}}>Low</option>
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="category_id">Category</label>
+      <select id="category_id" name="category_id">
+        <option value="">All Categories</option>
+        {{range .Categories}}
+        <option value="{{.ID}}" {{if eq $.Filter.CategoryID (printf "%s" .ID)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="location_id">Location</label>
+      <select id="location_id" name="location_id">
+        <option value="">All Locations</option>
+        {{range .Locations}}
+        <option value="{{.ID}}" {{if eq $.Filter.LocationID (printf "%s" .ID)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="unit_id">Unit</label>
+      <select id="unit_id" name="unit_id">
+        <option value="">All Units</option>
+        {{range .Units}}
+        <option value="{{.ID}}" {{if eq $.Filter.UnitID (printf "%s" .ID)}}selected{{end}}>{{.Code}} — {{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="assigned_to">Assigned Staff</label>
+      <select id="assigned_to" name="assigned_to">
+        <option value="">Anyone</option>
+        {{range .Staff}}
+        <option value="{{.ID}}" {{if eq $.Filter.AssignedTo (printf "%s" .ID)}}selected{{end}}>{{.FullName}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="work_type">Work Type</label>
+      <select id="work_type" name="work_type">
+        <option value="">All Types</option>
+        <option value="REACTIVE" {{if eq .Filter.WorkType "REACTIVE"}}selected{{end}}>Reactive</option>
+        <option value="PREVENTATIVE" {{if eq .Filter.WorkType "PREVENTATIVE"}}selected{{end}}>Preventative</option>
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="q">Search</label>
+      <input id="q" name="q" type="text" placeholder="Ref, issue, asset, unit..." value="{{.Filter.Search}}">
+    </div>
+    <div class="field field-end">
+      <button type="submit" class="btn btn-secondary">Apply Filters</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Maintenance Queue ({{len .Requests}})</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Reference &amp; Issue</th>
+          <th>Location / Unit / Asset</th>
+          <th>Priority &amp; Status</th>
+          <th>Assigned</th>
+          <th>Target &amp; Impact</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Requests}}
+        <tr>
+          <td>
+            <a href="/maintenance/{{.ID}}"><strong>{{.Reference}} · {{.Title}}</strong></a>
+            <div class="mono">{{.CategoryName}} · {{.WorkType}} · Reported {{formatDate .ReportedAt}}</div>
+          </td>
+          <td>{{.LocationLabel}}</td>
+          <td>
+            <span class="badge {{maintPriorityClass .Priority}}">{{.Priority}}</span>
+            <span class="badge {{maintStatusClass .Status}}">{{.Status.Label}}</span>
+            {{if .LatestInspectionResult}}
+            <div class="mono mt-1">Inspection: {{.LatestInspectionResult}}</div>
+            {{end}}
+          </td>
+          <td>{{.AssigneeLabel}}</td>
+          <td>
+            {{if .Overdue}}
+            <span class="badge badge-err">Overdue ({{formatDatePtr .TargetDate}})</span>
+            {{else}}
+            <div class="mono">Target: {{formatDatePtr .TargetDate}}</div>
+            {{end}}
+            {{if .HasActiveRestriction}}
+            <div class="mt-1"><span class="badge badge-err">Inventory Restricted</span></div>
+            {{end}}
+            {{if .SafetyImpact}}
+            <div class="mt-1"><span class="badge badge-err">Safety Issue</span></div>
+            {{else if .GuestImpact}}
+            <div class="mt-1"><span class="badge badge-warn">Guest Impact</span></div>
+            {{end}}
+          </td>
+          <td><a href="/maintenance/{{.ID}}" class="btn btn-secondary btn-sm">Open</a></td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6">No maintenance requests matched the selected filters.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

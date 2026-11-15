@@ -1,0 +1,122 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Enquiries, Special Requests &amp; Complaints</h1>
+    <p class="subtitle">Track inbound enquiries, lost property, special requests, follow-ups, and linked maintenance tickets.</p>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <form method="get" action="/enquiries" class="inline-row filter-row">
+    <input type="text" name="q" value="{{.Filter.Query}}" placeholder="Search ref, subject, guest">
+    <select name="status">
+      <option value="">All Statuses</option>
+      <option value="NEW" {{if eq .Filter.Status "NEW"}}selected{{end}}>NEW</option>
+      <option value="TRIAGED" {{if eq .Filter.Status "TRIAGED"}}selected{{end}}>TRIAGED</option>
+      <option value="IN_PROGRESS" {{if eq .Filter.Status "IN_PROGRESS"}}selected{{end}}>IN_PROGRESS</option>
+      <option value="WAITING_FOR_GUEST" {{if eq .Filter.Status "WAITING_FOR_GUEST"}}selected{{end}}>WAITING_FOR_GUEST</option>
+      <option value="RESOLVED" {{if eq .Filter.Status "RESOLVED"}}selected{{end}}>RESOLVED</option>
+      <option value="CLOSED" {{if eq .Filter.Status "CLOSED"}}selected{{end}}>CLOSED</option>
+    </select>
+    <select name="category">
+      <option value="">All Categories</option>
+      <option value="GENERAL" {{if eq .Filter.Category "GENERAL"}}selected{{end}}>GENERAL</option>
+      <option value="BOOKING" {{if eq .Filter.Category "BOOKING"}}selected{{end}}>BOOKING</option>
+      <option value="SPECIAL_REQUEST" {{if eq .Filter.Category "SPECIAL_REQUEST"}}selected{{end}}>SPECIAL_REQUEST</option>
+      <option value="COMPLAINT" {{if eq .Filter.Category "COMPLAINT"}}selected{{end}}>COMPLAINT</option>
+      <option value="LOST_PROPERTY" {{if eq .Filter.Category "LOST_PROPERTY"}}selected{{end}}>LOST_PROPERTY</option>
+    </select>
+    <label class="inline-row"><input type="checkbox" name="open" value="1" {{if .Filter.OpenOnly}}checked{{end}}> Open only</label>
+    <label class="inline-row"><input type="checkbox" name="overdue" value="1" {{if .Filter.Overdue}}checked{{end}}> Follow-up due</label>
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    <a href="/enquiries" class="btn btn-secondary btn-sm">Reset</a>
+  </form>
+</div>
+
+<div class="card mb-3">
+  {{if .Enquiries}}
+  <table>
+    <thead><tr><th>Reference</th><th>Guest / Requester</th><th>Category</th><th>Subject</th><th>Priority</th><th>Status</th><th>Assigned</th><th></th></tr></thead>
+    <tbody>
+      {{range .Enquiries}}
+      <tr>
+        <td class="mono"><a href="/enquiries/{{.ID}}">{{.Reference}}</a></td>
+        <td>{{if .GuestID}}<a href="/guests/{{.GuestID}}">{{if .GuestName}}{{.GuestName}}{{else}}{{.RequesterName}}{{end}}</a>{{else}}{{.RequesterName}}{{end}}</td>
+        <td>{{.Category}}</td>
+        <td>{{.Subject}}</td>
+        <td><span class="badge {{if or (eq (printf "%s" .Priority) "URGENT") (eq (printf "%s" .Priority) "HIGH")}}badge-err{{else}}badge-muted{{end}}">{{.Priority}}</span></td>
+        <td><span class="badge badge-info">{{.Status}}</span></td>
+        <td>{{if .AssignedUserName}}{{.AssignedUserName}}{{else}}<em>Unassigned</em>{{end}}</td>
+        <td><a href="/enquiries/{{.ID}}" class="btn btn-secondary btn-sm">Open</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="subtitle">No enquiries match this filter.</p>{{end}}
+</div>
+
+{{if .CanWriteComms}}
+<div class="card">
+  <h2>Log New Enquiry / Request / Complaint</h2>
+  <form method="post" action="/enquiries" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="field">
+      <label>Existing Guest (optional)</label>
+      <select name="guest_id">
+        <option value="">— Match/Create via Requester Email —</option>
+        {{range .Guests}}<option value="{{.ID}}">{{.FullName}} ({{.Email}})</option>{{end}}
+      </select>
+    </div>
+    <div class="field"><label>Requester Name</label><input name="requester_name" type="text"></div>
+    <div class="field"><label>Requester Email</label><input name="requester_email" type="email"></div>
+    <div class="field"><label>Requester Phone</label><input name="requester_phone" type="text"></div>
+    <div class="field">
+      <label>Category</label>
+      <select name="category">
+        <option value="GENERAL">GENERAL</option>
+        <option value="BOOKING">BOOKING</option>
+        <option value="AVAILABILITY">AVAILABILITY</option>
+        <option value="ACCOMMODATION">ACCOMMODATION</option>
+        <option value="FACILITIES">FACILITIES</option>
+        <option value="ARRIVAL_DEPARTURE">ARRIVAL_DEPARTURE</option>
+        <option value="SPECIAL_REQUEST">SPECIAL_REQUEST</option>
+        <option value="GROUP_BOOKING">GROUP_BOOKING</option>
+        <option value="CANCELLATION">CANCELLATION</option>
+        <option value="COMPLAINT">COMPLAINT</option>
+        <option value="LOST_PROPERTY">LOST_PROPERTY</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Priority</label>
+      <select name="priority">
+        <option value="LOW">LOW</option>
+        <option value="NORMAL" selected>NORMAL</option>
+        <option value="HIGH">HIGH</option>
+        <option value="URGENT">URGENT</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Source</label>
+      <select name="source">
+        <option value="PHONE">Phone</option>
+        <option value="IN_PERSON">In-Person</option>
+        <option value="EMAIL">Email</option>
+        <option value="WEB">Website</option>
+        <option value="ADMIN">Admin</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Assign To</label>
+      <select name="assigned_user_id">
+        <option value="">— Unassigned —</option>
+        {{range .Staff}}<option value="{{.ID}}">{{.FullName}} ({{.Role}})</option>{{end}}
+      </select>
+    </div>
+    <div class="field"><label>Follow-up Due Date</label><input name="follow_up_at" type="date"></div>
+    <div class="field field-full"><label>Subject</label><input name="subject" type="text" required></div>
+    <div class="field field-full"><label>Details</label><textarea name="description" rows="3"></textarea></div>
+    <div class="field field-full"><button type="submit" class="btn btn-primary">Create Enquiry</button></div>
+  </form>
+</div>
+{{end}}
+{{end}}

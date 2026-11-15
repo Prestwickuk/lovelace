@@ -1,0 +1,162 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Communication Templates, Automation &amp; GDPR Retention</h1>
+    <p class="subtitle">Manage property-branded templates, automated stay-lifecycle sends (property timezone: <strong class="mono">{{.Property.Timezone}}</strong>), outbox failures, and data retention.</p>
+  </div>
+</div>
+
+{{if .FailedEmails}}
+<div class="card mb-3" id="failed-emails">
+  <h2>Failed / Bounced Emails Requiring Attention ({{len .FailedEmails}})</h2>
+  <table>
+    <thead><tr><th>Template</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Last Error</th><th></th></tr></thead>
+    <tbody>
+      {{range .FailedEmails}}
+      <tr>
+        <td class="mono">{{.Template}}</td>
+        <td class="mono">{{.Recipient}}</td>
+        <td>{{.Subject}}</td>
+        <td><span class="badge badge-err">{{.Status}}</span> ({{.Attempts}} attempts)</td>
+        <td><small>{{.LastError}}</small></td>
+        <td>
+          {{if eq .Status "DISPATCH_UNKNOWN"}}
+            {{if $.CanReconcileComms}}
+            <form method="post" action="/communications/outbox/{{.OutboxID}}/reconcile" style="display:flex;flex-direction:column;gap:4px;min-width:260px;">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <select name="resolution" required>
+                <option value="CONFIRMED_SENT">Confirm Sent (Provider Accepted)</option>
+                <option value="CONFIRMED_FAILED">Confirm Failed (Verified Non-Delivery)</option>
+                <option value="CANCEL">Cancel Without Re-Send (Verified Non-Delivery)</option>
+              </select>
+              <select name="evidence_type" required>
+                <option value="MTA_ACCEPTED">MTA Accepted Log</option>
+                <option value="PROVIDER_WEBHOOK_ACCEPTED">Provider Webhook Accepted</option>
+                <option value="CONSERVATIVE_ASSUME_SENT">Conservative Assume Sent</option>
+                <option value="MTA_REJECTED">MTA Rejected / Reset Before DATA</option>
+                <option value="PROVIDER_WEBHOOK_FAILED">Provider Webhook Failed</option>
+                <option value="PROVIDER_NOT_SUBMITTED">Provider Confirmed Not Submitted</option>
+              </select>
+              <input type="text" name="reason_code" placeholder="Reason code (e.g. SMTP_POST_DATA_TIMEOUT)" required maxlength="64">
+              <input type="text" name="evidence_ref" placeholder="External log / ticket ref (no PII)" required maxlength="160">
+              <input type="text" name="note" placeholder="Operator note (no email/phone PII)" required maxlength="240">
+              <button type="submit" class="btn btn-primary btn-sm">Reconcile Unknown Dispatch</button>
+            </form>
+            {{else}}
+            <small class="text-muted">Manager/Owner approval required (comms:reconcile)</small>
+            {{end}}
+          {{else if $.CanWriteComms}}
+          <form method="post" action="/communications/failed/{{.OutboxID}}/retry">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn-primary btn-sm">Retry Send</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+<div class="card mb-3">
+  <h2>Automated Booking Communication Rules</h2>
+  {{if .Rules}}
+  <table>
+    <thead><tr><th>Trigger</th><th>Rule Name</th><th>Offset (hours)</th><th>Local Send Hour</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+      {{range .Rules}}
+      <tr>
+        <td class="mono">{{.TriggerEvent}}</td>
+        <td>{{.Name}}</td>
+        <td>{{.OffsetHours}}h</td>
+        <td>{{if .SendHourLocal}}{{.SendHourLocal}}:00 local{{else}}Exact offset{{end}}</td>
+        <td>{{if .IsActive}}<span class="badge badge-ok">Enabled</span>{{else}}<span class="badge badge-muted">Paused</span>{{end}}</td>
+        <td>
+          {{if $.CanManageTemplates}}
+          <form method="post" action="/communications/automation-rules/{{.ID}}/update" class="inline-row">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="name" value="{{.Name}}">
+            <input type="hidden" name="template_id" value="{{.TemplateID}}">
+            <input type="hidden" name="applicable_statuses" value="{{joinStrings .ApplicableStatuses ","}}">
+            <input name="offset_hours" type="number" value="{{.OffsetHours}}" class="w-num-md">
+            <input name="send_hour_local" type="number" min="0" max="23" value="{{if .SendHourLocal}}{{.SendHourLocal}}{{end}}" class="w-num-sm" placeholder="hr">
+            <select name="is_active">
+              <option value="true" {{if .IsActive}}selected{{end}}>Enabled</option>
+              <option value="false" {{if not .IsActive}}selected{{end}}>Paused</option>
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="subtitle">No automation rules configured.</p>{{end}}
+</div>
+
+<div class="card mb-3">
+  <h2>Upcoming &amp; Recent Automated Sends</h2>
+  {{if .Jobs}}
+  <table>
+    <thead><tr><th>Trigger</th><th>Booking Ref</th><th>Guest</th><th>Scheduled (UTC)</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      {{range .Jobs}}
+      <tr>
+        <td class="mono">{{.TriggerEvent}}</td>
+        <td><a href="/reservations/{{.ReservationID}}" class="mono">{{.ReservationRef}}</a></td>
+        <td>{{.GuestName}}</td>
+        <td class="mono">{{formatTime .ScheduledForUTC}}</td>
+        <td><span class="badge {{if eq .Status "QUEUED"}}badge-ok{{else if eq .Status "CANCELLED"}}badge-muted{{else}}badge-info{{end}}">{{.Status}}</span></td>
+        <td><small>{{.SkipReason}}</small></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="subtitle">No automated communication jobs scheduled yet.</p>{{end}}
+</div>
+
+<div class="card mb-3">
+  <h2>Message Templates</h2>
+  <p class="subtitle">Allowlisted placeholders: {{range $k, $v := .Placeholders}}<code class="mono">{{printf "{{%s}}" $k}}</code> {{end}}</p>
+  {{range .Templates}}
+  <details class="mb-2 template-accordion">
+    <summary><strong>{{.Name}}</strong> <span class="mono">({{.Code}} · {{.Locale}} · v{{.Version}})</span></summary>
+    {{if $.CanManageTemplates}}
+    <form method="post" action="/communications/templates/{{.ID}}/update" class="form-grid mt-2">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="version" value="{{.Version}}">
+      <div class="field"><label>Name</label><input name="name" type="text" value="{{.Name}}" required></div>
+      <div class="field">
+        <label>Status</label>
+        <select name="is_active"><option value="true" {{if .IsActive}}selected{{end}}>Active</option><option value="false" {{if not .IsActive}}selected{{end}}>Inactive</option></select>
+      </div>
+      <input type="hidden" name="category" value="{{.Category}}">
+      <div class="field field-full"><label>Subject Template</label><input name="subject_template" type="text" value="{{.SubjectTemplate}}" required></div>
+      <div class="field field-full"><label>Plain-Text Body</label><textarea name="body_text_template" rows="4" required>{{.BodyTextTemplate}}</textarea></div>
+      <div class="field field-full"><label>HTML Body</label><textarea name="body_html_template" rows="3">{{.BodyHTMLTemplate}}</textarea></div>
+      <div class="field field-full"><button type="submit" class="btn btn-primary btn-sm">Save New Template Version</button></div>
+    </form>
+    {{end}}
+  </details>
+  {{end}}
+</div>
+
+<div class="card">
+  <h2>GDPR &amp; Data Retention Policy (Advisory Configuration)</h2>
+  <p class="subtitle mb-2">Configured retention windows are recorded as property governance guidance. Automated background retention anonymisation is not enabled in this release; anonymisation runs strictly via explicit staff review and manual action.</p>
+  <form method="post" action="/communications/retention-policy" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="auto_anonymize_enabled" value="false">
+    <div class="field"><label>Enquiry Retention (days)</label><input name="enquiry_retention_days" type="number" min="30" value="{{.Retention.EnquiryRetentionDays}}"></div>
+    <div class="field"><label>Communications Retention (days)</label><input name="comms_retention_days" type="number" min="30" value="{{.Retention.CommsRetentionDays}}"></div>
+    <div class="field"><label>Inactive Guest Retention (days)</label><input name="inactive_guest_retention_days" type="number" min="90" value="{{.Retention.InactiveGuestRetentionDays}}"></div>
+    <div class="field">
+      <label>Execution Mode</label>
+      <input type="text" value="Manual Review Only (Advisory Policy)" readonly>
+    </div>
+    {{if .CanManageTemplates}}<div class="field field-full"><button type="submit" class="btn btn-primary btn-sm">Save Retention Policy</button></div>{{end}}
+  </form>
+</div>
+{{end}}

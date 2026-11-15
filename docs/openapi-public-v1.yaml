@@ -1,0 +1,161 @@
+openapi: 3.1.0
+info:
+  title: LOVELACE Public Booking API
+  version: 1.0.0
+  description: >
+    Explicitly scoped public/customer booking API for LOVELACE-managed properties.
+    Completely separated from protected LOVELACE administrative endpoints (/api/v1/*).
+    No administrative authentication, channel manager secrets, or internal notes are exposed.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local Go Backend Public API Origin
+paths:
+  /api/public/v1/properties/{slug}:
+    get:
+      summary: Get public property configuration, branding, and booking policies
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public property details and booking policy
+        "404":
+          description: Property not found or public booking disabled
+  /api/public/v1/accommodation:
+    get:
+      summary: List publicly bookable accommodation categories and available extras
+      parameters:
+        - name: property
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Unit types and active extras
+  /api/public/v1/accommodation/{code}:
+    get:
+      summary: Get detailed accommodation category description, amenities, gallery, and extras
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: property
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public unit type details
+        "404":
+          description: Accommodation category not found
+  /api/public/v1/availability:
+    post:
+      summary: Authoritative public availability search across units, holds, closures, allocations, and release rules
+      responses:
+        "200":
+          description: Available accommodation categories with authoritative availability counts and pricing summaries
+        "422":
+          description: Invalid dates, stay length, or party size
+  /api/public/v1/pricing:
+    post:
+      summary: Authoritative quote calculation and tamper-proof price snapshot creation
+      responses:
+        "200":
+          description: Authoritative itemized quote breakdown and quote_id
+        "422":
+          description: Invalid stay dates, occupancy, extras, or minimum stay rules
+  /api/public/v1/booking/holds:
+    post:
+      summary: Atomically lock an eligible physical unit with a temporary HOLD inventory claim
+      responses:
+        "201":
+          description: Temporary inventory hold created with immutable price snapshot
+        "409":
+          description: Requested dates/accommodation are no longer available
+        "422":
+          description: Validation error (terms, guest details, stay rules)
+  /api/public/v1/booking/holds/{id}/cancel:
+    post:
+      summary: Release an active temporary hold explicitly
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Hold cancelled and claim released
+  /api/public/v1/checkout:
+    post:
+      summary: Create idempotent single-active payment attempt and Stripe Checkout Session for an active hold
+      description: >
+        Return URLs are derived exclusively on the server from configured property origins.
+        Client-supplied success_url or cancel_url values are rejected with 422.
+        Refuses checkout with 409 stripe_disabled when property stripe_enabled=false.
+      responses:
+        "200":
+          description: Checkout URL and payment attempt state
+        "409":
+          description: Hold expired, finalized, active attempt conflict (active_checkout_exists), or Stripe disabled (stripe_disabled)
+        "422":
+          description: Validation error (including client-supplied redirect URLs)
+  /api/public/v1/webhooks/stripe:
+    post:
+      summary: Signed Stripe webhook receiver (Stripe-Signature HMAC-SHA256)
+      responses:
+        "200":
+          description: Webhook verified and processed idempotently
+        "400":
+          description: Malformed payload
+        "401":
+          description: Invalid Stripe-Signature
+  /api/public/v1/booking-confirmation:
+    get:
+      summary: Confirmation lookup using reference query parameter and Authorization Bearer token
+      description: >
+        Returns Cache-Control no-store and Referrer-Policy no-referrer headers.
+        Query-string ?token= parameters are forbidden (400 query_token_forbidden).
+      parameters:
+        - name: ref
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reservation summary, payment status, and price snapshot
+        "400":
+          description: Query-string token rejected or missing Bearer credentials
+        "404":
+          description: Reference or token invalid/expired
+  /api/public/v1/booking-confirmation/lookup:
+    post:
+      summary: Preferred POST lookup of booking confirmation using booking_reference and Authorization Bearer (or JSON body) token
+      responses:
+        "200":
+          description: Reservation summary, payment status, and price snapshot
+        "404":
+          description: Reference or token invalid/expired
+  /api/public/v1/booking-confirmation/rotate-token:
+    post:
+      summary: Revoke current confirmation token and issue a fresh 256-bit replacement token
+      responses:
+        "200":
+          description: Returns new confirmation_token
+        "404":
+          description: Current reference or token invalid/expired
+  /api/public/v1/booking-confirmation/cancel-request:
+    post:
+      summary: Request or execute cancellation of a verified direct booking
+      responses:
+        "200":
+          description: Cancellation applied or cancellation request recorded for review

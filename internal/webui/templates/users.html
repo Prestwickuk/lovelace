@@ -1,0 +1,90 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Admin Users &amp; RBAC</h1>
+    <p class="subtitle">Manage operator accounts and role-based access control.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Add Operator Account</h2>
+  <form method="post" action="/users">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required placeholder="manager@tirbach.wales">
+      </div>
+      <div class="field">
+        <label for="full_name">Full Name</label>
+        <input id="full_name" name="full_name" type="text" required>
+      </div>
+      <div class="field">
+        <label for="role">Role</label>
+        <select id="role" name="role">
+          <option value="manager">Manager (Operations, Maintenance, Inventory, Blocks)</option>
+          <option value="staff">Staff (Front Desk, Changeover, Maintenance)</option>
+          <option value="maintenance_staff">Maintenance Staff (Assigned Repairs, Notes, Photos)</option>
+          <option value="housekeeping_staff">Housekeeping Staff (Changeover &amp; Defect Reporting)</option>
+          <option value="viewer">Viewer (Read Only)</option>
+          <option value="owner_admin">Owner Admin (Full Access)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="password">Initial Password (min 12 chars)</label>
+        <input id="password" name="password" type="password" minlength="12" required>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary">Create User</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Operator Accounts</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Update Role / Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td><strong>{{.FullName}}</strong></td>
+          <td class="mono">{{.Email}}</td>
+          <td><span class="badge badge-muted">{{.Role}}</span></td>
+          <td>{{if .IsActive}}<span class="badge badge-ok">Active</span>{{else}}<span class="badge badge-err">Disabled</span>{{end}}</td>
+          <td>
+            <form method="post" action="/users/{{.ID}}/update" class="inline-row">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="version" value="{{.Version}}">
+              <input type="hidden" name="full_name" value="{{.FullName}}">
+              <select name="role" class="input-auto">
+                {{$r := printf "%s" .Role}}
+                <option value="owner_admin" {{if eq $r "owner_admin"}}selected{{end}}>owner_admin</option>
+                <option value="manager" {{if eq $r "manager"}}selected{{end}}>manager</option>
+                <option value="staff" {{if eq $r "staff"}}selected{{end}}>staff</option>
+                <option value="maintenance_staff" {{if eq $r "maintenance_staff"}}selected{{end}}>maintenance_staff</option>
+                <option value="housekeeping_staff" {{if eq $r "housekeeping_staff"}}selected{{end}}>housekeeping_staff</option>
+                <option value="viewer" {{if eq $r "viewer"}}selected{{end}}>viewer</option>
+              </select>
+              <label class="inline-check">
+                <input type="checkbox" name="is_active" value="true" {{if .IsActive}}checked{{end}}> Active
+              </label>
+              <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

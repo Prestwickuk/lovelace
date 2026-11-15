@@ -1,0 +1,22 @@
+# OS / editor artifacts
+.DS_Store
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Node / Next.js build artifacts
+node_modules/
+.next/
+out/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Go build / coverage artifacts
+coverage.out
+*.test
+bin/

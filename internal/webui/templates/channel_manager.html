@@ -1,0 +1,111 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Settings → Integrations → Channel Manager</h1>
+    <p class="subtitle">Provider registry &amp; encrypted credential vault (AES-256-GCM at rest). External OTA sync adapters activate in Phase 4; no live external calls are made or simulated here.</p>
+  </div>
+</div>
+
+{{range .Providers}}
+{{$def := .Provider}}
+{{$conn := .Connection}}
+<div class="provider-card">
+  <div class="cal-toolbar">
+    <div>
+      <h2 class="m-0">{{$def.Name}} <span class="mono">({{$def.Code}})</span></h2>
+      <p class="subtitle subtitle-tight">{{$def.Description}}</p>
+    </div>
+    <div class="days-row">
+      <span class="badge badge-info">{{$def.AuthMethod}}</span>
+      {{if $conn}}
+      <span class="badge {{channelStatusClass (printf "%s" $conn.Status)}}">{{$conn.Status}}</span>
+      {{else}}
+      <span class="badge badge-muted">NOT_CONFIGURED</span>
+      {{end}}
+      <span class="badge badge-muted">{{$def.PhaseTarget}} Live Sync</span>
+    </div>
+  </div>
+
+  <p class="subtitle">
+    <strong>Auth Model:</strong> {{$def.AuthSummary}} ·
+    <strong>Capabilities:</strong> {{joinStrings $def.Capabilities ", "}}
+    {{if $def.DocsURL}} · <strong>Docs:</strong> <span class="mono">{{$def.DocsURL}}</span>{{end}}
+  </p>
+  {{if $def.SignatureSpec}}
+  <div class="spec-box">
+    <strong>Request Signing Contract ({{$def.SignatureSpec.Algorithm}} / {{$def.SignatureSpec.SignatureEncoding}}):</strong>
+    Headers <span class="mono">{{joinStrings $def.SignatureSpec.Headers ", "}}</span>
+    · Canonical parts: <span class="mono">{{joinStrings $def.SignatureSpec.CanonicalComponents " | "}}</span>
+    {{if $def.SignatureSpec.AccountDiscoveryEndpoint}}· Account discovery (Phase 4): <span class="mono">{{$def.SignatureSpec.AccountDiscoveryEndpoint}}</span>{{end}}
+    — {{$def.SignatureSpec.CanonicalNote}}
+  </div>
+  {{end}}
+
+  {{if $conn}}
+  <div class="alert alert-ok">
+    Configuration stored (Display Name: <strong>{{$conn.DisplayName}}</strong>
+    {{if $conn.CredentialsUpdatedAt}} · Credentials updated {{formatTime $conn.CredentialsUpdatedAt}} UTC{{end}}).
+    {{if $conn.CredentialHints}}
+    Stored credential hints:
+    {{range $k, $v := $conn.CredentialHints}}
+      <span class="mono">{{$k}}={{$v}}</span>
+    {{end}}
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if $.CanWriteChannels}}
+  <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}">
+    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+    <div class="form-grid">
+      <div class="field">
+        <label>Display Name</label>
+        <input name="display_name" type="text" value="{{if $conn}}{{$conn.DisplayName}}{{else}}{{$def.Name}}{{end}}">
+      </div>
+      {{range $def.Fields}}
+      <div class="field">
+        <label>{{.Label}}{{if .Required}} *{{end}}</label>
+        {{if .Secret}}
+        <input name="input_{{.Name}}" type="password" autocomplete="new-password"
+               placeholder="{{if $conn}}Leave blank to keep stored secret ({{index $conn.CredentialHints .Name}}){{else}}{{.Placeholder}}{{end}}"
+               {{if and .Required (not $conn)}}required{{end}}>
+        {{else}}
+        <input name="input_{{.Name}}" type="{{.InputType}}"
+               placeholder="{{.Placeholder}}"
+               value="{{if $conn}}{{index $conn.PublicConfig .Name}}{{end}}"
+               {{if .Required}}required{{end}}>
+        {{end}}
+        <span class="subtitle">{{.HelpText}}</span>
+      </div>
+      {{end}}
+    </div>
+    <div class="days-row mt-3">
+      <button type="submit" class="btn btn-primary btn-sm">Save Configuration &amp; Encrypt Credentials</button>
+    </div>
+  </form>
+
+  {{if $conn}}
+  <div class="days-row mt-2">
+    {{if eq (printf "%s" $conn.Status) "DISABLED"}}
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/status" class="inline">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="status" value="{{if or (eq (printf "%s" $def.AuthMethod) "oauth2") (eq (printf "%s" $def.AuthMethod) "client_credentials")}}AWAITING_AUTHORIZATION{{else}}CREDENTIALS_SAVED{{end}}">
+      <button type="submit" class="btn btn-secondary btn-sm">Re-enable Configuration</button>
+    </form>
+    {{else}}
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/status" class="inline">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="status" value="DISABLED">
+      <button type="submit" class="btn btn-secondary btn-sm">Disable</button>
+    </form>
+    {{end}}
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/delete" class="inline">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn-danger btn-sm">Remove Credentials</button>
+    </form>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
+{{end}}

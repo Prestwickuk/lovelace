@@ -1,0 +1,251 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Facilities, Assets, Categories &amp; Contractors</h1>
+    <p class="subtitle">Manage configurable maintenance categories, property locations, maintainable equipment, and approved contractors.</p>
+  </div>
+  <div class="inline-row">
+    <a href="/maintenance" class="btn btn-secondary btn-sm">Maintenance Queue</a>
+    <a href="/maintenance/schedule" class="btn btn-secondary btn-sm">Workload &amp; Schedule</a>
+  </div>
+</div>
+
+{{if .InspectedAsset}}
+<section class="card" id="asset-history">
+  <div class="ops-section-head">
+    <div>
+      <h2>Asset Maintenance History: [{{.InspectedAsset.AssetCode}}] {{.InspectedAsset.Name}}</h2>
+      <p class="subtitle">
+        Category: {{.InspectedAsset.AssetCategory}} · Manufacturer: {{if .InspectedAsset.Manufacturer}}{{.InspectedAsset.Manufacturer}} {{.InspectedAsset.Model}}{{else}}—{{end}}
+        · Warranty Expires: {{formatDatePtr .InspectedAsset.WarrantyExpiresOn}}
+      </p>
+    </div>
+    <div class="inline-row">
+      {{if .CanReportMaintenance}}<a href="/maintenance/new?asset_id={{.InspectedAsset.ID}}" class="btn btn-primary btn-sm">+ Log Job on Asset</a>{{end}}
+      <a href="/maintenance/facilities#assets" class="btn btn-secondary btn-sm">Close History</a>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Ref &amp; Title</th><th>Priority &amp; Status</th><th>Reported</th><th>Target / Completed</th></tr></thead>
+      <tbody>
+        {{range .AssetHistory}}
+        <tr>
+          <td><a href="/maintenance/{{.ID}}"><strong>{{.Reference}} · {{.Title}}</strong></a></td>
+          <td><span class="badge {{maintPriorityClass .Priority}}">{{.Priority}}</span> <span class="badge {{maintStatusClass .Status}}">{{.Status.Label}}</span></td>
+          <td class="mono">{{formatTime .ReportedAt}}</td>
+          <td class="mono">{{formatDatePtr .TargetDate}}{{if .CompletedAt}} / {{formatTime .CompletedAt}}{{end}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="4">No maintenance requests recorded against this asset yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
+<section class="card" id="assets">
+  <h2>Equipment &amp; Assets ({{len .Assets}})</h2>
+  {{if .CanManageMaintenance}}
+  <form method="post" action="{{if .EditingAsset}}/maintenance/assets/{{.EditingAsset.ID}}/update{{else}}/maintenance/assets{{end}}" class="form-grid mb-3">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{if .EditingAsset}}<input type="hidden" name="version" value="{{.EditingAsset.Version}}">{{end}}
+    <div class="field">
+      <label for="asset_code">Asset Code</label>
+      <input id="asset_code" name="asset_code" type="text" required placeholder="BOILER-SHOWER-01" value="{{if .EditingAsset}}{{.EditingAsset.AssetCode}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_name">Asset Name</label>
+      <input id="asset_name" name="name" type="text" required placeholder="Shower Block Combi Boiler" value="{{if .EditingAsset}}{{.EditingAsset.Name}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_cat">Equipment Category</label>
+      <input id="asset_cat" name="asset_category" type="text" required placeholder="Heating / Boiler" value="{{if .EditingAsset}}{{.EditingAsset.AssetCategory}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_loc">Location</label>
+      <select id="asset_loc" name="location_id">
+        <option value="">None</option>
+        {{range .Locations}}
+        <option value="{{.ID}}" {{if $.EditingAsset}}{{if sameUUIDPtr .ID $.EditingAsset.LocationID}}selected{{end}}{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="asset_unit">Unit (optional)</label>
+      <select id="asset_unit" name="unit_id">
+        <option value="">Shared / non-unit asset</option>
+        {{range .Units}}
+        <option value="{{.ID}}" {{if $.EditingAsset}}{{if sameUUIDPtr .ID $.EditingAsset.UnitID}}selected{{end}}{{end}}>{{.Code}} — {{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="asset_mfg">Manufacturer</label>
+      <input id="asset_mfg" name="manufacturer" type="text" value="{{if .EditingAsset}}{{.EditingAsset.Manufacturer}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_model">Model</label>
+      <input id="asset_model" name="model" type="text" value="{{if .EditingAsset}}{{.EditingAsset.Model}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_serial">Serial Number</label>
+      <input id="asset_serial" name="serial_number" type="text" value="{{if .EditingAsset}}{{.EditingAsset.SerialNumber}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_inst">Installed Date</label>
+      <input id="asset_inst" name="installed_on" type="date" value="{{if .EditingAsset}}{{dateInputValue .EditingAsset.InstalledOn}}{{end}}">
+    </div>
+    <div class="field">
+      <label for="asset_war">Warranty Expires</label>
+      <input id="asset_war" name="warranty_expires_on" type="date" value="{{if .EditingAsset}}{{dateInputValue .EditingAsset.WarrantyExpiresOn}}{{end}}">
+    </div>
+    {{if .EditingAsset}}
+    <div class="field">
+      <label for="asset_status">Status</label>
+      <select id="asset_status" name="status">
+        <option value="ACTIVE" {{if eq .EditingAsset.Status "ACTIVE"}}selected{{end}}>ACTIVE</option>
+        <option value="RETIRED" {{if eq .EditingAsset.Status "RETIRED"}}selected{{end}}>RETIRED</option>
+      </select>
+    </div>
+    {{end}}
+    <div class="field field-full">
+      <label for="asset_notes">Warranty &amp; Servicing Notes</label>
+      <input id="asset_notes" name="warranty_notes" type="text" value="{{if .EditingAsset}}{{.EditingAsset.WarrantyNotes}}{{end}}">
+    </div>
+    <div class="btn-row">
+      <button type="submit" class="btn btn-primary btn-sm">{{if .EditingAsset}}Update Asset{{else}}Register Asset{{end}}</button>
+      {{if .EditingAsset}}<a href="/maintenance/facilities#assets" class="btn btn-secondary btn-sm">Cancel</a>{{end}}
+    </div>
+  </form>
+  {{end}}
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code &amp; Asset</th><th>Location / Unit</th><th>Make &amp; Serial</th><th>Warranty</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {{range .Assets}}
+        <tr>
+          <td><strong>[{{.AssetCode}}] {{.Name}}</strong><div class="mono">{{.AssetCategory}}</div></td>
+          <td>{{if .UnitCode}}{{.UnitCode}} {{end}}{{.LocationName}}</td>
+          <td>{{.Manufacturer}} {{.Model}}<div class="mono">{{.SerialNumber}}</div></td>
+          <td class="mono">{{formatDatePtr .WarrantyExpiresOn}}</td>
+          <td>{{if eq .Status "ACTIVE"}}<span class="badge badge-ok">ACTIVE</span>{{else}}<span class="badge badge-muted">{{.Status}}</span>{{end}}</td>
+          <td class="inline-row">
+            <a href="/maintenance/facilities?asset_id={{.ID}}#asset-history" class="btn btn-secondary btn-sm">History</a>
+            {{if $.CanReportMaintenance}}<a href="/maintenance/new?asset_id={{.ID}}" class="btn btn-secondary btn-sm">Report Issue</a>{{end}}
+            {{if $.CanManageMaintenance}}<a href="/maintenance/facilities?edit_asset={{.ID}}#assets" class="btn btn-secondary btn-sm">Edit</a>{{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6">No maintenance assets registered yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="grid grid-2">
+  <section class="card" id="locations">
+    <h2>Property Locations &amp; Communal Facilities ({{len .Locations}})</h2>
+    {{if .CanManageMaintenance}}
+    <form method="post" action="{{if .EditingLocation}}/maintenance/locations/{{.EditingLocation.ID}}/update{{else}}/maintenance/locations{{end}}" class="form-grid mb-3">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field"><label>Code</label><input name="code" type="text" required placeholder="BOREHOLE_HOUSE" value="{{if .EditingLocation}}{{.EditingLocation.Code}}{{end}}"></div>
+      <div class="field"><label>Name</label><input name="name" type="text" required placeholder="Borehole Pump House" value="{{if .EditingLocation}}{{.EditingLocation.Name}}{{end}}"></div>
+      <div class="field"><label>Location Type</label><input name="location_type" type="text" placeholder="INFRASTRUCTURE" value="{{if .EditingLocation}}{{.EditingLocation.LocationType}}{{else}}FACILITY{{end}}"></div>
+      {{if .EditingLocation}}
+      <div class="checkbox-row"><input name="is_active" type="checkbox" value="true" {{if .EditingLocation.IsActive}}checked{{end}}><label class="m-0">Active</label></div>
+      {{end}}
+      <div class="btn-row"><button type="submit" class="btn btn-secondary btn-sm">{{if .EditingLocation}}Save Location{{else}}Add Location{{end}}</button></div>
+    </form>
+    {{end}}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Location</th><th>Type</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+          {{range .Locations}}
+          <tr>
+            <td><strong>{{.Name}}</strong><div class="mono">{{.Code}}</div></td>
+            <td>{{.LocationType}}</td>
+            <td>{{if .IsActive}}<span class="badge badge-ok">Active</span>{{else}}<span class="badge badge-muted">Inactive</span>{{end}}</td>
+            <td>
+              {{if $.CanReportMaintenance}}<a href="/maintenance/new?location_id={{.ID}}" class="btn btn-secondary btn-sm">Report</a>{{end}}
+              {{if $.CanManageMaintenance}}<a href="/maintenance/facilities?edit_loc={{.ID}}#locations" class="btn btn-secondary btn-sm">Edit</a>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="contractors">
+    <h2>External Contractors &amp; Engineers ({{len .Contractors}})</h2>
+    {{if .CanManageMaintenance}}
+    <form method="post" action="{{if .EditingContractor}}/maintenance/contractors/{{.EditingContractor.ID}}/update{{else}}/maintenance/contractors{{end}}" class="form-grid mb-3">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field"><label>Contact Name</label><input name="name" type="text" required placeholder="Owen Davies" value="{{if .EditingContractor}}{{.EditingContractor.Name}}{{end}}"></div>
+      <div class="field"><label>Company</label><input name="company" type="text" placeholder="Pembrokeshire Heating Ltd" value="{{if .EditingContractor}}{{.EditingContractor.Company}}{{end}}"></div>
+      <div class="field"><label>Trade</label><input name="trade" type="text" placeholder="Gas Safe &amp; Plumbing" value="{{if .EditingContractor}}{{.EditingContractor.Trade}}{{end}}"></div>
+      <div class="field"><label>Phone</label><input name="phone" type="text" value="{{if .EditingContractor}}{{.EditingContractor.Phone}}{{end}}"></div>
+      <div class="field"><label>Email</label><input name="email" type="email" value="{{if .EditingContractor}}{{.EditingContractor.Email}}{{end}}"></div>
+      {{if .EditingContractor}}
+      <div class="checkbox-row"><input name="is_active" type="checkbox" value="true" {{if .EditingContractor.IsActive}}checked{{end}}><label class="m-0">Active</label></div>
+      {{end}}
+      <div class="btn-row"><button type="submit" class="btn btn-secondary btn-sm">{{if .EditingContractor}}Save Contractor{{else}}Add Contractor{{end}}</button></div>
+    </form>
+    {{end}}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Contractor</th><th>Trade &amp; Contact</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+          {{range .Contractors}}
+          <tr>
+            <td><strong>{{.Name}}</strong>{{if .Company}}<div class="mono">{{.Company}}</div>{{end}}</td>
+            <td>{{.Trade}}<div class="mono">{{.Phone}} {{.Email}}</div></td>
+            <td>{{if .IsActive}}<span class="badge badge-ok">Active</span>{{else}}<span class="badge badge-muted">Inactive</span>{{end}}</td>
+            <td>{{if $.CanManageMaintenance}}<a href="/maintenance/facilities?edit_contractor={{.ID}}#contractors" class="btn btn-secondary btn-sm">Edit</a>{{end}}</td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4">No external contractors recorded yet.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<section class="card" id="categories">
+  <h2>Configurable Maintenance Categories ({{len .Categories}})</h2>
+  {{if .CanManageMaintenance}}
+  <form method="post" action="{{if .EditingCategory}}/maintenance/categories/{{.EditingCategory.ID}}/update{{else}}/maintenance/categories{{end}}" class="form-grid mb-3">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="field"><label>Code</label><input name="code" type="text" required placeholder="SOLAR_POWER" value="{{if .EditingCategory}}{{.EditingCategory.Code}}{{end}}"></div>
+    <div class="field"><label>Name</label><input name="name" type="text" required placeholder="Solar &amp; Off-Grid Power" value="{{if .EditingCategory}}{{.EditingCategory.Name}}{{end}}"></div>
+    <div class="field"><label>Description</label><input name="description" type="text" value="{{if .EditingCategory}}{{.EditingCategory.Description}}{{end}}"></div>
+    {{if .EditingCategory}}
+    <div class="checkbox-row"><input name="is_active" type="checkbox" value="true" {{if .EditingCategory.IsActive}}checked{{end}}><label class="m-0">Active</label></div>
+    {{end}}
+    <div class="btn-row"><button type="submit" class="btn btn-secondary btn-sm">{{if .EditingCategory}}Update Category{{else}}Add Category{{end}}</button></div>
+  </form>
+  {{end}}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Code</th><th>Description</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>
+        {{range .Categories}}
+        <tr>
+          <td><strong>{{.Name}}</strong></td>
+          <td class="mono">{{.Code}}</td>
+          <td>{{.Description}}</td>
+          <td>{{if .IsActive}}<span class="badge badge-ok">Active</span>{{else}}<span class="badge badge-muted">Archived</span>{{end}}</td>
+          <td>{{if $.CanManageMaintenance}}<a href="/maintenance/facilities?edit_cat={{.ID}}#categories" class="btn btn-secondary btn-sm">Edit</a>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}

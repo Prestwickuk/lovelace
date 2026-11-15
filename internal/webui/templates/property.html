@@ -1,0 +1,204 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Site Settings</h1>
+    <p class="subtitle">Core property profile, check-in/out windows, currency and VAT configuration.</p>
+  </div>
+</div>
+
+<div class="card">
+  <form method="post" action="/property">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="version" value="{{.Property.Version}}">
+    <div class="form-grid">
+      <div class="field">
+        <label>Property Slug (Immutable)</label>
+        <input type="text" value="{{.Property.Slug}}" disabled>
+      </div>
+      <div class="field">
+        <label for="name">Site Name</label>
+        <input id="name" name="name" type="text" required value="{{.Property.Name}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field field-full">
+        <label for="tagline">Tagline</label>
+        <input id="tagline" name="tagline" type="text" value="{{.Property.Tagline}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="region">Region</label>
+        <input id="region" name="region" type="text" value="{{.Property.Region}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="country_code">Country Code (ISO-2)</label>
+        <input id="country_code" name="country_code" type="text" maxlength="2" required value="{{.Property.CountryCode}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="address_line1">Address Line 1</label>
+        <input id="address_line1" name="address_line1" type="text" value="{{.Property.AddressLine1}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="town">Town / Village</label>
+        <input id="town" name="town" type="text" value="{{.Property.Town}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="postcode">Postcode</label>
+        <input id="postcode" name="postcode" type="text" value="{{.Property.Postcode}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="timezone">Timezone (IANA)</label>
+        <input id="timezone" name="timezone" type="text" required value="{{.Property.Timezone}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="currency">Currency (ISO-4217)</label>
+        <input id="currency" name="currency" type="text" maxlength="3" required value="{{.Property.Currency}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="check_in_time">Check-In Time (HH:MM)</label>
+        <input id="check_in_time" name="check_in_time" type="time" required value="{{.Property.CheckInTime}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="check_out_time">Check-Out Time (HH:MM)</label>
+        <input id="check_out_time" name="check_out_time" type="time" required value="{{.Property.CheckOutTime}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="contact_email">Contact Email</label>
+        <input id="contact_email" name="contact_email" type="email" value="{{.Property.ContactEmail}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="contact_phone">Contact Phone</label>
+        <input id="contact_phone" name="contact_phone" type="text" value="{{.Property.ContactPhone}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="checkbox-row">
+        <input id="vat_registered" name="vat_registered" type="checkbox" value="true" {{if .Property.VATRegistered}}checked{{end}} {{if not .CanWriteProperty}}disabled{{end}}>
+        <label for="vat_registered" class="m-0">VAT Registered</label>
+      </div>
+      <div class="field">
+        <label for="vat_number">VAT Registration Number</label>
+        <input id="vat_number" name="vat_number" type="text" value="{{.Property.VATNumber}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+    </div>
+    {{if .CanWriteProperty}}
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary">Save Site Settings</button>
+    </div>
+    {{end}}
+  </form>
+</div>
+
+<div class="card">
+  <h2>Public Direct Booking &amp; Payment Policy</h2>
+  <p class="subtitle">Controls temporary inventory holds, deposit requirements, extra guest pricing, and Stripe checkout availability for the separate public frontend.</p>
+  <form method="post" action="/property/booking-policy">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="version" value="{{.Policy.Version}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="hold_duration_minutes">Hold Duration (minutes)</label>
+        <input id="hold_duration_minutes" name="hold_duration_minutes" type="number" min="5" max="120" value="{{.Policy.HoldDurationMinutes}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="deposit_mode">Deposit Mode</label>
+        <select id="deposit_mode" name="deposit_mode" {{if not .CanWriteProperty}}disabled{{end}}>
+          <option value="FULL" {{if eq .Policy.DepositMode "FULL"}}selected{{end}}>FULL (100% up front)</option>
+          <option value="PERCENTAGE" {{if eq .Policy.DepositMode "PERCENTAGE"}}selected{{end}}>PERCENTAGE</option>
+          <option value="FIXED" {{if eq .Policy.DepositMode "FIXED"}}selected{{end}}>FIXED</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="deposit_percentage">Deposit Percentage (%)</label>
+        <input id="deposit_percentage" name="deposit_percentage" type="number" min="0" max="100" value="{{.Policy.DepositPercentage}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="deposit_fixed_pence">Fixed Deposit (pence)</label>
+        <input id="deposit_fixed_pence" name="deposit_fixed_pence" type="number" min="0" value="{{.Policy.DepositFixedPence}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="balance_due_days_before_arrival">Balance Due Days Before Arrival</label>
+        <input id="balance_due_days_before_arrival" name="balance_due_days_before_arrival" type="number" min="0" value="{{.Policy.BalanceDueDaysBeforeArrival}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="extra_adult_nightly_pence">Extra Adult Nightly Charge (pence)</label>
+        <input id="extra_adult_nightly_pence" name="extra_adult_nightly_pence" type="number" min="0" value="{{.Policy.ExtraAdultNightlyPence}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="child_nightly_pence">Child Nightly Charge (pence)</label>
+        <input id="child_nightly_pence" name="child_nightly_pence" type="number" min="0" value="{{.Policy.ChildNightlyPence}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="infant_nightly_pence">Infant Nightly Charge (pence)</label>
+        <input id="infant_nightly_pence" name="infant_nightly_pence" type="number" min="0" value="{{.Policy.InfantNightlyPence}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="booking_terms_version">Terms Version</label>
+        <input id="booking_terms_version" name="booking_terms_version" type="text" value="{{.Policy.BookingTermsVersion}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="booking_terms_url">Booking Terms URL</label>
+        <input id="booking_terms_url" name="booking_terms_url" type="text" value="{{.Policy.BookingTermsURL}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="privacy_policy_url">Privacy Policy URL</label>
+        <input id="privacy_policy_url" name="privacy_policy_url" type="text" value="{{.Policy.PrivacyPolicyURL}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="checkbox-row">
+        <input id="stripe_enabled" name="stripe_enabled" type="checkbox" value="true" {{if .Policy.StripeEnabled}}checked{{end}} {{if not .CanWriteProperty}}disabled{{end}}>
+        <label for="stripe_enabled" class="m-0">Enable Public Online Checkout (Stripe)</label>
+      </div>
+      <div class="field field-full">
+        <label for="cancellation_policy">Cancellation Policy</label>
+        <textarea id="cancellation_policy" name="cancellation_policy" {{if not .CanWriteProperty}}disabled{{end}}>{{.Policy.CancellationPolicy}}</textarea>
+      </div>
+      <div class="field field-full">
+        <label for="quiet_hours">Quiet Hours Policy (public site)</label>
+        <input id="quiet_hours" name="quiet_hours" type="text" value="{{.Policy.QuietHours}}" placeholder="Configured by property owner" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field field-full">
+        <label for="fire_policy">Fires &amp; BBQ Policy (public site)</label>
+        <input id="fire_policy" name="fire_policy" type="text" value="{{.Policy.FirePolicy}}" placeholder="Configured by property owner" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field field-full">
+        <label for="pet_policy">Pet Policy (public site)</label>
+        <input id="pet_policy" name="pet_policy" type="text" value="{{.Policy.PetPolicy}}" placeholder="Configured by property owner" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field field-full">
+        <label for="privacy_notice">Privacy Notice Summary (public site)</label>
+        <textarea id="privacy_notice" name="privacy_notice" {{if not .CanWriteProperty}}disabled{{end}}>{{.Policy.PrivacyNotice}}</textarea>
+      </div>
+    </div>
+    {{if .CanWriteProperty}}
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary">Save Booking Policy</button>
+    </div>
+    {{end}}
+  </form>
+</div>
+
+{{if .PaymentExceptions}}
+<div class="card" id="payment-exceptions">
+  <div class="ops-section-head">
+    <h2>Payment Reconciliation Exceptions</h2>
+    <a class="btn btn-secondary btn-sm" href="/payment-exceptions">Manage Exceptions</a>
+  </div>
+  <table class="table">
+    <thead><tr><th>Type</th><th>Status</th><th>Amount</th><th>Notes</th><th>Created (UTC)</th><th>Action</th></tr></thead>
+    <tbody>
+      {{range .PaymentExceptions}}
+      <tr>
+        <td class="mono">{{.ExceptionType}}</td>
+        <td><span class="badge {{statusClass .Status}}">{{.Status}}</span></td>
+        <td class="mono">{{formatMoney .AmountPence .Currency}}</td>
+        <td>{{if .ResolutionNotes}}{{.ResolutionNotes}}{{else}}{{.Details}}{{end}}</td>
+        <td class="mono">{{formatTime .CreatedAt}}</td>
+        <td>
+          {{if .ReservationID}}
+          <a class="btn btn-secondary btn-sm" href="/reservations/{{.ReservationID}}">Open Stay</a>
+          {{else}}
+          <a class="btn btn-secondary btn-sm" href="/payment-exceptions#ex-{{.ID}}">{{if $.CanWriteReservations}}Resolve{{else}}Inspect{{end}}</a>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}

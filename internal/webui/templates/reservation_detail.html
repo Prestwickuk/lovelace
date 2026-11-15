@@ -1,0 +1,203 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Reservation <span class="mono">{{.Reservation.Reference}}</span></h1>
+    <p class="subtitle">
+      Status: <span class="badge {{statusClass (printf "%s" .Reservation.Status)}}">{{.Reservation.Status}}</span> ·
+      Payment: <span class="badge {{statusClass .Reservation.PaymentStatus}}">{{.Reservation.PaymentStatus}}</span> ·
+      Channel: <span class="badge badge-info">{{.Reservation.ChannelCode}}</span> ·
+      Created {{formatTime .Reservation.CreatedAt}} UTC
+    </p>
+  </div>
+  <a href="/reservations" class="btn btn-secondary">← All Reservations</a>
+</div>
+
+{{if .Reservation.CancellationRequestedAt}}
+<div class="alert alert-error" role="alert">
+  <strong>Customer Cancellation Request Received</strong> ({{formatTime .Reservation.CancellationRequestedAt}} UTC)
+  {{if .Reservation.CancellationRequestNote}}<br>Guest Note: {{.Reservation.CancellationRequestNote}}{{end}}
+</div>
+{{end}}
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="ops-section-head">
+      <h2>Guest &amp; Stay Summary</h2>
+      {{if .CanReadGuests}}
+      <a href="/guests/{{.Reservation.GuestID}}" class="btn btn-secondary btn-sm">Open Guest CRM Profile →</a>
+      {{end}}
+    </div>
+    <p><strong>Primary Guest:</strong> {{.Reservation.GuestName}}<br>
+       <strong>Email:</strong> {{if .Reservation.GuestEmail}}{{.Reservation.GuestEmail}}{{else}}—{{end}}<br>
+       <strong>Phone:</strong> {{if .Reservation.GuestPhone}}{{.Reservation.GuestPhone}}{{else}}—{{end}}<br>
+       <strong>Stay [Arrival → Departure):</strong> <span class="mono">{{formatDate .Reservation.ArrivalDate}} → {{formatDate .Reservation.DepartureDate}}</span><br>
+       <strong>Party:</strong> {{.Reservation.Adults}} Adults, {{.Reservation.Children}} Children, {{.Reservation.Infants}} Infants<br>
+       {{if .Reservation.OccupantDetails}}<strong>Other Occupants / Accompanying Guests:</strong> {{.Reservation.OccupantDetails}}<br>{{end}}
+       <strong>Assigned Units:</strong>
+       {{range .Reservation.Units}}
+       <span class="badge badge-muted">{{.UnitCode}} — {{.UnitName}}{{if or (gt .Adults 0) (gt .Children 0) (gt .Infants 0)}} ({{.Adults}}A/{{.Children}}C/{{.Infants}}I){{end}}</span>
+       {{end}}
+    </p>
+    {{if .Reservation.InternalNotes}}
+    <p><strong>Internal Notes:</strong><br>{{.Reservation.InternalNotes}}</p>
+    {{end}}
+    {{if .Reservation.CancellationReason}}
+    <p><strong>Cancellation Reason:</strong> {{.Reservation.CancellationReason}}</p>
+    {{end}}
+    <hr class="divider-hr">
+    <p>
+      <strong>Total Booking Value:</strong> {{formatMoney .Reservation.TotalPence .Reservation.Currency}}<br>
+      <strong>Deposit Required:</strong> {{formatMoney .Reservation.DepositPence .Reservation.Currency}}<br>
+      <strong>Amount Paid:</strong> {{formatMoney .Reservation.AmountPaidPence .Reservation.Currency}}<br>
+      <strong>Balance Due:</strong> {{formatMoney .Reservation.BalanceDuePence .Reservation.Currency}}
+    </p>
+  </div>
+
+  {{if .CanWriteReservations}}
+  <div class="card">
+    <h2>Lifecycle Transitions</h2>
+    {{if .AllowedTransitions}}
+    <p class="subtitle">Cancelling releases active inventory claims immediately inside the transaction.</p>
+    <div class="grid">
+      {{range .AllowedTransitions}}
+      <form method="post" action="/reservations/{{$.Reservation.ID}}/transition" class="days-row">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="status" value="{{.}}">
+        <input type="hidden" name="version" value="{{$.Reservation.Version}}">
+        {{if eq (printf "%s" .) "CANCELLED"}}
+        <input type="text" name="reason" placeholder="Cancellation reason (optional)" class="input-compact">
+        <button type="submit" class="btn btn-danger btn-sm">Cancel Reservation</button>
+        {{else}}
+        <button type="submit" class="btn btn-primary btn-sm">Mark as {{.}}</button>
+        {{end}}
+      </form>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="subtitle">Reservation is in terminal state <span class="mono">{{.Reservation.Status}}</span>.</p>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+
+{{if and .CanWriteReservations .CanEdit}}
+<div class="card">
+  <h2>Amend Reservation Details</h2>
+  <form method="post" action="/reservations/{{.Reservation.ID}}/update">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="version" value="{{.Reservation.Version}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="guest_name">Guest Name</label>
+        <input id="guest_name" name="guest_name" type="text" value="{{.Reservation.GuestName}}" required>
+      </div>
+      <div class="field">
+        <label for="guest_email">Guest Email</label>
+        <input id="guest_email" name="guest_email" type="email" value="{{.Reservation.GuestEmail}}">
+      </div>
+      <div class="field">
+        <label for="guest_phone">Guest Phone</label>
+        <input id="guest_phone" name="guest_phone" type="text" value="{{.Reservation.GuestPhone}}">
+      </div>
+      <div class="field">
+        <label for="channel_code">Channel</label>
+        <select id="channel_code" name="channel_code">
+          {{range .Channels}}
+          <option value="{{.Code}}" {{if eq .Code $.Reservation.ChannelCode}}selected{{end}}>{{.Code}} — {{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="arrival_date">Arrival Date</label>
+        <input id="arrival_date" name="arrival_date" type="date" value="{{formatDate .Reservation.ArrivalDate}}" required>
+      </div>
+      <div class="field">
+        <label for="departure_date">Departure Date</label>
+        <input id="departure_date" name="departure_date" type="date" value="{{formatDate .Reservation.DepartureDate}}" required>
+      </div>
+      <div class="field">
+        <label for="adults">Adults</label>
+        <input id="adults" name="adults" type="number" min="1" value="{{.Reservation.Adults}}" required>
+      </div>
+      <div class="field">
+        <label for="children">Children</label>
+        <input id="children" name="children" type="number" min="0" value="{{.Reservation.Children}}">
+      </div>
+      <div class="field">
+        <label for="infants">Infants</label>
+        <input id="infants" name="infants" type="number" min="0" value="{{.Reservation.Infants}}">
+      </div>
+      <div class="field field-full">
+        <label>Assigned Accommodation Units</label>
+        <div class="unit-checklist">
+          {{range .Units}}
+          <label>
+            <input type="checkbox" name="unit_ids" value="{{.ID}}" {{if hasUUID $.Reservation.UnitIDs .ID}}checked{{end}}>
+            <span><strong class="mono">{{.Code}}</strong> {{.Name}} <small>({{.UnitTypeName}})</small></span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+      <div class="field field-full">
+        <label for="occupant_details">Accompanying Occupants / Additional Guest Names (optional)</label>
+        <input id="occupant_details" name="occupant_details" type="text" value="{{.Reservation.OccupantDetails}}" placeholder="e.g. Partner: Owen Davies, Child: Nia Davies (age 7)">
+      </div>
+      <div class="field field-full">
+        <label for="internal_notes">Internal Notes</label>
+        <textarea id="internal_notes" name="internal_notes">{{.Reservation.InternalNotes}}</textarea>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary">Save Amendments</button>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{if or .Quote .Payments}}
+<div class="grid grid-2">
+  {{if .Quote}}
+  <div class="card">
+    <h2>Authoritative Price Snapshot</h2>
+    <p class="subtitle">Rate Plan: {{.Quote.RatePlanName}} · Deposit Mode: {{.Quote.DepositMode}} · Policy v{{.Quote.PolicyVersion}}</p>
+    <table class="table">
+      <tbody>
+        <tr><td>Accommodation ({{.Quote.Nights}} nights)</td><td class="mono">{{formatMoney .Quote.AccommodationSubtotalPence .Quote.Currency}}</td></tr>
+        {{if gt .Quote.OccupancySurchargePence 0}}
+        <tr><td>Extra Guest Charges</td><td class="mono">{{formatMoney .Quote.OccupancySurchargePence .Quote.Currency}}</td></tr>
+        {{end}}
+        {{range .Quote.ExtrasBreakdown}}
+        <tr><td>Extra: {{.Name}} × {{.Quantity}}</td><td class="mono">{{formatMoney .TotalPence $.Quote.Currency}}</td></tr>
+        {{end}}
+        {{if gt .Quote.TaxPence 0}}
+        <tr><td>VAT / Taxes</td><td class="mono">{{formatMoney .Quote.TaxPence .Quote.Currency}}</td></tr>
+        {{end}}
+        <tr><th>Total</th><th class="mono">{{formatMoney .Quote.TotalPence .Quote.Currency}}</th></tr>
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+  <div class="card">
+    <h2>Payment Ledger</h2>
+    {{if .Payments}}
+    <table class="table">
+      <thead><tr><th>Provider</th><th>Type</th><th>Amount</th><th>Status</th><th>Recorded (UTC)</th></tr></thead>
+      <tbody>
+        {{range .Payments}}
+        <tr>
+          <td class="mono">{{.Provider}}</td>
+          <td>{{.PaymentType}}</td>
+          <td class="mono">{{formatMoney .AmountPence .Currency}}</td>
+          <td><span class="badge {{statusClass .Status}}">{{.Status}}</span></td>
+          <td class="mono">{{formatTime .CreatedAt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="subtitle">No online payment records captured yet.</p>
+    {{end}}
+  </div>
+</div>
+{{end}}
+{{end}}

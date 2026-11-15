@@ -1,0 +1,309 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>{{.Detail.Guest.FullName}}</h1>
+    <p class="subtitle">
+      {{if .Detail.Guest.IsReturningGuest}}<span class="badge badge-ok">Returning Guest ({{.Detail.Guest.CompletedStays}} completed stays)</span>{{else}}<span class="badge badge-muted">First-Time / Prospective Guest</span>{{end}}
+      <span class="badge badge-info">{{.Detail.Guest.Status}}</span>
+      {{if eq .Detail.CurrentMarketingState "GRANTED"}}<span class="badge badge-ok">Marketing Opted In</span>{{else if eq .Detail.CurrentMarketingState "WITHDRAWN"}}<span class="badge badge-warn">Consent Withdrawn (Transactional Only)</span>{{else}}<span class="badge badge-muted">Not Subscribed (Transactional Only)</span>{{end}}
+      · Preferred: <strong>{{.Detail.Guest.PreferredContactMethod}}</strong> ({{.Detail.Guest.PreferredLanguage}})
+    </p>
+  </div>
+  <div class="inline-row">
+    {{if .CanExportGuests}}<a href="/guests/{{.Detail.Guest.ID}}/export" class="btn btn-secondary btn-sm">Export GDPR JSON</a>{{end}}
+    <a href="/guests" class="btn btn-secondary btn-sm">← Guest Directory</a>
+  </div>
+</div>
+
+<div class="grid grid-2 mb-3">
+  <div class="card">
+    <h2>1. Contact &amp; Profile Details</h2>
+    <p>
+      <strong>Email:</strong> {{if .Detail.Guest.Email}}<span class="mono">{{.Detail.Guest.Email}}</span>{{else}}—{{end}}<br>
+      <strong>Phone:</strong> {{if .Detail.Guest.Phone}}<span class="mono">{{.Detail.Guest.Phone}}</span>{{else}}—{{end}}<br>
+      <strong>Stay Summary:</strong> {{.Detail.Guest.CompletedStays}} completed · {{.Detail.Guest.UpcomingStays}} upcoming · {{.Detail.Guest.CancelledBookings}} cancelled<br>
+      {{if .Detail.ShowFinancialTotals}}<strong>Total Booking Value:</strong> {{formatMoney .Detail.Guest.TotalRevenuePence .Property.Currency}}{{end}}
+    </p>
+    {{if and .CanWriteGuests (ne (printf "%s" .Detail.Guest.Status) "ANONYMIZED") (ne (printf "%s" .Detail.Guest.Status) "MERGED")}}
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/update" class="form-grid mt-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="version" value="{{.Detail.Guest.Version}}">
+      <div class="field"><label>First Name</label><input name="first_name" type="text" value="{{.Detail.Guest.FirstName}}" required></div>
+      <div class="field"><label>Last Name</label><input name="last_name" type="text" value="{{.Detail.Guest.LastName}}"></div>
+      <div class="field"><label>Email</label><input name="email" type="email" value="{{.Detail.Guest.Email}}"></div>
+      <div class="field"><label>Phone</label><input name="phone" type="text" value="{{.Detail.Guest.Phone}}"></div>
+      <div class="field">
+        <label>Preferred Contact</label>
+        <select name="preferred_contact_method">
+          <option value="EMAIL" {{if eq .Detail.Guest.PreferredContactMethod "EMAIL"}}selected{{end}}>EMAIL</option>
+          <option value="PHONE" {{if eq .Detail.Guest.PreferredContactMethod "PHONE"}}selected{{end}}>PHONE</option>
+          <option value="SMS" {{if eq .Detail.Guest.PreferredContactMethod "SMS"}}selected{{end}}>SMS</option>
+          <option value="POST" {{if eq .Detail.Guest.PreferredContactMethod "POST"}}selected{{end}}>POST</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select name="status">
+          <option value="ACTIVE" {{if eq (printf "%s" .Detail.Guest.Status) "ACTIVE"}}selected{{end}}>ACTIVE</option>
+          <option value="VIP" {{if eq (printf "%s" .Detail.Guest.Status) "VIP"}}selected{{end}}>VIP</option>
+          <option value="DO_NOT_CONTACT" {{if eq (printf "%s" .Detail.Guest.Status) "DO_NOT_CONTACT"}}selected{{end}}>DO_NOT_CONTACT</option>
+        </select>
+      </div>
+      <input type="hidden" name="preferred_language" value="{{.Detail.Guest.PreferredLanguage}}">
+      <div class="field field-full"><button type="submit" class="btn btn-primary btn-sm">Save Profile</button></div>
+    </form>
+    {{end}}
+  </div>
+
+  <div class="card">
+    <h2>2. Booking &amp; Stay History</h2>
+    {{if .Detail.Reservations}}
+    <table>
+      <thead><tr><th>Ref</th><th>Dates</th><th>Status</th><th>Units</th>{{if .Detail.ShowFinancialTotals}}<th>Value</th>{{end}}</tr></thead>
+      <tbody>
+        {{range .Detail.Reservations}}
+        <tr>
+          <td><a href="/reservations/{{.ID}}" class="mono">{{.Reference}}</a></td>
+          <td class="mono">{{formatDate .ArrivalDate}} → {{formatDate .DepartureDate}}</td>
+          <td><span class="badge {{statusClass (printf "%s" .Status)}}">{{.Status}}</span></td>
+          <td>{{range .Units}}<span class="badge badge-muted">{{.UnitCode}}</span> {{end}}</td>
+          {{if $.Detail.ShowFinancialTotals}}<td>{{formatMoney .TotalPence .Currency}}</td>{{end}}
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="subtitle">No reservations recorded for this guest yet.</p>
+    {{end}}
+  </div>
+</div>
+
+{{if .Detail.ShowCommunications}}
+<div class="grid grid-2 mb-3">
+  <div class="card">
+    <h2>3. Communications &amp; Interactions Timeline</h2>
+    {{if .Detail.Communications}}
+    <div class="ops-alert-list">
+      {{range .Detail.Communications}}
+      <div class="ops-alert-row">
+        <div>
+          <strong>{{.Subject}}</strong>
+          <span class="badge badge-muted">{{.InteractionType}}</span>
+          <span class="badge badge-info">{{.Direction}}</span>
+          <span class="badge {{if or (eq (printf "%s" .DeliveryStatus) "FAILED") (eq (printf "%s" .DeliveryStatus) "BOUNCED")}}badge-err{{else if eq (printf "%s" .DeliveryStatus) "DELIVERED"}}badge-ok{{else}}badge-muted{{end}}">{{.DeliveryStatus}}</span>
+          <br>
+          <small class="mono">{{formatTime .OccurredAt}} UTC{{if .StaffUserName}} · {{.StaffUserName}}{{end}}{{if .ReservationReference}} · Ref {{.ReservationReference}}{{end}}</small>
+          {{if .Summary}}<div class="mt-1">{{.Summary}}</div>{{end}}
+          {{if .BodyText}}<div class="mt-1 comm-body">{{.BodyText}}</div>{{end}}
+        </div>
+        {{if and .FollowUpRequired (not .FollowUpCompletedAt) $.CanWriteComms}}
+        <form method="post" action="/communications/{{.ID}}/complete-followup">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="guest_id" value="{{$.Detail.Guest.ID}}">
+          <button type="submit" class="btn btn-secondary btn-sm">Complete Follow-up</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="subtitle">No communications logged yet.</p>
+    {{end}}
+  </div>
+
+  {{if .CanWriteComms}}
+  <div class="card">
+    <h2>4. Log Call / In-Person or Send Email</h2>
+    <h3>Send Guest Email</h3>
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/emails" class="form-grid mb-3">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field">
+        <label>Template (optional)</label>
+        <select name="template_id">
+          <option value="">— Custom Message —</option>
+          {{range .Templates}}<option value="{{.ID}}">{{.Name}} ({{.Code}})</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label>Booking Context (optional)</label>
+        <select name="reservation_id">
+          <option value="">— General —</option>
+          {{range .Detail.Reservations}}<option value="{{.ID}}">{{.Reference}} ({{formatDate .ArrivalDate}})</option>{{end}}
+        </select>
+      </div>
+      <div class="field field-full"><label>Recipient</label><input name="recipient" type="email" value="{{.Detail.Guest.Email}}" required></div>
+      <div class="field field-full"><label>Subject (leave blank when using template)</label><input name="subject" type="text" value="{{.PreviewSubject}}"></div>
+      <div class="field field-full"><label>Body (leave blank when using template)</label><textarea name="body_text" rows="4">{{.PreviewBodyText}}</textarea></div>
+      <div class="field field-full"><button type="submit" class="btn btn-primary btn-sm">Queue Outbound Email</button></div>
+    </form>
+
+    <hr>
+    <h3 class="mt-2">Log Phone Call / In-Person Conversation</h3>
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/interactions" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field">
+        <label>Type</label>
+        <select name="interaction_type">
+          <option value="PHONE_CALL">Phone Call</option>
+          <option value="IN_PERSON">In-Person Chat</option>
+          <option value="EMAIL_INBOUND">Inbound Email Summary</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Direction</label>
+        <select name="direction">
+          <option value="INBOUND">INBOUND</option>
+          <option value="OUTBOUND">OUTBOUND</option>
+        </select>
+      </div>
+      <div class="field field-full"><label>Subject / Topic</label><input name="subject" type="text" required></div>
+      <div class="field field-full"><label>Conversation Summary</label><textarea name="summary" rows="2" required></textarea></div>
+      <div class="field">
+        <label><input type="checkbox" name="follow_up_required" value="true"> Follow-up Required</label>
+      </div>
+      <div class="field"><label>Follow-up Date/Time</label><input name="follow_up_at" type="datetime-local"></div>
+      <div class="field field-full"><button type="submit" class="btn btn-secondary btn-sm">Log Interaction</button></div>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+<div class="grid grid-2 mb-3">
+  <div class="card">
+    <h2>5. Operational Preferences</h2>
+    {{if .Detail.Preferences}}
+    <ul>
+      {{range .Detail.Preferences}}
+      <li>
+        <span class="badge badge-info">{{.Category}}</span> <strong>{{.PreferenceKey}}:</strong> {{.PreferenceValue}}
+        {{if .Notes}}<small>({{.Notes}})</small>{{end}}
+        {{if $.CanWriteGuests}}
+        <form method="post" action="/guests/{{$.Detail.Guest.ID}}/preferences/{{.ID}}/delete" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-secondary btn-sm">Remove</button>
+        </form>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}<p class="subtitle">No structured operational preferences recorded.</p>{{end}}
+    {{if .CanWriteGuests}}
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/preferences" class="form-grid mt-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field">
+        <label>Category</label>
+        <select name="category">
+          <option value="ACCOMMODATION">Accommodation / Pitch</option>
+          <option value="PET">Pet Info</option>
+          <option value="ARRIVAL">Arrival Timing</option>
+          <option value="EQUIPMENT">Equipment / Electric</option>
+          <option value="ACCESSIBILITY">Accessibility</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Preference</label><input name="preference_key" type="text" placeholder="e.g. Dog friendly pitch" required></div>
+      <div class="field"><label>Value / Detail</label><input name="preference_value" type="text" placeholder="e.g. Border Collie, quiet corner"></div>
+      <div class="field field-full"><button type="submit" class="btn btn-secondary btn-sm">Add Preference</button></div>
+    </form>
+    {{end}}
+  </div>
+
+  {{if .Detail.ShowInternalNotes}}
+  <div class="card">
+    <h2>6. Internal Staff Notes (Never Sent to Guest)</h2>
+    {{if .Detail.Notes}}
+    <div class="ops-alert-list">
+      {{range .Detail.Notes}}
+      <div class="ops-alert-row">
+        <div>
+          <span class="badge badge-muted">{{.Category}}</span> {{if .IsPinned}}<span class="badge badge-warn">Pinned</span>{{end}}
+          <div class="mt-1">{{.Content}}</div>
+          <small class="mono">{{formatTime .CreatedAt}} UTC{{if .AuthorName}} · {{.AuthorName}}{{end}}</small>
+        </div>
+        {{if $.CanWriteGuests}}
+        <form method="post" action="/guests/{{$.Detail.Guest.ID}}/notes/{{.ID}}/delete">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-secondary btn-sm">Delete</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p class="subtitle">No internal staff notes on this guest.</p>{{end}}
+    {{if .CanWriteGuests}}
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/notes" class="form-grid mt-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field">
+        <label>Note Category</label>
+        <select name="category">
+          <option value="GENERAL">General</option>
+          <option value="BOOKING">Booking</option>
+          <option value="PREFERENCE">Preference</option>
+          <option value="CUSTOMER_SERVICE">Customer Service</option>
+          <option value="OPERATIONAL">Operational</option>
+        </select>
+      </div>
+      <div class="field"><label><input type="checkbox" name="is_pinned" value="true"> Pin to top</label></div>
+      <div class="field field-full"><label>Internal Note</label><textarea name="content" rows="2" required></textarea></div>
+      <div class="field field-full"><button type="submit" class="btn btn-secondary btn-sm">Save Internal Note</button></div>
+    </form>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+
+<div class="grid grid-2">
+  {{if .Detail.ShowEnquiries}}
+  <div class="card">
+    <h2>7. Enquiries &amp; Complaints</h2>
+    {{if .Detail.Enquiries}}
+    <table>
+      <thead><tr><th>Ref</th><th>Category</th><th>Subject</th><th>Status</th></tr></thead>
+      <tbody>
+        {{range .Detail.Enquiries}}
+        <tr>
+          <td><a href="/enquiries/{{.ID}}" class="mono">{{.Reference}}</a></td>
+          <td>{{.Category}}</td>
+          <td>{{.Subject}}</td>
+          <td><span class="badge badge-info">{{.Status}}</span></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}<p class="subtitle">No enquiries or complaints linked.</p>{{end}}
+  </div>
+  {{end}}
+
+  <div class="card">
+    <h2>8. Marketing Consent &amp; GDPR Governance</h2>
+    <p>Current Email Marketing State: <strong>{{.Detail.CurrentMarketingState}}</strong></p>
+    {{if .CanWriteGuests}}
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/consent" class="inline-row mb-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <select name="status">
+        <option value="GRANTED">Record Explicit Opt-In (GRANTED)</option>
+        <option value="WITHDRAWN">Record Withdrawal (WITHDRAWN)</option>
+      </select>
+      <input name="method" type="text" value="ADMIN_DESK" placeholder="Method">
+      <input name="source" type="text" value="LOVELACE_CRM" placeholder="Source">
+      <button type="submit" class="btn btn-secondary btn-sm">Record Consent</button>
+    </form>
+    {{end}}
+    {{if and .Detail.ShowConsentHistory .Detail.ConsentHistory}}
+    <ul>{{range .Detail.ConsentHistory}}<li><span class="mono">{{formatTime .OccurredAt}}</span> — <strong>{{.Status}}</strong> ({{.Method}} / {{.Source}})</li>{{end}}</ul>
+    {{end}}
+    {{if and .CanAnonymizeGuests (ne (printf "%s" .Detail.Guest.Status) "ANONYMIZED")}}
+    <hr>
+    <form method="post" action="/guests/{{.Detail.Guest.ID}}/anonymize" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <label>GDPR Erasure Reason</label>
+      <div class="inline-row">
+        <input name="reason" type="text" placeholder="Guest right-to-erasure request">
+        <button type="submit" class="btn btn-danger btn-sm">Anonymize Personal Data</button>
+      </div>
+    </form>
+    {{end}}
+  </div>
+</div>
+{{end}}

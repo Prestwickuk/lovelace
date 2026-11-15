@@ -1,0 +1,105 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Create Manual Reservation</h1>
+    <p class="subtitle">Transactional multi-unit reservation with database-backed inventory claim allocation.</p>
+  </div>
+  <a href="/reservations" class="btn btn-secondary">← Back to Reservations</a>
+</div>
+
+<div class="card">
+  <form method="post" action="/reservations">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="guest_name">Guest Full Name</label>
+        <input id="guest_name" name="guest_name" type="text" required>
+      </div>
+      <div class="field">
+        <label for="guest_email">Guest Email</label>
+        <input id="guest_email" name="guest_email" type="email">
+      </div>
+      <div class="field">
+        <label for="guest_phone">Guest Telephone</label>
+        <input id="guest_phone" name="guest_phone" type="text">
+      </div>
+      <div class="field">
+        <label for="channel_code">Booking Source / Channel</label>
+        <select id="channel_code" name="channel_code" required>
+          {{range .Channels}}
+          <option value="{{.Code}}">{{.Code}} — {{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="arrival_date">Arrival Date (Inclusive)</label>
+        <input id="arrival_date" name="arrival_date" type="date" value="{{.PrefillArrival}}" required>
+      </div>
+      <div class="field">
+        <label for="departure_date">Departure Date (Exclusive Checkout)</label>
+        <input id="departure_date" name="departure_date" type="date" value="{{.PrefillDeparture}}" required>
+      </div>
+      <div class="field">
+        <label for="adults">Adults</label>
+        <input id="adults" name="adults" type="number" min="1" value="2" required>
+      </div>
+      <div class="field">
+        <label for="children">Children</label>
+        <input id="children" name="children" type="number" min="0" value="0">
+      </div>
+      <div class="field">
+        <label for="infants">Infants</label>
+        <input id="infants" name="infants" type="number" min="0" value="0">
+      </div>
+      <div class="field">
+        <label for="status">Initial Status</label>
+        <select id="status" name="status">
+          <option value="CONFIRMED" selected>CONFIRMED (Allocates inventory)</option>
+          <option value="PENDING">PENDING (Holds inventory)</option>
+          <option value="INQUIRY">INQUIRY (Does not block inventory)</option>
+          <option value="CHECKED_IN">CHECKED_IN (Walk-in arrival)</option>
+        </select>
+      </div>
+      <div class="field field-full">
+        <label>Select One or More Active Accommodation Units</label>
+        <div class="unit-checklist">
+          {{range .Units}}
+          {{$ut := index $.UnitTypesByID .UnitTypeID}}
+          <label>
+            <input type="checkbox" name="unit_ids" value="{{.ID}}" {{if hasUUID $.PrefillUnits .ID}}checked{{end}}>
+            <span>
+              <strong class="mono">{{.Code}}</strong> {{.Name}}
+              <small>({{.UnitTypeName}} · max {{$ut.MaxAdults}}A/{{$ut.MaxChildren}}C/{{$ut.MaxInfants}}I, cap {{$ut.MaxGuests}})</small>
+            </span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+      <div class="field field-full">
+        <label>Optional Per-Unit Guest Allocation (Multi-Unit Breakdown)</label>
+        <p class="subtitle mt-0">Leave per-unit fields at 0 to validate party size across combined unit capacity, or enter explicit adults/children/infants per checked unit.</p>
+        <div class="unit-alloc-grid">
+          {{range .Units}}
+          {{$ut := index $.UnitTypesByID .UnitTypeID}}
+          <div class="unit-alloc-item">
+            <div><strong class="mono">{{.Code}}</strong> {{.Name}} <small>(max {{$ut.MaxGuests}} guests)</small></div>
+            <div class="unit-alloc-inputs">
+              <div class="field"><label>Adults (≤{{$ut.MaxAdults}})</label><input name="unit_adults_{{.ID}}" type="number" min="0" value="0"></div>
+              <div class="field"><label>Children (≤{{$ut.MaxChildren}})</label><input name="unit_children_{{.ID}}" type="number" min="0" value="0"></div>
+              <div class="field"><label>Infants (≤{{$ut.MaxInfants}})</label><input name="unit_infants_{{.ID}}" type="number" min="0" value="0"></div>
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </div>
+      <div class="field field-full">
+        <label for="internal_notes">Internal Notes</label>
+        <textarea id="internal_notes" name="internal_notes" placeholder="Reception notes, dog info, arrival ETA..."></textarea>
+      </div>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-primary">Create Reservation</button>
+    </div>
+  </form>
+</div>
+{{end}}
