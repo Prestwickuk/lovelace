@@ -27,12 +27,52 @@
       <option value="UNRESOLVED_COMPLAINTS" {{if eq .Filter.Segment "UNRESOLVED_COMPLAINTS"}}selected{{end}}>Unresolved Complaints</option>
       <option value="OPTED_IN" {{if eq .Filter.Segment "OPTED_IN"}}selected{{end}}>Marketing Opted-In</option>
     </select>
+    <label for="guest_sort" class="sr-only">Sort guests</label>
+    <select id="guest_sort" name="sort" class="input-auto">
+      <option value="name_asc" {{if or (eq .ViewControls.FilterSort "name_asc") (eq .ViewControls.FilterSort "")}}selected{{end}}>Sort: Name (A–Z)</option>
+      <option value="stays_desc" {{if eq .ViewControls.FilterSort "stays_desc"}}selected{{end}}>Sort: Completed Stays</option>
+      <option value="recent_stay_desc" {{if eq .ViewControls.FilterSort "recent_stay_desc"}}selected{{end}}>Sort: Recent Stay</option>
+    </select>
+    <label for="guest_page_size" class="sr-only">Rows per page</label>
+    <select id="guest_page_size" name="page_size" class="input-auto">
+      <option value="10" {{if eq .ViewControls.PageSize 10}}selected{{end}}>10 / page</option>
+      <option value="25" {{if or (eq .ViewControls.PageSize 25) (eq .ViewControls.PageSize 0)}}selected{{end}}>25 / page</option>
+      <option value="50" {{if eq .ViewControls.PageSize 50}}selected{{end}}>50 / page</option>
+      <option value="100" {{if eq .ViewControls.PageSize 100}}selected{{end}}>100 / page</option>
+    </select>
     <label class="inline-check"><input type="checkbox" name="include_all" value="1" {{if .Filter.IncludeAll}}checked{{end}}> Include merged / anonymized</label>
     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
     {{if or .Filter.Query .Filter.Segment .Filter.IncludeAll}}
     <a href="/guests" class="btn btn-secondary btn-sm">Reset</a>
     {{end}}
   </form>
+
+  {{$guestViews := savedViewsFor .Workspace "guests"}}
+  <div class="saved-views-bar">
+    <div class="saved-views-list">
+      <span class="subtitle">Saved Views:</span>
+      {{range $guestViews}}
+      <a href="{{savedViewURL .}}" class="btn btn-sm {{if eq .ID $.ViewControls.ActiveSavedViewID}}btn-primary{{else}}btn-secondary{{end}}">{{.Name}}</a>
+      {{else}}
+      <span class="subtitle">None saved yet</span>
+      {{end}}
+    </div>
+    {{if not .Actor.MustRotatePassword}}
+    <form method="post" action="/account/preferences/views" class="inline-row">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.Property.ID}}">
+      <input type="hidden" name="screen" value="guests">
+      <input type="hidden" name="return_to" value="/guests">
+      <input type="hidden" name="segment" value="{{.Filter.Segment}}">
+      <input type="hidden" name="include_all" value="{{if .Filter.IncludeAll}}1{{else}}0{{end}}">
+      <input type="hidden" name="sort" value="{{.ViewControls.FilterSort}}">
+      <input type="hidden" name="page_size" value="{{.ViewControls.PageSize}}">
+      <label for="guests_saved_view_name" class="sr-only">Saved guest view name</label>
+      <input id="guests_saved_view_name" name="name" type="text" maxlength="60" placeholder="Save current view as…" class="input-auto" required>
+      <button type="submit" class="btn btn-secondary btn-sm">Save View</button>
+    </form>
+    {{end}}
+  </div>
 </div>
 
 <div class="card mb-3">
@@ -88,6 +128,15 @@
       </tbody>
     </table>
   </div>
+  {{if gt .ViewControls.TotalPages 1}}
+  <div class="pagination-bar">
+    <span class="subtitle">Page {{.ViewControls.Page}} of {{.ViewControls.TotalPages}} ({{.ViewControls.TotalCount}} guests)</span>
+    <div class="btn-row-gap">
+      {{if .ViewControls.HasPrevPage}}<a class="btn btn-secondary btn-sm" href="/guests?q={{.Filter.Query}}&segment={{.Filter.Segment}}&include_all={{if .Filter.IncludeAll}}1{{else}}0{{end}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.PrevPage}}">← Prev Page</a>{{end}}
+      {{if .ViewControls.HasNextPage}}<a class="btn btn-secondary btn-sm" href="/guests?q={{.Filter.Query}}&segment={{.Filter.Segment}}&include_all={{if .Filter.IncludeAll}}1{{else}}0{{end}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.NextPage}}">Next Page →</a>{{end}}
+    </div>
+  </div>
+  {{end}}
   {{else}}
   {{template "empty_state" (dict "Title" "No matching guests" "Body" "No guest profiles match your current search criteria." "ActionURL" "/guests" "ActionLabel" "Reset filters")}}
   {{end}}

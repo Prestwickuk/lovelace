@@ -19,11 +19,20 @@
 <div class="card">
   <form method="get" action="/calendar" class="form-grid">
     <div class="field">
-      <label for="view">View</label>
-      <select id="view" name="view">
-        <option value="month" {{if eq .Calendar.View "month"}}selected{{end}}>Month</option>
-        <option value="week" {{if eq .Calendar.View "week"}}selected{{end}}>Week (7 days)</option>
-        <option value="day" {{if eq .Calendar.View "day"}}selected{{end}}>Day</option>
+      <label for="horizon">Horizon</label>
+      <select id="horizon" name="horizon">
+        <option value="month" {{if or (eq .ViewControls.FilterHorizon "month") (eq .ViewControls.FilterHorizon "")}}selected{{end}}>Month</option>
+        <option value="30d" {{if eq .ViewControls.FilterHorizon "30d"}}selected{{end}}>30 Days</option>
+        <option value="14d" {{if eq .ViewControls.FilterHorizon "14d"}}selected{{end}}>14 Days</option>
+        <option value="7d" {{if eq .ViewControls.FilterHorizon "7d"}}selected{{end}}>Week (7 days)</option>
+        <option value="day" {{if eq .ViewControls.FilterHorizon "day"}}selected{{end}}>Day</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="grouping">Grouping</label>
+      <select id="grouping" name="grouping">
+        <option value="unit" {{if or (eq .ViewControls.FilterGrouping "unit") (eq .ViewControls.FilterGrouping "")}}selected{{end}}>By Unit / Pitch</option>
+        <option value="unit_type" {{if eq .ViewControls.FilterGrouping "unit_type"}}selected{{end}}>By Unit Type</option>
       </select>
     </div>
     <div class="field">
@@ -63,11 +72,39 @@
     <div class="field field-actions">
       <div class="days-row">
         <button type="submit" class="btn btn-primary">Apply Filters</button>
-        <a href="/calendar?view={{.Calendar.View}}&start_date={{.PrevStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">← Prev</a>
-        <a href="/calendar?view={{.Calendar.View}}&start_date={{.NextStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">Next →</a>
+        <a href="/calendar?horizon={{.ViewControls.FilterHorizon}}&grouping={{.ViewControls.FilterGrouping}}&start_date={{.PrevStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">← Prev</a>
+        <a href="/calendar?horizon={{.ViewControls.FilterHorizon}}&grouping={{.ViewControls.FilterGrouping}}&start_date={{.NextStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">Next →</a>
       </div>
     </div>
   </form>
+
+  {{$calViews := savedViewsFor .Workspace "calendar"}}
+  <div class="saved-views-bar">
+    <div class="saved-views-list">
+      <span class="subtitle">Saved Views:</span>
+      {{range $calViews}}
+      <a href="{{savedViewURL .}}" class="btn btn-sm {{if eq .ID $.ViewControls.ActiveSavedViewID}}btn-primary{{else}}btn-secondary{{end}}">{{.Name}}</a>
+      {{else}}
+      <span class="subtitle">None saved yet</span>
+      {{end}}
+    </div>
+    {{if not .Actor.MustRotatePassword}}
+    <form method="post" action="/account/preferences/views" class="inline-row">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.Property.ID}}">
+      <input type="hidden" name="screen" value="calendar">
+      <input type="hidden" name="return_to" value="/calendar">
+      <input type="hidden" name="horizon" value="{{.ViewControls.FilterHorizon}}">
+      <input type="hidden" name="grouping" value="{{.ViewControls.FilterGrouping}}">
+      <input type="hidden" name="unit_type_id" value="{{.FilterUnitTypeID}}">
+      <input type="hidden" name="channel_code" value="{{.FilterChannelCode}}">
+      <input type="hidden" name="status" value="{{.FilterStatus}}">
+      <label for="cal_saved_view_name" class="sr-only">Saved calendar view name</label>
+      <input id="cal_saved_view_name" name="name" type="text" maxlength="60" placeholder="Save current view as…" class="input-auto" required>
+      <button type="submit" class="btn btn-secondary btn-sm">Save View</button>
+    </form>
+    {{end}}
+  </div>
 </div>
 
 <div class="grid grid-4 mb-3">

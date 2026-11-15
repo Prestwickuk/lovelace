@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -267,6 +268,38 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 				return "–"
 			}
 		},
+		"inStringSlice": func(list []string, target string) bool {
+			return slices.Contains(list, target)
+		},
+		"navSectionOpen": func(activeNav, sectionKey string, ws domain.ResolvedWorkspace) bool {
+			if navSectionForActive(activeNav) == sectionKey {
+				return true
+			}
+			return !ws.CollapsedSections[sectionKey]
+		},
+		"savedViewsFor": func(ws domain.ResolvedWorkspace, screen string) []domain.SavedOperationalView {
+			var out []domain.SavedOperationalView
+			for _, v := range ws.SavedViews {
+				if v.Screen == screen {
+					out = append(out, v)
+				}
+			}
+			return out
+		},
+		"savedViewURL": func(v domain.SavedOperationalView) string {
+			base := "/"
+			switch v.Screen {
+			case domain.SavedViewScreenCalendar:
+				base = "/calendar"
+			case domain.SavedViewScreenReservations:
+				base = "/reservations"
+			case domain.SavedViewScreenGuests:
+				base = "/guests"
+			}
+			q := url.Values{}
+			q.Set("saved_view", v.ID)
+			return base + "?" + q.Encode()
+		},
 	}
 
 	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html", "templates/partials.html")
@@ -372,6 +405,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /account", h.requirePageAuth(false, h.handleAccountGet))
 	mux.HandleFunc("POST /account/password", h.requirePageAuth(true, h.handleAccountPasswordPost))
+	mux.HandleFunc("POST /account/preferences/global", h.requirePageAuth(true, h.handleAccountGlobalPreferencesPost))
+	mux.HandleFunc("POST /account/preferences/global/reset", h.requirePageAuth(true, h.handleAccountGlobalPreferencesResetPost))
+	mux.HandleFunc("POST /account/preferences/workspace", h.requirePageAuth(true, h.handleAccountWorkspacePreferencesPost))
+	mux.HandleFunc("POST /account/preferences/workspace/reset", h.requirePageAuth(true, h.handleAccountWorkspacePreferencesResetPost))
+	mux.HandleFunc("POST /account/preferences/views", h.requirePageAuth(true, h.handleAccountSavedViewCreatePost))
+	mux.HandleFunc("POST /account/preferences/views/{id}/delete", h.requirePageAuth(true, h.handleAccountSavedViewDeletePost))
 
 	mux.HandleFunc("GET /audit-logs", h.requirePageAuth(false, h.handleAuditGet))
 
@@ -414,11 +453,37 @@ func (h *Handler) requirePageAuth(checkCSRF bool, next pageHandler) http.Handler
 	}
 }
 
+type viewControlMeta struct {
+	FilterHorizon     string
+	FilterGrouping    string
+	FilterSort        string
+	PageSize          int
+	Page              int
+	TotalCount        int
+	TotalPages        int
+	HasPrevPage       bool
+	HasNextPage       bool
+	PrevPage          int
+	NextPage          int
+	ActiveSavedViewID string
+}
+
+type accountPersonalisationData struct {
+	Enabled           bool
+	Accents           []branding.AccentOption
+	NavSections       []domain.NavSectionOption
+	PermittedRoutes   []domain.AdminRouteOption
+	PropertyWorkspace domain.PropertyWorkspacePayload
+}
+
 type baseView struct {
 	Title                 string
 	ActiveNav             string
 	Brand                 branding.PlatformBrand
 	Theme                 branding.ThemeSelection
+	Workspace             domain.ResolvedWorkspace
+	ViewControls          viewControlMeta
+	AccountPrefs          *accountPersonalisationData
 	Actor                 service.Actor
 	CSRFToken             string
 	Property              domain.Property
@@ -456,19 +521,39 @@ type baseView struct {
 }
 
 func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor service.Actor, title, nav string) (baseView, error) {
-	props, err := h.svc.ListProperties(ctx, actor)
-	if err != nil {
-		return baseView{}, err
-	}
+	theme := h.theme
+	ws := domain.DefaultResolvedWorkspace()
+	ws.Theme = theme
 	var prop domain.Property
-	if len(props) > 0 {
-		prop = props[0]
+
+	if h.svc != nil && !actor.MustRotatePassword {
+		props, err := h.svc.ListProperties(ctx, actor)
+		if err != nil {
+			if !errors.Is(err, domain.ErrPasswordRotationRequired) {
+				return baseView{}, err
+			}
+			actor.MustRotatePassword = true
+		} else if len(props) > 0 {
+			prop = props[0]
+		}
+		if !actor.MustRotatePassword {
+			var propPtr *uuid.UUID
+			if prop.ID != uuid.Nil {
+				pid := prop.ID
+				propPtr = &pid
+			}
+			if resolved, werr := h.svc.ResolveWorkspace(ctx, actor, propPtr); werr == nil {
+				ws = resolved
+				theme = resolved.Theme
+			}
+		}
 	}
 	return baseView{
 		Title:                 title,
 		ActiveNav:             nav,
 		Brand:                 h.brand,
-		Theme:                 h.theme,
+		Theme:                 theme,
+		Workspace:             ws,
 		Actor:                 actor,
 		CSRFToken:             actor.CSRFToken,
 		Property:              prop,
@@ -583,4 +668,19 @@ func parseOptionalUUID(s string) *uuid.UUID {
 		return nil
 	}
 	return &id
+}
+
+func navSectionForActive(activeNav string) string {
+	switch activeNav {
+	case "maintenance", "maintenance-schedule", "maintenance-facilities", "calendar", "reservations", "payment-exceptions":
+		return "maintenance"
+	case "guests", "enquiries", "guest-merge", "comms-settings":
+		return "guests"
+	case "blocks", "releases", "unit-types", "units", "extras", "rates", "reports":
+		return "inventory"
+	case "property", "channel-manager", "users", "audit", "account":
+		return "settings"
+	default:
+		return ""
+	}
 }

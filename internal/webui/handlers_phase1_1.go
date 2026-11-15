@@ -59,12 +59,52 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 	}
 
 	q := r.URL.Query()
+	horizon := q.Get("horizon")
+	if horizon == "" {
+		horizon = q.Get("view")
+	}
+	if horizon == "" {
+		horizon = base.Workspace.CalendarHorizon
+	}
+	grouping := q.Get("grouping")
+	if grouping == "" {
+		grouping = base.Workspace.CalendarGrouping
+	}
+	unitTypeID := parseOptionalUUID(q.Get("unit_type_id"))
+	unitTypeFilter := q.Get("unit_type_id")
+	channelCode := q.Get("channel_code")
+	status := q.Get("status")
+	activeSavedViewID := ""
+	if sv, ok := findSavedView(base.Workspace, domain.SavedViewScreenCalendar, q.Get("saved_view")); ok {
+		activeSavedViewID = sv.ID
+		if !q.Has("horizon") && !q.Has("view") && sv.Filters["horizon"] != "" {
+			horizon = sv.Filters["horizon"]
+		}
+		if !q.Has("grouping") && sv.Filters["grouping"] != "" {
+			grouping = sv.Filters["grouping"]
+		}
+		if !q.Has("unit_type_id") && sv.Filters["unit_type_id"] != "" {
+			if uid := parseOptionalUUID(sv.Filters["unit_type_id"]); uid != nil {
+				unitTypeID = uid
+				unitTypeFilter = sv.Filters["unit_type_id"]
+			}
+		}
+		if !q.Has("channel_code") && sv.Filters["channel_code"] != "" {
+			channelCode = sv.Filters["channel_code"]
+		}
+		if !q.Has("status") && sv.Filters["status"] != "" {
+			status = sv.Filters["status"]
+		}
+	}
+
 	cq := service.CalendarQuery{
 		PropertyID:  base.Property.ID,
 		View:        q.Get("view"),
-		UnitTypeID:  parseOptionalUUID(q.Get("unit_type_id")),
-		ChannelCode: q.Get("channel_code"),
-		Status:      q.Get("status"),
+		Horizon:     horizon,
+		Grouping:    grouping,
+		UnitTypeID:  unitTypeID,
+		ChannelCode: channelCode,
+		Status:      status,
 	}
 	if sRaw := q.Get("start_date"); sRaw != "" {
 		if d, err := domain.ParseDate(sRaw); err == nil {
@@ -79,16 +119,28 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 	}
 
 	var prevStart, nextStart time.Time
-	switch cal.View {
-	case "day":
+	switch cal.Horizon {
+	case domain.HorizonDay:
 		prevStart = cal.StartDate.AddDate(0, 0, -1)
 		nextStart = cal.StartDate.AddDate(0, 0, 1)
-	case "week":
+	case domain.Horizon7Days:
 		prevStart = cal.StartDate.AddDate(0, 0, -7)
 		nextStart = cal.StartDate.AddDate(0, 0, 7)
+	case domain.Horizon14Days:
+		prevStart = cal.StartDate.AddDate(0, 0, -14)
+		nextStart = cal.StartDate.AddDate(0, 0, 14)
+	case domain.Horizon30Days:
+		prevStart = cal.StartDate.AddDate(0, 0, -30)
+		nextStart = cal.StartDate.AddDate(0, 0, 30)
 	default:
 		prevStart = cal.StartDate.AddDate(0, -1, 0)
 		nextStart = cal.StartDate.AddDate(0, 1, 0)
+	}
+
+	base.ViewControls = viewControlMeta{
+		FilterHorizon:     cal.Horizon,
+		FilterGrouping:    cal.Grouping,
+		ActiveSavedViewID: activeSavedViewID,
 	}
 
 	h.renderPage(w, "calendar.html", struct {
@@ -104,9 +156,9 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 		Calendar:          cal,
 		PrevStart:         domain.FormatDate(prevStart),
 		NextStart:         domain.FormatDate(nextStart),
-		FilterUnitTypeID:  q.Get("unit_type_id"),
-		FilterChannelCode: strings.ToUpper(strings.TrimSpace(q.Get("channel_code"))),
-		FilterStatus:      strings.ToUpper(strings.TrimSpace(q.Get("status"))),
+		FilterUnitTypeID:  unitTypeFilter,
+		FilterChannelCode: strings.ToUpper(strings.TrimSpace(channelCode)),
+		FilterStatus:      strings.ToUpper(strings.TrimSpace(status)),
 	})
 }
 
@@ -120,9 +172,35 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 	}
 
 	q := r.URL.Query()
+	status := q.Get("status")
+	channelCode := q.Get("channel_code")
+	sortKey := base.Workspace.ReservationsSort
+	if norm, ok := domain.IsAllowedReservationsSort(q.Get("sort"), false); ok {
+		sortKey = norm
+	}
+	rawPageSize := q.Get("page_size")
+	activeSavedViewID := ""
+	if sv, ok := findSavedView(base.Workspace, domain.SavedViewScreenReservations, q.Get("saved_view")); ok {
+		activeSavedViewID = sv.ID
+		if !q.Has("status") && sv.Filters["status"] != "" {
+			status = sv.Filters["status"]
+		}
+		if !q.Has("channel_code") && sv.Filters["channel_code"] != "" {
+			channelCode = sv.Filters["channel_code"]
+		}
+		if !q.Has("sort") && sv.Filters["sort"] != "" {
+			if norm, ok := domain.IsAllowedReservationsSort(sv.Filters["sort"], false); ok {
+				sortKey = norm
+			}
+		}
+		if rawPageSize == "" && sv.Filters["page_size"] != "" {
+			rawPageSize = sv.Filters["page_size"]
+		}
+	}
+
 	filter := postgres.ReservationFilter{
-		Status:      q.Get("status"),
-		ChannelCode: q.Get("channel_code"),
+		Status:      status,
+		ChannelCode: channelCode,
 	}
 	if sRaw, eRaw := q.Get("start_date"), q.Get("end_date"); sRaw != "" && eRaw != "" {
 		if sd, err1 := domain.ParseDate(sRaw); err1 == nil {
@@ -138,7 +216,29 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load reservations")
 		return
 	}
+	sortReservationsForWorkspace(reservations, sortKey)
+
+	totalCount := len(reservations)
+	page, pageSize := resolvePageParams(rawPageSize, q.Get("page"), base.Workspace.TablePageSize)
+	startIdx, endIdx, totalPages := paginateRange(totalCount, page, pageSize)
+	if page > totalPages {
+		page = totalPages
+	}
+	pagedReservations := reservations[startIdx:endIdx]
+
 	channelsList, _ := h.svc.ListBookingChannels(r.Context(), actor, base.Property.ID, true)
+	base.ViewControls = viewControlMeta{
+		FilterSort:        sortKey,
+		PageSize:          pageSize,
+		Page:              page,
+		TotalCount:        totalCount,
+		TotalPages:        totalPages,
+		HasPrevPage:       page > 1,
+		HasNextPage:       page < totalPages,
+		PrevPage:          page - 1,
+		NextPage:          page + 1,
+		ActiveSavedViewID: activeSavedViewID,
+	}
 
 	h.renderPage(w, "reservations.html", struct {
 		baseView
@@ -151,7 +251,7 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 		FilterEndDate     string
 	}{
 		baseView:     base,
-		Reservations: reservations,
+		Reservations: pagedReservations,
 		Channels:     channelsList,
 		Statuses: []domain.ReservationStatus{
 			domain.ResStatusInquiry,
@@ -162,8 +262,8 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 			domain.ResStatusCancelled,
 			domain.ResStatusNoShow,
 		},
-		FilterStatus:      strings.ToUpper(strings.TrimSpace(q.Get("status"))),
-		FilterChannelCode: strings.ToUpper(strings.TrimSpace(q.Get("channel_code"))),
+		FilterStatus:      strings.ToUpper(strings.TrimSpace(status)),
+		FilterChannelCode: strings.ToUpper(strings.TrimSpace(channelCode)),
 		FilterStartDate:   q.Get("start_date"),
 		FilterEndDate:     q.Get("end_date"),
 	})

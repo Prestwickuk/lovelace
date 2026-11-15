@@ -1,7 +1,7 @@
 {{define "content"}}
 {{template "page_header" (dict "Title" "My Account" "Subtitle" (printf "%s · %s · Role: %s" .Actor.FullName .Actor.Email .Actor.Role))}}
 
-<div class="card card-narrow">
+<div class="card card-narrow mb-3">
   <h2>{{if .Actor.MustRotatePassword}}Set Your New Personal Password{{else}}Change Password{{end}}</h2>
   <p class="subtitle mb-2">Updating your password revokes all other active sessions for your account.</p>
   <form method="post" action="/account/password" class="grid">
@@ -20,4 +20,320 @@
     </div>
   </form>
 </div>
+
+{{with .AccountPrefs}}
+<section aria-labelledby="personalisation-heading">
+  <h2 id="personalisation-heading" class="mb-2">Personalisation</h2>
+  {{if not .Enabled}}
+  <div class="card">
+    <p class="subtitle">Personalisation preferences become available after you rotate your temporary password above.</p>
+  </div>
+  {{else}}
+
+  {{if $.Workspace.Warnings}}
+  <div class="alert alert-warn" role="status">
+    <strong>Preference recovery notices:</strong>
+    <ul>
+      {{range $.Workspace.Warnings}}
+      <li>{{.}}</li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+
+  <div class="card mb-3">
+    <div class="page-header mb-2">
+      <div>
+        <h3>Active Personal Summary</h3>
+        <p class="subtitle">Applied deterministically across your administrative sessions without altering role permissions or property isolation.</p>
+      </div>
+      <div class="days-row">
+        <span class="badge badge-info">Theme: {{$.Theme.Mode}}</span>
+        <span class="badge badge-muted">Accent: {{$.Theme.Accent}}</span>
+        <span class="badge badge-muted">Density: {{$.Theme.Density}}</span>
+        <span class="badge badge-muted">Scale: {{$.Theme.TextScale}}</span>
+        <span class="badge badge-muted">Landing: {{$.Workspace.DefaultRoute}}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <h3>Global Appearance, Accessibility &amp; Navigation</h3>
+    <p class="subtitle mb-2">Applies only to your own signed-in user account across sessions.</p>
+    <form method="post" action="/account/preferences/global" class="grid">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="theme_mode">Colour Mode</label>
+          <select id="theme_mode" name="theme_mode">
+            <option value="system" {{if eq $.Workspace.Global.ThemeMode "system"}}selected{{end}}>Follow System</option>
+            <option value="light" {{if eq $.Workspace.Global.ThemeMode "light"}}selected{{end}}>Light</option>
+            <option value="dark" {{if eq $.Workspace.Global.ThemeMode "dark"}}selected{{end}}>Dark</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="accent">Accent Palette</label>
+          <select id="accent" name="accent">
+            {{range .Accents}}
+            <option value="{{.Key}}" {{if eq .Key $.Workspace.Global.Accent}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="density">Interface Density</label>
+          <select id="density" name="density">
+            <option value="comfortable" {{if eq $.Workspace.Global.Density "comfortable"}}selected{{end}}>Comfortable</option>
+            <option value="compact" {{if eq $.Workspace.Global.Density "compact"}}selected{{end}}>Compact</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="text_scale">Text Size</label>
+          <select id="text_scale" name="text_scale">
+            <option value="default" {{if eq $.Workspace.Global.TextScale "default"}}selected{{end}}>Default (100%)</option>
+            <option value="large" {{if eq $.Workspace.Global.TextScale "large"}}selected{{end}}>Large</option>
+            <option value="xl" {{if eq $.Workspace.Global.TextScale "xl"}}selected{{end}}>Extra Large</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="default_route">Preferred Landing Page</label>
+          <select id="default_route" name="default_route">
+            {{range .PermittedRoutes}}
+            <option value="{{.Path}}" {{if eq .Path $.Workspace.Global.DefaultRoute}}selected{{end}}>{{.Label}} ({{.Path}})</option>
+            {{end}}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="global_calendar_horizon">Default Calendar Horizon</label>
+          <select id="global_calendar_horizon" name="calendar_horizon">
+            <option value="month" {{if eq $.Workspace.Global.Payload.CalendarHorizon "month"}}selected{{end}}>Month</option>
+            <option value="30d" {{if eq $.Workspace.Global.Payload.CalendarHorizon "30d"}}selected{{end}}>30 Days</option>
+            <option value="14d" {{if eq $.Workspace.Global.Payload.CalendarHorizon "14d"}}selected{{end}}>14 Days</option>
+            <option value="7d" {{if eq $.Workspace.Global.Payload.CalendarHorizon "7d"}}selected{{end}}>7 Days</option>
+            <option value="day" {{if eq $.Workspace.Global.Payload.CalendarHorizon "day"}}selected{{end}}>Single Day</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="global_calendar_grouping">Default Calendar Grouping</label>
+          <select id="global_calendar_grouping" name="calendar_grouping">
+            <option value="unit" {{if eq $.Workspace.Global.Payload.CalendarGrouping "unit"}}selected{{end}}>By Unit / Pitch</option>
+            <option value="unit_type" {{if eq $.Workspace.Global.Payload.CalendarGrouping "unit_type"}}selected{{end}}>Grouped by Unit Type</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="global_table_page_size">Default Table Page Size</label>
+          <select id="global_table_page_size" name="table_page_size">
+            <option value="10" {{if eq $.Workspace.Global.Payload.TablePageSize 10}}selected{{end}}>10 rows</option>
+            <option value="25" {{if eq $.Workspace.Global.Payload.TablePageSize 25}}selected{{end}}>25 rows</option>
+            <option value="50" {{if eq $.Workspace.Global.Payload.TablePageSize 50}}selected{{end}}>50 rows</option>
+            <option value="100" {{if eq $.Workspace.Global.Payload.TablePageSize 100}}selected{{end}}>100 rows</option>
+          </select>
+        </div>
+      </div>
+
+      <fieldset class="pref-fieldset">
+        <legend>Accessibility Options</legend>
+        <div class="pref-check-grid">
+          <label class="pref-check">
+            <input type="checkbox" name="high_contrast" value="1" {{if $.Workspace.Global.HighContrast}}checked{{end}}>
+            High Contrast Borders &amp; Surfaces
+          </label>
+          <label class="pref-check">
+            <input type="checkbox" name="reduced_motion" value="1" {{if $.Workspace.Global.ReducedMotion}}checked{{end}}>
+            Reduced Motion &amp; Transitions
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="pref-fieldset">
+        <legend>Pinned Sidebar Shortcuts (up to 6)</legend>
+        <div class="pref-check-grid">
+          {{range .PermittedRoutes}}
+          <label class="pref-check">
+            <input type="checkbox" name="shortcuts" value="{{.Path}}" {{if inStringSlice $.Workspace.Global.Payload.Shortcuts .Path}}checked{{end}}>
+            {{.Label}}
+          </label>
+          {{end}}
+        </div>
+      </fieldset>
+
+      <fieldset class="pref-fieldset">
+        <legend>Sidebar Sections Collapsed by Default</legend>
+        <div class="pref-check-grid">
+          {{range .NavSections}}
+          <label class="pref-check">
+            <input type="checkbox" name="collapsed_sections" value="{{.Key}}" {{if inStringSlice $.Workspace.Global.Payload.CollapsedSections .Key}}checked{{end}}>
+            {{.Label}}
+          </label>
+          {{end}}
+        </div>
+      </fieldset>
+
+      <div class="btn-row-gap">
+        <button type="submit" class="btn btn-primary">Save Global Preferences</button>
+      </div>
+    </form>
+
+    <form method="post" action="/account/preferences/global/reset" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn-secondary btn-sm">Reset Global Preferences to Defaults</button>
+    </form>
+  </div>
+
+  {{if $.Property.ID}}
+  <div class="card mb-3">
+    <h3>Active Property Workspace — {{$.Property.Name}}</h3>
+    <p class="subtitle mb-2">Scoped strictly to your account and active property ({{$.Property.Slug}}). Overrides global display defaults when set.</p>
+
+    <form method="post" action="/account/preferences/workspace" class="grid">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{$.Property.ID}}">
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="ws_calendar_horizon">Property Calendar Horizon</label>
+          <select id="ws_calendar_horizon" name="calendar_horizon">
+            <option value="" {{if eq .PropertyWorkspace.CalendarHorizon ""}}selected{{end}}>Inherit Global Default</option>
+            <option value="month" {{if eq .PropertyWorkspace.CalendarHorizon "month"}}selected{{end}}>Month</option>
+            <option value="30d" {{if eq .PropertyWorkspace.CalendarHorizon "30d"}}selected{{end}}>30 Days</option>
+            <option value="14d" {{if eq .PropertyWorkspace.CalendarHorizon "14d"}}selected{{end}}>14 Days</option>
+            <option value="7d" {{if eq .PropertyWorkspace.CalendarHorizon "7d"}}selected{{end}}>7 Days</option>
+            <option value="day" {{if eq .PropertyWorkspace.CalendarHorizon "day"}}selected{{end}}>Single Day</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ws_calendar_grouping">Property Calendar Grouping</label>
+          <select id="ws_calendar_grouping" name="calendar_grouping">
+            <option value="" {{if eq .PropertyWorkspace.CalendarGrouping ""}}selected{{end}}>Inherit Global Default</option>
+            <option value="unit" {{if eq .PropertyWorkspace.CalendarGrouping "unit"}}selected{{end}}>By Unit / Pitch</option>
+            <option value="unit_type" {{if eq .PropertyWorkspace.CalendarGrouping "unit_type"}}selected{{end}}>Grouped by Unit Type</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ws_table_page_size">Property Table Page Size</label>
+          <select id="ws_table_page_size" name="table_page_size">
+            <option value="0" {{if eq .PropertyWorkspace.TablePageSize 0}}selected{{end}}>Inherit Global Default</option>
+            <option value="10" {{if eq .PropertyWorkspace.TablePageSize 10}}selected{{end}}>10 rows</option>
+            <option value="25" {{if eq .PropertyWorkspace.TablePageSize 25}}selected{{end}}>25 rows</option>
+            <option value="50" {{if eq .PropertyWorkspace.TablePageSize 50}}selected{{end}}>50 rows</option>
+            <option value="100" {{if eq .PropertyWorkspace.TablePageSize 100}}selected{{end}}>100 rows</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ws_reservations_sort">Reservations Default Sort</label>
+          <select id="ws_reservations_sort" name="reservations_sort">
+            <option value="" {{if eq .PropertyWorkspace.ReservationsSort ""}}selected{{end}}>Default (Arrival Date Asc)</option>
+            <option value="stay_asc" {{if eq .PropertyWorkspace.ReservationsSort "stay_asc"}}selected{{end}}>Arrival Date (Earliest First)</option>
+            <option value="stay_desc" {{if eq .PropertyWorkspace.ReservationsSort "stay_desc"}}selected{{end}}>Arrival Date (Latest First)</option>
+            <option value="created_desc" {{if eq .PropertyWorkspace.ReservationsSort "created_desc"}}selected{{end}}>Recently Created First</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ws_guests_sort">Guest Directory Default Sort</label>
+          <select id="ws_guests_sort" name="guests_sort">
+            <option value="" {{if eq .PropertyWorkspace.GuestsSort ""}}selected{{end}}>Default (Name / Directory Order)</option>
+            <option value="name_asc" {{if eq .PropertyWorkspace.GuestsSort "name_asc"}}selected{{end}}>Name (A–Z)</option>
+            <option value="stays_desc" {{if eq .PropertyWorkspace.GuestsSort "stays_desc"}}selected{{end}}>Completed Stays (Highest First)</option>
+            <option value="recent_stay_desc" {{if eq .PropertyWorkspace.GuestsSort "recent_stay_desc"}}selected{{end}}>Most Recent Stay First</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ws_default_route">Property Landing Page Override</label>
+          <select id="ws_default_route" name="default_route">
+            <option value="">Inherit Global Landing Page</option>
+            {{range .PermittedRoutes}}
+            <option value="{{.Path}}" {{if eq .Path $.AccountPrefs.PropertyWorkspace.DefaultRoute}}selected{{end}}>{{.Label}} ({{.Path}})</option>
+            {{end}}
+          </select>
+        </div>
+      </div>
+
+      <fieldset class="pref-fieldset">
+        <legend>Property-Specific Shortcut Overrides (optional, up to 6)</legend>
+        <div class="pref-check-grid">
+          {{range .PermittedRoutes}}
+          <label class="pref-check">
+            <input type="checkbox" name="shortcuts" value="{{.Path}}" {{if inStringSlice $.AccountPrefs.PropertyWorkspace.Shortcuts .Path}}checked{{end}}>
+            {{.Label}}
+          </label>
+          {{end}}
+        </div>
+      </fieldset>
+
+      <div class="btn-row-gap">
+        <button type="submit" class="btn btn-primary">Save Property Workspace</button>
+      </div>
+    </form>
+
+    <form method="post" action="/account/preferences/workspace/reset" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{$.Property.ID}}">
+      <button type="submit" class="btn btn-secondary btn-sm">Reset Property Workspace &amp; Saved Views</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Saved Operational Filter Views — {{$.Property.Name}}</h3>
+    <p class="subtitle mb-2">Save reusable filters directly from Booking Calendar, Reservations, or Guest Directory. Only resources in {{$.Property.Name}} that your role can access are shown.</p>
+    {{if $.Workspace.SavedViews}}
+    <div class="table-wrap">
+      <table>
+        <caption class="sr-only">Saved operational filter views for {{$.Property.Name}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">View Name</th>
+            <th scope="col">Screen</th>
+            <th scope="col">Saved Filters</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $.Workspace.SavedViews}}
+          <tr>
+            <td><strong>{{.Name}}</strong></td>
+            <td><span class="badge badge-info">{{.Screen}}</span></td>
+            <td class="mono">
+              {{range $k, $v := .Filters}}
+              <span class="badge badge-muted">{{$k}}={{$v}}</span>
+              {{else}}
+              Default filters
+              {{end}}
+            </td>
+            <td>
+              <div class="btn-row-gap">
+                <a href="{{savedViewURL .}}" class="btn btn-secondary btn-sm">Open</a>
+                <form method="post" action="/account/preferences/views/{{.ID}}/delete" class="inline-form">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <input type="hidden" name="property_id" value="{{$.Property.ID}}">
+                  <input type="hidden" name="return_to" value="/account">
+                  <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    {{template "empty_state" (dict "Title" "No saved operational views" "Body" "Use Save View on the Booking Calendar, Reservations, or Guest Directory screens to pin reusable filters for this property.")}}
+    {{end}}
+  </div>
+  {{end}}
+
+  {{end}}
+</section>
+{{end}}
 {{end}}

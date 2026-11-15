@@ -37,14 +37,58 @@
       <label for="end_date">Overlaps To</label>
       <input id="end_date" name="end_date" type="date" value="{{.FilterEndDate}}">
     </div>
+    <div class="field">
+      <label for="sort">Sort</label>
+      <select id="sort" name="sort">
+        <option value="stay_asc" {{if or (eq .ViewControls.FilterSort "stay_asc") (eq .ViewControls.FilterSort "")}}selected{{end}}>Arrival Date (Earliest First)</option>
+        <option value="stay_desc" {{if eq .ViewControls.FilterSort "stay_desc"}}selected{{end}}>Arrival Date (Latest First)</option>
+        <option value="created_desc" {{if eq .ViewControls.FilterSort "created_desc"}}selected{{end}}>Recently Created</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="page_size">Rows / Page</label>
+      <select id="page_size" name="page_size">
+        <option value="10" {{if eq .ViewControls.PageSize 10}}selected{{end}}>10</option>
+        <option value="25" {{if or (eq .ViewControls.PageSize 25) (eq .ViewControls.PageSize 0)}}selected{{end}}>25</option>
+        <option value="50" {{if eq .ViewControls.PageSize 50}}selected{{end}}>50</option>
+        <option value="100" {{if eq .ViewControls.PageSize 100}}selected{{end}}>100</option>
+      </select>
+    </div>
     <div class="field field-actions">
       <button type="submit" class="btn btn-secondary">Filter Reservations</button>
     </div>
   </form>
+
+  {{$resViews := savedViewsFor .Workspace "reservations"}}
+  <div class="saved-views-bar">
+    <div class="saved-views-list">
+      <span class="subtitle">Saved Views:</span>
+      {{range $resViews}}
+      <a href="{{savedViewURL .}}" class="btn btn-sm {{if eq .ID $.ViewControls.ActiveSavedViewID}}btn-primary{{else}}btn-secondary{{end}}">{{.Name}}</a>
+      {{else}}
+      <span class="subtitle">None saved yet</span>
+      {{end}}
+    </div>
+    {{if not .Actor.MustRotatePassword}}
+    <form method="post" action="/account/preferences/views" class="inline-row">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.Property.ID}}">
+      <input type="hidden" name="screen" value="reservations">
+      <input type="hidden" name="return_to" value="/reservations">
+      <input type="hidden" name="status" value="{{.FilterStatus}}">
+      <input type="hidden" name="channel_code" value="{{.FilterChannelCode}}">
+      <input type="hidden" name="sort" value="{{.ViewControls.FilterSort}}">
+      <input type="hidden" name="page_size" value="{{.ViewControls.PageSize}}">
+      <label for="res_saved_view_name" class="sr-only">Saved reservation view name</label>
+      <input id="res_saved_view_name" name="name" type="text" maxlength="60" placeholder="Save current view as…" class="input-auto" required>
+      <button type="submit" class="btn btn-secondary btn-sm">Save View</button>
+    </form>
+    {{end}}
+  </div>
 </div>
 
 <div class="card">
-  <h2>Reservation List</h2>
+  <h2>Reservation List ({{.ViewControls.TotalCount}})</h2>
   {{if .Reservations}}
   <div class="table-wrap">
     <table>
@@ -84,6 +128,15 @@
       </tbody>
     </table>
   </div>
+  {{if gt .ViewControls.TotalPages 1}}
+  <div class="pagination-bar">
+    <span class="subtitle">Page {{.ViewControls.Page}} of {{.ViewControls.TotalPages}} ({{.ViewControls.TotalCount}} total)</span>
+    <div class="btn-row-gap">
+      {{if .ViewControls.HasPrevPage}}<a class="btn btn-secondary btn-sm" href="/reservations?status={{.FilterStatus}}&channel_code={{.FilterChannelCode}}&start_date={{.FilterStartDate}}&end_date={{.FilterEndDate}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.PrevPage}}">← Prev Page</a>{{end}}
+      {{if .ViewControls.HasNextPage}}<a class="btn btn-secondary btn-sm" href="/reservations?status={{.FilterStatus}}&channel_code={{.FilterChannelCode}}&start_date={{.FilterStartDate}}&end_date={{.FilterEndDate}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.NextPage}}">Next Page →</a>{{end}}
+    </div>
+  </div>
+  {{end}}
   {{else}}
   {{template "empty_state" (dict "Title" "No matching reservations" "Body" "No reservations matched the current filters." "ActionURL" "/reservations" "ActionLabel" "Clear filters")}}
   {{end}}

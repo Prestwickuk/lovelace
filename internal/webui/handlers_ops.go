@@ -290,7 +290,7 @@ func (h *Handler) handleAccountGet(w http.ResponseWriter, r *http.Request, actor
 		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
 		return
 	}
-	h.renderPage(w, "account.html", base)
+	h.renderAccountPage(w, actor, base)
 }
 
 func (h *Handler) handleAccountPasswordPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {

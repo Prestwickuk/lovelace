@@ -54,18 +54,65 @@ func (h *Handler) handleGuestsListGet(w http.ResponseWriter, r *http.Request, ac
 		return
 	}
 	q := r.URL.Query()
+	segment := q.Get("segment")
+	includeAll := q.Get("include_all") == "1"
+	sortKey := base.Workspace.GuestsSort
+	if norm, ok := domain.IsAllowedGuestsSort(q.Get("sort"), false); ok {
+		sortKey = norm
+	}
+	rawPageSize := q.Get("page_size")
+	activeSavedViewID := ""
+	if sv, ok := findSavedView(base.Workspace, domain.SavedViewScreenGuests, q.Get("saved_view")); ok {
+		activeSavedViewID = sv.ID
+		if !q.Has("segment") && sv.Filters["segment"] != "" {
+			segment = sv.Filters["segment"]
+		}
+		if !q.Has("include_all") && sv.Filters["include_all"] != "" {
+			includeAll = sv.Filters["include_all"] == "1"
+		}
+		if !q.Has("sort") && sv.Filters["sort"] != "" {
+			if norm, ok := domain.IsAllowedGuestsSort(sv.Filters["sort"], false); ok {
+				sortKey = norm
+			}
+		}
+		if rawPageSize == "" && sv.Filters["page_size"] != "" {
+			rawPageSize = sv.Filters["page_size"]
+		}
+	}
+
 	filter := domain.GuestDirectoryFilter{
 		Query:      q.Get("q"),
-		Segment:    q.Get("segment"),
+		Segment:    segment,
 		Status:     q.Get("status"),
-		IncludeAll: q.Get("include_all") == "1",
+		IncludeAll: includeAll,
 	}
 	guests, err := h.svc.ListGuests(r.Context(), actor, base.Property.ID, filter)
 	if err != nil {
 		h.renderDomainError(w, err, "Guest Directory Error", "unable to load guest directory")
 		return
 	}
+	sortGuestsForWorkspace(guests, sortKey)
+	totalCount := len(guests)
+	page, pageSize := resolvePageParams(rawPageSize, q.Get("page"), base.Workspace.TablePageSize)
+	startIdx, endIdx, totalPages := paginateRange(totalCount, page, pageSize)
+	if page > totalPages {
+		page = totalPages
+	}
+	pagedGuests := guests[startIdx:endIdx]
+
 	scan, _ := h.svc.ListDuplicateCandidates(r.Context(), actor, base.Property.ID)
+	base.ViewControls = viewControlMeta{
+		FilterSort:        sortKey,
+		PageSize:          pageSize,
+		Page:              page,
+		TotalCount:        totalCount,
+		TotalPages:        totalPages,
+		HasPrevPage:       page > 1,
+		HasNextPage:       page < totalPages,
+		PrevPage:          page - 1,
+		NextPage:          page + 1,
+		ActiveSavedViewID: activeSavedViewID,
+	}
 	h.renderPage(w, "guests_list.html", struct {
 		baseView
 		Guests         []domain.GuestListItem
@@ -73,7 +120,7 @@ func (h *Handler) handleGuestsListGet(w http.ResponseWriter, r *http.Request, ac
 		DuplicateCount int
 	}{
 		baseView:       base,
-		Guests:         guests,
+		Guests:         pagedGuests,
 		Filter:         filter,
 		DuplicateCount: len(scan.Candidates),
 	})

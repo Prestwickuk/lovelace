@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,7 +17,9 @@ type CalendarQuery struct {
 	PropertyID  uuid.UUID
 	StartDate   time.Time
 	EndDate     time.Time // Exclusive
-	View        string    // month, week, day
+	View        string    // month, week, day, 7d, 14d, 30d
+	Horizon     string    // optional PWE-2 horizon alias
+	Grouping    string    // unit (default) or unit_type
 	UnitTypeID  *uuid.UUID
 	ChannelCode string
 	Status      string
@@ -58,6 +61,8 @@ type CalendarSummary struct {
 type CalendarViewData struct {
 	Property       domain.Property                  `json:"property"`
 	View           string                           `json:"view"`
+	Horizon        string                           `json:"horizon"`
+	Grouping       string                           `json:"grouping"`
 	StartDate      time.Time                        `json:"start_date"`
 	EndDate        time.Time                        `json:"end_date"`
 	Dates          []time.Time                      `json:"dates"`
@@ -82,11 +87,21 @@ func (s *Service) GetCalendarView(ctx context.Context, actor Actor, q CalendarQu
 	}
 
 	now := s.nowUTC()
-	view := strings.ToLower(strings.TrimSpace(q.View))
-	switch view {
-	case "week", "day", "month":
-	default:
-		view = "month"
+	rawHorizon := strings.TrimSpace(q.Horizon)
+	if rawHorizon == "" {
+		rawHorizon = strings.TrimSpace(q.View)
+	}
+	horizon, ok := domain.IsAllowedHorizon(rawHorizon, false)
+	if !ok {
+		horizon = domain.HorizonMonth
+	}
+	view := horizon
+	if view == domain.Horizon7Days {
+		view = "week"
+	}
+	grouping, ok := domain.IsAllowedGrouping(q.Grouping, false)
+	if !ok {
+		grouping = domain.GroupingUnit
 	}
 
 	startDate := q.StartDate
@@ -96,10 +111,10 @@ func (s *Service) GetCalendarView(ctx context.Context, actor Actor, q CalendarQu
 			loc = time.UTC
 		}
 		localNow := now.In(loc)
-		switch view {
-		case "day":
+		switch horizon {
+		case domain.HorizonDay, domain.Horizon14Days, domain.Horizon30Days:
 			startDate = time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, time.UTC)
-		case "week":
+		case domain.Horizon7Days:
 			offset := (int(localNow.Weekday()) + 6) % 7 // Monday start
 			d := localNow.AddDate(0, 0, -offset)
 			startDate = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
@@ -109,11 +124,15 @@ func (s *Service) GetCalendarView(ctx context.Context, actor Actor, q CalendarQu
 	}
 	endDate := q.EndDate
 	if endDate.IsZero() || !endDate.After(startDate) {
-		switch view {
-		case "day":
+		switch horizon {
+		case domain.HorizonDay:
 			endDate = startDate.AddDate(0, 0, 1)
-		case "week":
+		case domain.Horizon7Days:
 			endDate = startDate.AddDate(0, 0, 7)
+		case domain.Horizon14Days:
+			endDate = startDate.AddDate(0, 0, 14)
+		case domain.Horizon30Days:
+			endDate = startDate.AddDate(0, 0, 30)
 		default:
 			endDate = startDate.AddDate(0, 1, 0)
 		}
@@ -145,6 +164,14 @@ func (s *Service) GetCalendarView(ctx context.Context, actor Actor, q CalendarQu
 		if u.Status != domain.UnitStatusRetired {
 			units = append(units, u)
 		}
+	}
+	if grouping == domain.GroupingUnitType {
+		sort.SliceStable(units, func(i, j int) bool {
+			if units[i].UnitTypeName != units[j].UnitTypeName {
+				return units[i].UnitTypeName < units[j].UnitTypeName
+			}
+			return units[i].Code < units[j].Code
+		})
 	}
 
 	claims, err := s.store.ListActiveClaimsInRange(ctx, q.PropertyID, startDate, endDate)
@@ -302,6 +329,8 @@ func (s *Service) GetCalendarView(ctx context.Context, actor Actor, q CalendarQu
 	return CalendarViewData{
 		Property:       prop,
 		View:           view,
+		Horizon:        horizon,
+		Grouping:       grouping,
 		StartDate:      startDate,
 		EndDate:        endDate,
 		Dates:          dates,

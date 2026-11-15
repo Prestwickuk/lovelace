@@ -58,7 +58,30 @@ func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.SetSessionCookie(w, h.cfg, res.SessionToken)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	if res.User.MustRotatePassword {
+		http.Redirect(w, r, "/account?rotate=1", http.StatusSeeOther)
+		return
+	}
+	landing := "/"
+	actor := service.Actor{
+		UserID:     res.User.ID,
+		PropertyID: res.User.PropertyID,
+		Email:      res.User.Email,
+		FullName:   res.User.FullName,
+		Role:       res.User.Role,
+	}
+	var propPtr *uuid.UUID
+	if res.User.PropertyID != nil {
+		pid := *res.User.PropertyID
+		propPtr = &pid
+	} else if props, err := h.svc.ListProperties(r.Context(), actor); err == nil && len(props) > 0 {
+		pid := props[0].ID
+		propPtr = &pid
+	}
+	if ws, err := h.svc.ResolveWorkspace(r.Context(), actor, propPtr); err == nil && ws.DefaultRoute != "" {
+		landing = safeAdminReturnPath(ws.DefaultRoute, "/")
+	}
+	http.Redirect(w, r, landing, http.StatusSeeOther)
 }
 
 func (h *Handler) handleLogoutPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
