@@ -481,6 +481,11 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"nightly_rate_pence": 14500, "min_nights_override": 2, "priority": 10,
 			"is_active": true, "version": 1, "created_at": nowStr, "updated_at": nowStr,
 		},
+		"report_export": {
+			"id": uid, "property_id": prop.ID.String(), "export_type": "booking_line_items",
+			"format": "csv", "start_date": "2026-07-01", "end_date": "2026-07-08",
+			"currency": "GBP", "row_count": 4, "created_at": nowStr,
+		},
 		"reservation": {
 			"reservation_id": uid, "reference": "TB-2026-0099", "guest_id": uid2,
 			"channel_code": "DIRECT", "arrival_date": "2026-07-01", "departure_date": "2026-07-04",
@@ -505,8 +510,8 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 	}
 
 	supportedTypes := service.SupportedAuditResourceTypes()
-	if len(supportedTypes) != 41 {
-		t.Fatalf("expected 41 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
+	if len(supportedTypes) != 42 {
+		t.Fatalf("expected 42 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
 	}
 
 	for _, rt := range supportedTypes {

@@ -56,6 +56,9 @@
       <a href="/units" class="{{if eq .ActiveNav "units"}}active{{end}}">Units &amp; Pitches</a>
       <a href="/extras" class="{{if eq .ActiveNav "extras"}}active{{end}}">Extras &amp; Add-ons</a>
       <a href="/rates" class="{{if eq .ActiveNav "rates"}}active{{end}}">Rates &amp; Preview</a>
+      {{if .CanReadReports}}
+      <a href="/reports" class="{{if eq .ActiveNav "reports"}}active{{end}}">Reports &amp; BI</a>
+      {{end}}
       <div class="nav-section">Settings</div>
       <a href="/property" class="{{if eq .ActiveNav "property"}}active{{end}}">Site Settings</a>
       {{if .CanReadChannels}}

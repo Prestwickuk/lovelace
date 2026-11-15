@@ -245,6 +245,12 @@ var auditEnumSets = map[string]map[string]bool{
 		"RECEIVED": true, "QUEUED": true, "PROCESSED": true,
 		"CONFLICT": true, "IGNORED": true, "FAILED": true,
 	},
+	"report_export_type": {
+		"booking_line_items": true, "payment_ledger": true, "refund_ledger": true,
+	},
+	"report_export_format": {
+		"csv": true, "json": true,
+	},
 }
 
 var auditMovedCountsAllowedKeys = map[string]bool{
@@ -590,6 +596,12 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"days_of_week": rDOWMask, "nightly_rate_pence": rPence, "min_nights_override": rDays1_3N,
 		"priority": rSort, "is_active": rBool, "version": rVersion, "archived_at": rTSNull,
 		"created_at": rTS, "updated_at": rTS,
+	},
+	"report_export": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID,
+		"export_type": rEnum("report_export_type"), "format": rEnum("report_export_format"),
+		"start_date": rDateTS, "end_date": rDateTS, "currency": rCodeOpt,
+		"row_count": rCount, "created_at": rTS,
 	},
 	"reservation": {
 		"redacted": rRedacted, "id": rUUID, "reservation_id": rUUID, "property_id": rUUID,

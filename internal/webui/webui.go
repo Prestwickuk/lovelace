@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -199,6 +200,38 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 				return "badge-muted"
 			}
 		},
+		"formatMoneyCur": domain.FormatReportMoney,
+		"formatMoneyCurPtr": func(cur string, v *int64) string {
+			if v == nil {
+				return "N/A"
+			}
+			return domain.FormatReportMoney(cur, *v)
+		},
+		"formatStrPtr": func(s *string) string {
+			if s == nil {
+				return "—"
+			}
+			return *s + "d"
+		},
+		"bpsToPct": func(bps *int) int {
+			if bps == nil {
+				return 0
+			}
+			v := (*bps + 50) / 100
+			if v < 0 {
+				return 0
+			}
+			if v > 100 {
+				return 100
+			}
+			return v
+		},
+		"bpsLabel": func(bps *int) string {
+			if bps == nil {
+				return "N/A"
+			}
+			return fmt.Sprintf("%.2f%%", float64(*bps)/100.0)
+		},
 	}
 
 	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html")
@@ -239,6 +272,7 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 		"enquiries_list.html",
 		"enquiry_detail.html",
 		"comms_settings.html",
+		"reports.html",
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
@@ -309,6 +343,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerOperationsRoutes(mux)
 	h.registerMaintenanceRoutes(mux)
 	h.registerGuestCRMRoutes(mux)
+	h.registerReportRoutes(mux)
 }
 
 type pageHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -379,6 +414,8 @@ type baseView struct {
 	CanWriteComms         bool
 	CanReconcileComms     bool
 	CanManageTemplates    bool
+	CanReadReports        bool
+	CanExportReports      bool
 }
 
 func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor service.Actor, title, nav string) (baseView, error) {
@@ -426,6 +463,8 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		CanWriteComms:         auth.HasPermission(actor.Role, auth.PermCommsWrite),
 		CanReconcileComms:     auth.HasPermission(actor.Role, auth.PermCommsReconcile),
 		CanManageTemplates:    auth.HasPermission(actor.Role, auth.PermCommsTemplates),
+		CanReadReports:        auth.HasPermission(actor.Role, auth.PermReportsRead),
+		CanExportReports:      auth.HasPermission(actor.Role, auth.PermReportsExport),
 	}, nil
 }
 

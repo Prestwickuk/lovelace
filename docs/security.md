@@ -60,3 +60,17 @@ When `TIRBACH_ENV=production`, `internal/config/config.go` refuses startup if `T
 - **RBAC, Property Isolation & Least-Privilege `lovelace_app` Grants:**
   - Channel sync routes enforce `channels:read` / `channels:write` and property scope (`403` cross-property access). Database triggers (`trg_validate_channel_listing_mapping`) enforce same-property ownership across connections, unit types, units, rate plans, and active booking channels.
   - `0019_phase4_live_ota_sync.sql` grants strictly DML (`SELECT, INSERT, UPDATE, DELETE`) on the Phase 4 tables to `lovelace_app` and delegates Phase 4 audit resource types (`channel_listing_mapping`, `channel_sync_job`, `channel_external_reservation`, `channel_webhook_event`) through the existing `0018` allowlist tables so `audit_log_redactions` remains protected cleanly.
+
+---
+
+## 10. Phase 5 Reporting, Privacy & Export Hardening (`0020_phase5_reporting_bi.sql`)
+
+- **Strict RBAC & Export Separation (`internal/auth/rbac.go`):**
+  - Read-only reporting (`PermReportsRead`) is granted solely to roles permitted property-wide inventory/reservation reads (`owner_admin`, `manager`, `viewer`) and denied (`403`) to `staff`, `maintenance_staff`, and `housekeeping_staff`.
+  - Financial accounting CSV/JSON exports (`PermReportsExport`) are further restricted solely to `owner_admin` and `manager` (denied `403` to `viewer`), and every request enforces `requirePropertyScope`.
+- **CSV Formula Injection Defense & Bounded Queries:**
+  - All accounting CSV cells pass through `domain.SanitizeCSVCell`: text values starting with `=`, `+`, `-`, `@`, `\t`, `\r`, or `\n` (even after leading whitespace) are prefixed with `'` while strict signed integer monetary columns preserve valid negative refund amounts.
+  - Report date ranges (`<= 366` days), forecast horizons (`1..180` days), and exports (`25,000` rows max) are strictly bounded to avoid unbounded analytical table scans.
+- **Aggregate Retention Privacy & Immutable Export Auditing:**
+  - `GetGuestRetentionReport` exposes zero guest names, emails, phones, notes, consent details, or `guest_id` UUIDs; `ANONYMIZED` stays remain isolated in `anonymized_guest_stays_count`.
+  - Every accounting export appends a sanitized `report.exported` (`report_export`) record protected by `0020_phase5_reporting_bi.sql`'s extended `audit_resource_key_rule` and `audit_is_allowed_enum` PostgreSQL allowlist.

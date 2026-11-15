@@ -122,6 +122,16 @@ properties (1)
 
 ---
 
+## 3.4 Phase 5 — Reporting & Business Intelligence (`0020_phase5_reporting_bi.sql`)
+
+- **Strict Read-Only Analytical Architecture on Existing System of Record:** Phase 5 computes property-scoped metrics directly over `properties`, `unit_types`, `units`, `inventory_claims`, `reservations`, `reservation_units`, `booking_quotes`, `payments`, `refunds`, `payment_exceptions`, `booking_channels`, `channel_external_reservations`, `channel_sync_jobs`, and `guests` without duplicating money ledgers or introducing ungrounded summary tables (`0020_phase5_reporting_bi.sql` adds targeted covering indexes and extends the immutable `report_export` audit allowlist).
+- **Explicit Inventory, Financial & Currency Definitions:**
+  - **Sellable vs. Out-of-Order Supply:** Non-archived physical units (`status IN ('active', 'maintenance')`) minus active `MAINTENANCE` / `SEASONAL_CLOSURE` / `WEATHER_CLOSURE` claims (or unit `maintenance` status) and `OWNER_USE` / `ADMINISTRATIVE_BLOCK` / `OPERATIONAL_BUFFER` blocks yield sellable unit-nights. Only accepted stays (`CONFIRMED`, `CHECKED_IN`, `CHECKED_OUT`) count toward occupied unit-nights and ADR/RevPAR (`PENDING` and active `HOLD` claims are tracked separately; zero-denominator slices return `nil` + `zero_availability`).
+  - **Prorated Booked Revenue vs. Localized Cash Flows:** Stay revenue uses frozen `booking_quotes` (or fallback `reservations.total_pence` surfaced in `ReportDataCompleteness.ManualUnquotedBookingsCount`) deterministically prorated penny-perfect across `stay_range` nights, whereas `payments` (`SUCCEEDED`, `PARTIALLY_REFUNDED`, `REFUNDED`) and `refunds` (`SUCCEEDED` plus explicit `REFUNDED` payment fallback) group by `(timestamp AT TIME ZONE property.timezone)::date`. Distinct currencies are always grouped separately and never summed.
+  - **Forecasting, Channel Completeness, Privacy-Safe Retention & Accounting CSVs:** `GetForecastReport` combines OTB reservations with a read-only trailing-90-day same-weekday pace projection (explicit confidence bands, zero mutations); `GetChannelComparison` surfaces Phase 4 `UNMAPPED` / `CONFLICT_OVERBOOKED` / `FAILED` external bookings; `GetGuestRetentionReport` traverses `guests.merged_into_guest_id` via cycle-guarded recursive SQL (`WITH RECURSIVE`) returning only aggregate counts with `ANONYMIZED` segregation and zero PII; and `ExportAccountingReport` emits deterministic RFC4180 CSVs (`lovelace.accounting.v1`) with formula-injection neutralization and `NOT IMPLEMENTED` markers for unsupported OTA fee/payout settlement fields.
+
+---
+
 ## 4. Security Architecture
 
 - **Authentication & Password Rotation:** Argon2id password hashing (`m=65536, t=3, p=1`), CSPRNG 256-bit `HttpOnly`/`SameSite=Lax` session cookies (stored as SHA-256 hashes in `admin_sessions`), sliding idle & absolute expiry. Accounts flagged `must_rotate_password = TRUE` are blocked from all operational API/Web routes until password rotation succeeds, which atomically revokes all prior sessions.

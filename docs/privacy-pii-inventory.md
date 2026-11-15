@@ -70,3 +70,11 @@ The `audit_logs` source is append-only. `audit_log_redactions` stores a separate
 2. Define operator SOP for third-party / exemption review before releasing `ExportGuestData` outputs in response to UK GDPR Art. 15 Subject Access Requests (`notes`, free-text `reason`, `description`).
 3. Establish privileged governance approval workflow for invoking historical `RedactHistoricalAuditLog` vs. retaining security telemetry (`ip_address`, `user_agent`).
 4. Confirm direct DB role hardening (`lovelace_app` DML-only) and physical backup retention / purge cadence so erased records expire from encrypted database backups on the operator's chosen schedule.
+
+---
+
+## 5. Phase 5 BI & Accounting Export Privacy Boundary
+
+- **Zero Guest PII in BI Endpoints or Accounting Exports:** None of `/api/v1/properties/{propertyID}/reports/*`, `/reports`, or `lovelace.accounting.v1` accounting CSVs (`booking_line_items`, `payment_ledger`, `refund_ledger`) return or export `guest_name`, `guest_email`, `guest_phone`, `address_json`, `notes`, or `guest_id`.
+- **Anonymised Stay Segregation:** Guest retention (`GET .../reports/retention`) follows canonical `merged_into_guest_id` merge lineage strictly to compute aggregate repeat counts; stays whose canonical guest is `ANONYMIZED` are isolated into an aggregate count (`anonymized_guest_stays_count`) without unmasking identity or linking erased records to named cohorts.
+- **PII-Free Export Audit Trail (`report_export`):** `ExportAccountingReport` records only non-PII parameters (`id`, `property_id`, `export_type`, `format`, `start_date`, `end_date`, `currency`, `row_count`, `created_at`) enforced by PostgreSQL `0020_phase5_reporting_bi.sql`.

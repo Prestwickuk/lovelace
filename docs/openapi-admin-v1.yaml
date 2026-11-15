@@ -698,6 +698,90 @@ paths:
         "200": { description: Deduplicated replay }
         "401": { description: Missing/invalid signature, expired timestamp, or replayed HMAC nonce }
 
+  /api/v1/properties/{propertyID}/reports/overview:
+    get:
+      summary: Combined Phase 5 executive reporting overview (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+        - { name: horizon_days, in: query, schema: { type: integer, minimum: 1, maximum: 180 } }
+      responses: { "200": { description: Combined occupancy, revenue, channels, forecast, and retention snapshot } }
+
+  /api/v1/properties/{propertyID}/reports/occupancy:
+    get:
+      summary: Historical/forward sellable vs. out-of-order vs. occupied unit-night metrics (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: Daily, monthly, and unit-type occupancy report } }
+
+  /api/v1/properties/{propertyID}/reports/revenue:
+    get:
+      summary: Per-currency booked accommodation/extras/tax/ADR/RevPAR and local-date cash/refund flows (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+      responses: { "200": { description: Revenue report strictly grouped by currency } }
+
+  /api/v1/properties/{propertyID}/reports/channels:
+    get:
+      summary: Booking-channel performance & Phase 4 unmapped/conflict completeness diagnostics (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+      responses: { "200": { description: Channel comparison rows and completeness notices } }
+
+  /api/v1/properties/{propertyID}/reports/seasons:
+    get:
+      summary: Side-by-side seasonal comparison (peak/shoulder/off_peak/custom) (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: season, in: query, schema: { type: string, enum: [peak, shoulder, off_peak, custom] } }
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: compare_start, in: query, schema: { type: string, format: date } }
+        - { name: compare_end, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: Seasonal comparison report } }
+
+  /api/v1/properties/{propertyID}/reports/forecast:
+    get:
+      summary: Strictly read-only On-The-Books vs. conservative trailing-90d benchmark forecast (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: as_of_date, in: query, schema: { type: string, format: date } }
+        - { name: horizon_days, in: query, schema: { type: integer, minimum: 1, maximum: 180 } }
+      responses: { "200": { description: Forward forecast report } }
+
+  /api/v1/properties/{propertyID}/reports/retention:
+    get:
+      summary: Privacy-safe aggregate repeat-guest analytics over merged_into_guest_id lineage (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: Aggregate guest retention counts (zero PII or guest IDs) } }
+
+  /api/v1/properties/{propertyID}/reports/accounting-export:
+    get:
+      summary: Repeatable PII-free, formula-safe accounting export (`reports:export`; audited as report.exported)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: type, in: query, schema: { type: string, enum: [booking_line_items, payment_ledger, refund_ledger] } }
+        - { name: format, in: query, schema: { type: string, enum: [csv, json] } }
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+      responses:
+        "200": { description: CSV attachment or JSON accounting export payload }
+        "403": { description: Requires reports:export (owner_admin or manager) and same-property scope }
+
 components:
   securitySchemes:
     adminSessionCookie:
