@@ -37,8 +37,7 @@
       <label for="end_date">Overlaps To</label>
       <input id="end_date" name="end_date" type="date" value="{{.FilterEndDate}}">
     </div>
-    <div class="field">
-      <label>&nbsp;</label>
+    <div class="field field-actions">
       <button type="submit" class="btn btn-secondary">Filter Reservations</button>
     </div>
   </form>
@@ -46,18 +45,20 @@
 
 <div class="card">
   <h2>Reservation List</h2>
+  {{if .Reservations}}
   <div class="table-wrap">
     <table>
+      <caption class="sr-only">Administrative reservation list</caption>
       <thead>
         <tr>
-          <th>Reference</th>
-          <th>Guest</th>
-          <th>Stay [Arrival → Departure)</th>
-          <th>Units</th>
-          <th>Party</th>
-          <th>Channel</th>
-          <th>Status</th>
-          <th>Action</th>
+          <th scope="col">Reference</th>
+          <th scope="col">Guest</th>
+          <th scope="col">Stay [Arrival → Departure)</th>
+          <th scope="col">Units</th>
+          <th scope="col">Party</th>
+          <th scope="col">Channel</th>
+          <th scope="col">Status</th>
+          <th scope="col">Action</th>
         </tr>
       </thead>
       <tbody>
@@ -76,21 +77,22 @@
           </td>
           <td>{{.Adults}}A / {{.Children}}C / {{.Infants}}I</td>
           <td><span class="badge badge-info">{{.ChannelCode}}</span></td>
-          <td><span class="badge {{statusClass (printf "%s" .Status)}}">{{.Status}}</span></td>
+          <td>{{template "status_badge" (dict "Class" (statusClass (printf "%s" .Status)) "Label" (printf "%s" .Status))}}</td>
           <td><a href="/reservations/{{.ID}}" class="btn btn-secondary btn-sm">View / Manage</a></td>
         </tr>
-        {{else}}
-        <tr><td colspan="8">No reservations matched the current filters.</td></tr>
         {{end}}
       </tbody>
     </table>
   </div>
+  {{else}}
+  {{template "empty_state" (dict "Title" "No matching reservations" "Body" "No reservations matched the current filters." "ActionURL" "/reservations" "ActionLabel" "Clear filters")}}
+  {{end}}
 </div>
 
 {{if .CanWriteReservations}}
 <div class="card">
   <h2>Booking Sources / Channels</h2>
-  <p class="subtitle">Extensible booking-source classifications (external API sync remains Phase 4).</p>
+  <p class="subtitle">Extensible booking-source classifications managed per property.</p>
   <div class="days-row mb-2">
     {{range .Channels}}
     <span class="badge badge-muted">{{.Code}} ({{.Name}})</span>
@@ -115,8 +117,7 @@
         <option value="other">Other</option>
       </select>
     </div>
-    <div class="field">
-      <label>&nbsp;</label>
+    <div class="field field-actions">
       <button type="submit" class="btn btn-secondary">Add Booking Channel</button>
     </div>
   </form>

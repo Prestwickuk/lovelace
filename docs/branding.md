@@ -40,13 +40,13 @@ Defined in [`internal/branding/branding.go`](../internal/branding/branding.go) a
 | `--lovelace-olive` | `#6B7B4E` | Olive-moss secondary tone |
 | `--lovelace-charcoal` | `#1E211E` | Dark charcoal ink |
 
-Dark mode activates automatically via `@media (prefers-color-scheme: dark)`, shifting page/card surfaces to deep forest charcoal (`#151917` / `#1D2320`) while keeping accessible contrast and zero inline styles under strict CSP `style-src 'self'`.
+Dark mode (`[data-theme="dark"]` and OS-following `[data-theme="system"]` via `@media (prefers-color-scheme: dark)`), explicit `[data-theme="light"]`, curated WCAG AA accents (`data-accent="teal|olive|slate|brass"`), `[data-contrast="high"]`, `[data-density="compact"]`, `[data-text-scale="large|xl"]`, and reduced-motion rules (`[data-motion="reduced"]` + `@media (prefers-reduced-motion: reduce)`) are implemented in [`internal/branding/theme.go`](../internal/branding/theme.go) and [`internal/webui/static/app.css`](../internal/webui/static/app.css) under strict CSP (`style-src 'self'`, zero inline styles).
 
 ---
 
-## 4. Proposed Future Extension (`PROPOSED / FUTURE` — Not Implemented)
+## 4. PWE Status & Future Extensions (`PWE-1` Implemented; `PWE-2`, `PWE-4` `PROPOSED / FUTURE`)
 
-The planned expansion of LOVELACE's design tokens, user appearance/accessibility preferences (`PWE-1`, `PWE-2`), property-level branding previews/terminology (`PWE-4` building on `properties.branding_config`), and three-way Platform / Property / User identity separation is documented in:
+`PWE-1` (Admin Design System & Theme Engine) is **Implemented** without preference persistence. The planned expansion to user appearance persistence (`PWE-2`), property-level branding previews/terminology (`PWE-4` building on `properties.branding_config`), and three-way Platform / Property / User identity separation remains **`PROPOSED / FUTURE`** and is documented in:
 
 - [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](personalisation-workspace-experience.md)
 - [ADR-0001: Public/Administrative Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md)

@@ -60,8 +60,7 @@
         <option value="UNRELEASED" {{if eq $.FilterStatus "UNRELEASED"}}selected{{end}}>Unreleased Hold</option>
       </select>
     </div>
-    <div class="field">
-      <label>&nbsp;</label>
+    <div class="field field-actions">
       <div class="days-row">
         <button type="submit" class="btn btn-primary">Apply Filters</button>
         <a href="/calendar?view={{.Calendar.View}}&start_date={{.PrevStart}}&unit_type_id={{.FilterUnitTypeID}}&channel_code={{.FilterChannelCode}}&status={{.FilterStatus}}" class="btn btn-secondary">← Prev</a>
@@ -130,11 +129,12 @@
 
   <div class="cal-grid-wrap">
     <table class="cal-table" id="calendar-grid">
+      <caption class="sr-only">Unit availability and reservation calendar from {{formatDate .Calendar.StartDate}} to {{formatDate .Calendar.EndDate}}</caption>
       <thead>
         <tr>
-          <th class="cal-unit-col">Unit / Pitch</th>
+          <th scope="col" class="cal-unit-col">Unit / Pitch</th>
           {{range .Calendar.Dates}}
-          <th>{{.Format "02 Jan"}}<br><span class="mono">{{.Format "Mon"}}</span></th>
+          <th scope="col">{{.Format "02 Jan"}}<br><span class="mono">{{.Format "Mon"}}</span></th>
           {{end}}
         </tr>
       </thead>
@@ -142,10 +142,10 @@
         {{range .Calendar.Units}}
         {{$unit := .Unit}}
         <tr>
-          <td class="cal-unit-col">
+          <th scope="row" class="cal-unit-col">
             <strong>{{$unit.Code}}</strong> {{$unit.Name}}<br>
             <span class="subtitle">{{$unit.UnitTypeName}}</span>
-          </td>
+          </th>
           {{range .Cells}}
           <td class="cal-cell cal-cell-{{.Status}}{{if and $.FilterStatus (ne .Status $.FilterStatus)}} cal-cell-dim{{end}}"
               title="{{$unit.Code}} · {{.Date}} · {{.Status}} — {{.Reason}}"

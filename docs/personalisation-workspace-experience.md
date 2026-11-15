@@ -1,8 +1,8 @@
-# LOVELACE Personalisation & Workspace Experience (`PROPOSED / FUTURE`)
+# LOVELACE Personalisation & Workspace Experience (`PWE-1` Implemented; `PWE-2`–`PWE-5` `PROPOSED / FUTURE`)
 
-> **Document Status:** `PROPOSED / FUTURE` — Architecture, Product Roadmap Extension, Design Standard, and Acceptance Specification Only.
+> **Document Status:** `PWE-1` is **Implemented** in Go SSR (`internal/branding/theme.go`, `internal/webui/static/app.css`, `internal/webui/templates/partials.html`, shared shell & representative admin screens). `PWE-2` through `PWE-5` remain **`PROPOSED / FUTURE`** specification only.
 >
-> **Implementation Status:** **Not Implemented.** Zero database migrations, API endpoints, HTML templates, CSS theme engines, RBAC changes, or configuration defaults have been implemented under this workstream.
+> **Implementation Status:** **PWE-1 Implemented** (static CSS token contract, allowlisted `data-theme`/`data-accent`/`data-contrast`/`data-motion`/`data-density`/`data-text-scale` root attributes, SSR partials, solid navigation chrome, accessibility & WCAG AA verification). Zero database migrations, preference persistence tables, API endpoints, RBAC changes, or `PWE-2`–`PWE-5` features exist.
 
 ---
 
@@ -75,16 +75,14 @@ No theme, accent colour, compact density mode, or workspace profile may degrade 
 
 ---
 
-## 3. Five Proposed Milestones (`PROPOSED / FUTURE`)
+## 3. Workstream Milestones (`PWE-1` Implemented; `PWE-2`–`PWE-5` `PROPOSED / FUTURE`)
 
-### PWE-1 — Design System and Theme Engine (`PROPOSED / FUTURE`)
-- **Scope:**
-  - Formalize the LOVELACE token taxonomy in Go-served static CSS: surface, ink, border, interactive brand/accent, semantic status, spacing, density (`compact` / `comfortable`), typography scale, radius, shadow/elevation, and high-contrast tokens.
-  - Extract reusable `html/template` UI partials (`page-header`, `filter-bar`, `status-badge`, `data-table`, `empty-state`, `confirm-panel`) so future and existing screens converge onto one maintainable SSR component library without adding a JS framework.
-  - Support light, dark, and OS-following (`system`) theme modes, curated LOVELACE accent choices (contrast-verified), explicit reduced-motion toggle, high-contrast theme modifier, and responsive breakpoint tokens.
-  - Keep Next.js `apps/public-web/` styling and deployment strictly separate.
-- **Dependencies:** Existing `internal/webui/static/app.css`, `internal/branding/branding.go`, and CSP `style-src 'self'` security posture.
-- **Key Deliverables:** Token contract document + SSR component conventions + light/dark/system/high-contrast/reduced-motion stylesheet layer.
+### PWE-1 — Design System and Theme Engine (**Implemented**)
+- **Implemented Files & Contract:**
+  - [`internal/branding/theme.go`](../internal/branding/theme.go) (`ThemeSelection`, `ResolveTheme`, `CuratedAccents`, `ContrastRatio`) strictly allowlists `data-theme` (`system` default via `prefers-color-scheme`, `light`, `dark`), `data-accent` (`teal` default, `olive`, `slate`, `brass`), `data-contrast` (`standard`, `high`), `data-motion` (`system` default via `prefers-reduced-motion`, `reduced`), `data-density` (`comfortable`, `compact`), and `data-text-scale` (`default`, `large`, `xl`).
+  - [`internal/webui/static/app.css`](../internal/webui/static/app.css) defines semantic surface, ink, muted ink, border, solid sidebar chrome (zero decorative gradients), separate `--property-brand` vs `--accent-*` tokens, immutable semantic status tokens (`--ok-*`, `--warn-*`, `--alloc-*`, `--err-*`, `--info-*`, `--unrel-*`), `:focus-visible`, `.skip-link`, `.sr-only`, `rem`-scaled typography, native `<dialog>` styles, and responsive narrow-width layouts under strict `style-src 'self'` CSP.
+  - [`internal/webui/templates/partials.html`](../internal/webui/templates/partials.html), [`layout.html`](../internal/webui/templates/layout.html), [`login.html`](../internal/webui/templates/login.html), [`error.html`](../internal/webui/templates/error.html), and representative screens (`dashboard.html`, `calendar.html`, `reservations.html`, `guests_list.html`, `account.html`, `comms_settings.html`) adopt shared partials (`html_attrs`, `head_assets`, `page_header`, `status_badge`, `empty_state`), semantic landmarks/table `scope`, and non-colour status glyphs.
+  - Kept Next.js `apps/public-web/` styling, components, and origin completely separate; no preference persistence or DB migrations added.
 
 ### PWE-2 — User Personalisation (`PROPOSED / FUTURE`)
 - **Scope:**
@@ -209,14 +207,14 @@ Do **not** create migrations or tables yet. When PWE is scheduled for implementa
 
 ---
 
-## 5. Per-Milestone Testable Acceptance Checklists (`PROPOSED / FUTURE`)
+## 5. Per-Milestone Testable Acceptance Checklists (`PWE-1` Implemented; `PWE-2`–`PWE-5` `PROPOSED / FUTURE`)
 
-### PWE-1 Acceptance Checklist
-- [ ] Zero JS frameworks or inline `style="..."` / `<script>` attributes added; strict `style-src 'self'` CSP remains intact across all pages.
-- [ ] All design tokens (light, dark, system, high contrast, reduced motion, density, typography scale) resolve deterministically via CSS custom properties in static `/static/*.css`.
-- [ ] Keyboard navigation, `:focus-visible`, WCAG 2.1 AA contrast, screen-reader landmarks/labels, 200% zoom/text-scale legibility, and non-colour status indicators pass automated & manual accessibility checks.
-- [ ] Component partials cover tables, forms, buttons, calendars, nav, status badges, dialogs, and empty/error states without prohibited decorative anti-patterns.
-- [ ] `apps/public-web/` builds, CSS, and origin boundaries remain completely untouched and independent.
+### PWE-1 Acceptance Checklist (**Implemented & Verified**)
+- [x] Zero JS frameworks or inline `style="..."` / `<script>` attributes added; strict `style-src 'self'` CSP remains intact across all pages.
+- [x] All design tokens (light, dark, system, high contrast, reduced motion, density, typography scale) resolve deterministically via CSS custom properties in static `/static/*.css`.
+- [x] Keyboard navigation, `:focus-visible`, WCAG 2.1 AA contrast, screen-reader landmarks/labels, 200% zoom/text-scale legibility, and non-colour status indicators pass automated & visual checks.
+- [x] Shared partials cover headers, status badges, and empty states across shared chrome and representative admin screens, removing decorative sidebar/login gradients.
+- [x] `apps/public-web/` builds, CSS, and origin boundaries remain completely untouched and independent.
 
 ### PWE-2 Acceptance Checklist
 - [ ] Preferences persist per `admin_user` across sessions without affecting any other user's UI or defaults.

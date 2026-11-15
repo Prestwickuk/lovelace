@@ -17,6 +17,7 @@ type loginViewData struct {
 	Email string
 	Error string
 	Brand branding.PlatformBrand
+	Theme branding.ThemeSelection
 }
 
 func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +26,7 @@ func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.loginTmpl.Execute(w, loginViewData{Brand: h.brand})
+	_ = h.loginTmpl.Execute(w, loginViewData{Brand: h.brand, Theme: h.theme})
 }
 
 func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +53,7 @@ func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 			Email: email,
 			Error: msg,
 			Brand: h.brand,
+			Theme: h.theme,
 		})
 		return
 	}

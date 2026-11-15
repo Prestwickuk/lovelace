@@ -3,7 +3,7 @@
   <div>
     <h1>{{.Property.Name}} — Operations Centre</h1>
     <p class="subtitle">
-      {{if .Ops.IsToday}}<span class="badge badge-ok">Today</span>{{else}}<span class="badge badge-info">Viewing {{.DateStr}}</span>{{end}}
+      {{if .Ops.IsToday}}{{template "status_badge" (dict "Class" "badge-ok" "Label" "Today")}}{{else}}{{template "status_badge" (dict "Class" "badge-info" "Label" (printf "Viewing %s" .DateStr))}}{{end}}
       Operational Date <strong>{{.DateStr}}</strong> · Local Time <strong>{{.Ops.LocalTimeLabel}}</strong> ·
       Check-in from <strong>{{.Property.CheckInTime}}</strong> · Check-out by <strong>{{.Property.CheckOutTime}}</strong>
     </p>
@@ -31,13 +31,13 @@
   </div>
 </div>
 
-<div class="ops-focus-bar mb-3">
+<nav class="ops-focus-bar mb-3" aria-label="Operations view focus">
   <span class="ops-focus-label">View Focus:</span>
-  <a href="/?date={{.DateStr}}&focus=all" class="ops-tab {{if eq .Ops.Focus "all"}}active{{end}}">All Operations</a>
-  <a href="/?date={{.DateStr}}&focus=front_desk" class="ops-tab {{if eq .Ops.Focus "front_desk"}}active{{end}}">Front Desk (Arrivals &amp; Departures)</a>
-  <a href="/?date={{.DateStr}}&focus=housekeeping" class="ops-tab {{if eq .Ops.Focus "housekeeping"}}active{{end}}">Daily Changeover Board</a>
-  <a href="/?date={{.DateStr}}&focus=attention" class="ops-tab {{if eq .Ops.Focus "attention"}}active{{end}}">Attention &amp; Alerts ({{.Ops.Summary.AttentionCount}})</a>
-</div>
+  <a href="/?date={{.DateStr}}&focus=all" class="ops-tab {{if eq .Ops.Focus "all"}}active{{end}}" {{if eq .Ops.Focus "all"}}aria-current="page"{{end}}>All Operations</a>
+  <a href="/?date={{.DateStr}}&focus=front_desk" class="ops-tab {{if eq .Ops.Focus "front_desk"}}active{{end}}" {{if eq .Ops.Focus "front_desk"}}aria-current="page"{{end}}>Front Desk (Arrivals &amp; Departures)</a>
+  <a href="/?date={{.DateStr}}&focus=housekeeping" class="ops-tab {{if eq .Ops.Focus "housekeeping"}}active{{end}}" {{if eq .Ops.Focus "housekeeping"}}aria-current="page"{{end}}>Daily Changeover Board</a>
+  <a href="/?date={{.DateStr}}&focus=attention" class="ops-tab {{if eq .Ops.Focus "attention"}}active{{end}}" {{if eq .Ops.Focus "attention"}}aria-current="page"{{end}}>Attention &amp; Alerts ({{.Ops.Summary.AttentionCount}})</a>
+</nav>
 
 <div class="grid grid-4 mb-3">
   <div class="card ops-kpi">

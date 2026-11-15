@@ -1,21 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html {{template "html_attrs" .}}>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="application-name" content="{{.Brand.FullName}}">
-  <meta name="theme-color" content="{{.Brand.Palette.CoastalTeal}}">
+{{template "head_assets" .}}
   <title>{{.Title}} — {{.Brand.ConsoleTitle}}</title>
-  <link rel="icon" type="image/png" href="{{.Brand.Assets.Favicon}}">
-  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <div class="login-page">
-    <div class="login-card error-card">
+  <main class="login-page">
+    <div class="login-card error-card" role="alert">
       <div class="login-logo-wrap">
         <img src="{{.Brand.Assets.EmblemLogo}}" alt="{{.Brand.Assets.AltText}}" class="error-emblem">
       </div>
-      <div class="badge badge-err mb-1">HTTP {{.Status}}</div>
+      <div class="mb-1">{{template "status_badge" (dict "Class" "badge-err" "Label" (printf "HTTP %d" .Status))}}</div>
       <h1>{{.Title}}</h1>
       <p class="subtitle mt-2">{{.Message}}</p>
       <div class="mt-4">
@@ -23,6 +18,6 @@
       </div>
       <div class="login-footer">{{.Brand.FullName}}</div>
     </div>
-  </div>
+  </main>
 </body>
 </html>

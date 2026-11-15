@@ -1,14 +1,9 @@
 {{define "content"}}
-<div class="page-header">
-  <div>
-    <h1>My Account</h1>
-    <p class="subtitle">{{.Actor.FullName}} · {{.Actor.Email}} · Role: <span class="mono">{{.Actor.Role}}</span></p>
-  </div>
-</div>
+{{template "page_header" (dict "Title" "My Account" "Subtitle" (printf "%s · %s · Role: %s" .Actor.FullName .Actor.Email .Actor.Role))}}
 
 <div class="card card-narrow">
   <h2>{{if .Actor.MustRotatePassword}}Set Your New Personal Password{{else}}Change Password{{end}}</h2>
-  <p class="subtitle">Updating your password revokes all other active sessions for your account.</p>
+  <p class="subtitle mb-2">Updating your password revokes all other active sessions for your account.</p>
   <form method="post" action="/account/password" class="grid">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <div class="field">
@@ -16,8 +11,9 @@
       <input id="current_password" name="current_password" type="password" autocomplete="current-password" required>
     </div>
     <div class="field">
-      <label for="new_password">New Password (minimum 12 characters)</label>
-      <input id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="12" required>
+      <label for="new_password">New Password</label>
+      <input id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="12" aria-describedby="new-password-hint" required>
+      <span id="new-password-hint" class="field-hint">Minimum 12 characters.</span>
     </div>
     <div>
       <button type="submit" class="btn btn-primary">Update Password</button>

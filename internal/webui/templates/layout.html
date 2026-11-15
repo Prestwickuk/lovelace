@@ -1,18 +1,14 @@
 {{define "layout"}}<!DOCTYPE html>
-<html lang="en">
+<html {{template "html_attrs" .}}>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="application-name" content="{{.Brand.FullName}}">
-  <meta name="theme-color" content="{{.Brand.Palette.CoastalTeal}}">
+{{template "head_assets" .}}
   <title>{{.Title}} — {{.Brand.ConsoleTitle}}</title>
-  <link rel="icon" type="image/png" href="{{.Brand.Assets.Favicon}}">
-  <link rel="stylesheet" href="/static/app.css">
   <script src="/static/calendar.js" defer></script>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 <div class="app-shell">
-  <aside class="sidebar">
+  <aside class="sidebar" aria-label="Administrative sidebar">
     <div class="brand">
       <div class="brand-badge">
         <img src="{{.Brand.Assets.CompactLogo}}" alt="{{.Brand.Assets.AltText}}" class="brand-logo-compact">
@@ -21,56 +17,56 @@
       <div class="brand-title">{{.Property.Name}}</div>
       <div class="brand-sub">{{.Property.Region}}</div>
     </div>
-    <nav class="nav">
-      <a href="/" class="{{if eq .ActiveNav "dashboard"}}active{{end}}">Operations Centre</a>
+    <nav class="nav" aria-label="Administrative navigation">
+      <a href="/" class="{{if eq .ActiveNav "dashboard"}}active{{end}}" {{if eq .ActiveNav "dashboard"}}aria-current="page"{{end}}>Operations Centre</a>
       {{if .CanReadMaintenance}}
       <div class="nav-section">Maintenance &amp; Facilities</div>
-      <a href="/maintenance" class="{{if eq .ActiveNav "maintenance"}}active{{end}}">Maintenance</a>
-      <a href="/maintenance/schedule" class="{{if eq .ActiveNav "maintenance-schedule"}}active{{end}}">Workload &amp; Schedule</a>
-      <a href="/maintenance/facilities" class="{{if eq .ActiveNav "maintenance-facilities"}}active{{end}}">Facilities &amp; Assets</a>
+      <a href="/maintenance" class="{{if eq .ActiveNav "maintenance"}}active{{end}}" {{if eq .ActiveNav "maintenance"}}aria-current="page"{{end}}>Maintenance</a>
+      <a href="/maintenance/schedule" class="{{if eq .ActiveNav "maintenance-schedule"}}active{{end}}" {{if eq .ActiveNav "maintenance-schedule"}}aria-current="page"{{end}}>Workload &amp; Schedule</a>
+      <a href="/maintenance/facilities" class="{{if eq .ActiveNav "maintenance-facilities"}}active{{end}}" {{if eq .ActiveNav "maintenance-facilities"}}aria-current="page"{{end}}>Facilities &amp; Assets</a>
       {{end}}
       {{if .CanReadReservations}}
-      <a href="/calendar" class="{{if eq .ActiveNav "calendar"}}active{{end}}">Booking Calendar</a>
-      <a href="/reservations" class="{{if eq .ActiveNav "reservations"}}active{{end}}">Reservations</a>
-      <a href="/payment-exceptions" class="{{if eq .ActiveNav "payment-exceptions"}}active{{end}}">Payment Exceptions</a>
+      <a href="/calendar" class="{{if eq .ActiveNav "calendar"}}active{{end}}" {{if eq .ActiveNav "calendar"}}aria-current="page"{{end}}>Booking Calendar</a>
+      <a href="/reservations" class="{{if eq .ActiveNav "reservations"}}active{{end}}" {{if eq .ActiveNav "reservations"}}aria-current="page"{{end}}>Reservations</a>
+      <a href="/payment-exceptions" class="{{if eq .ActiveNav "payment-exceptions"}}active{{end}}" {{if eq .ActiveNav "payment-exceptions"}}aria-current="page"{{end}}>Payment Exceptions</a>
       {{end}}
       {{if or .CanReadGuests .CanReadComms}}
       <div class="nav-section">Guests &amp; Comms</div>
       {{if .CanReadGuests}}
-      <a href="/guests" class="{{if eq .ActiveNav "guests"}}active{{end}}">Guest Directory</a>
+      <a href="/guests" class="{{if eq .ActiveNav "guests"}}active{{end}}" {{if eq .ActiveNav "guests"}}aria-current="page"{{end}}>Guest Directory</a>
       {{end}}
       {{if .CanReadComms}}
-      <a href="/enquiries" class="{{if eq .ActiveNav "enquiries"}}active{{end}}">Enquiries &amp; Requests</a>
+      <a href="/enquiries" class="{{if eq .ActiveNav "enquiries"}}active{{end}}" {{if eq .ActiveNav "enquiries"}}aria-current="page"{{end}}>Enquiries &amp; Requests</a>
       {{end}}
       {{if .CanMergeGuests}}
-      <a href="/guests/merge" class="{{if eq .ActiveNav "guest-merge"}}active{{end}}">Duplicate Merge Review</a>
+      <a href="/guests/merge" class="{{if eq .ActiveNav "guest-merge"}}active{{end}}" {{if eq .ActiveNav "guest-merge"}}aria-current="page"{{end}}>Duplicate Merge Review</a>
       {{end}}
       {{if .CanReadComms}}
-      <a href="/communications/settings" class="{{if eq .ActiveNav "comms-settings"}}active{{end}}">Templates &amp; Automation</a>
+      <a href="/communications/settings" class="{{if eq .ActiveNav "comms-settings"}}active{{end}}" {{if eq .ActiveNav "comms-settings"}}aria-current="page"{{end}}>Templates &amp; Automation</a>
       {{end}}
       {{end}}
       <div class="nav-section">Inventory &amp; Holds</div>
-      <a href="/blocks" class="{{if eq .ActiveNav "blocks"}}active{{end}}">Bulk Blockouts</a>
-      <a href="/releases" class="{{if eq .ActiveNav "releases"}}active{{end}}">Scheduled Releases</a>
-      <a href="/unit-types" class="{{if eq .ActiveNav "unit-types"}}active{{end}}">Unit Types</a>
-      <a href="/units" class="{{if eq .ActiveNav "units"}}active{{end}}">Units &amp; Pitches</a>
-      <a href="/extras" class="{{if eq .ActiveNav "extras"}}active{{end}}">Extras &amp; Add-ons</a>
-      <a href="/rates" class="{{if eq .ActiveNav "rates"}}active{{end}}">Rates &amp; Preview</a>
+      <a href="/blocks" class="{{if eq .ActiveNav "blocks"}}active{{end}}" {{if eq .ActiveNav "blocks"}}aria-current="page"{{end}}>Bulk Blockouts</a>
+      <a href="/releases" class="{{if eq .ActiveNav "releases"}}active{{end}}" {{if eq .ActiveNav "releases"}}aria-current="page"{{end}}>Scheduled Releases</a>
+      <a href="/unit-types" class="{{if eq .ActiveNav "unit-types"}}active{{end}}" {{if eq .ActiveNav "unit-types"}}aria-current="page"{{end}}>Unit Types</a>
+      <a href="/units" class="{{if eq .ActiveNav "units"}}active{{end}}" {{if eq .ActiveNav "units"}}aria-current="page"{{end}}>Units &amp; Pitches</a>
+      <a href="/extras" class="{{if eq .ActiveNav "extras"}}active{{end}}" {{if eq .ActiveNav "extras"}}aria-current="page"{{end}}>Extras &amp; Add-ons</a>
+      <a href="/rates" class="{{if eq .ActiveNav "rates"}}active{{end}}" {{if eq .ActiveNav "rates"}}aria-current="page"{{end}}>Rates &amp; Preview</a>
       {{if .CanReadReports}}
-      <a href="/reports" class="{{if eq .ActiveNav "reports"}}active{{end}}">Reports &amp; BI</a>
+      <a href="/reports" class="{{if eq .ActiveNav "reports"}}active{{end}}" {{if eq .ActiveNav "reports"}}aria-current="page"{{end}}>Reports &amp; BI</a>
       {{end}}
       <div class="nav-section">Settings</div>
-      <a href="/property" class="{{if eq .ActiveNav "property"}}active{{end}}">Site Settings</a>
+      <a href="/property" class="{{if eq .ActiveNav "property"}}active{{end}}" {{if eq .ActiveNav "property"}}aria-current="page"{{end}}>Site Settings</a>
       {{if .CanReadChannels}}
-      <a href="/settings/integrations/channel-manager" class="{{if eq .ActiveNav "channel-manager"}}active{{end}}">Channel Manager</a>
+      <a href="/settings/integrations/channel-manager" class="{{if eq .ActiveNav "channel-manager"}}active{{end}}" {{if eq .ActiveNav "channel-manager"}}aria-current="page"{{end}}>Channel Manager</a>
       {{end}}
       {{if .CanManageUsers}}
-      <a href="/users" class="{{if eq .ActiveNav "users"}}active{{end}}">Admin Users</a>
+      <a href="/users" class="{{if eq .ActiveNav "users"}}active{{end}}" {{if eq .ActiveNav "users"}}aria-current="page"{{end}}>Admin Users</a>
       {{end}}
       {{if .CanViewAudit}}
-      <a href="/audit-logs" class="{{if eq .ActiveNav "audit"}}active{{end}}">Audit Log</a>
+      <a href="/audit-logs" class="{{if eq .ActiveNav "audit"}}active{{end}}" {{if eq .ActiveNav "audit"}}aria-current="page"{{end}}>Audit Log</a>
       {{end}}
-      <a href="/account" class="{{if eq .ActiveNav "account"}}active{{end}}">My Account</a>
+      <a href="/account" class="{{if eq .ActiveNav "account"}}active{{end}}" {{if eq .ActiveNav "account"}}aria-current="page"{{end}}>My Account</a>
     </nav>
     <div class="sidebar-footer">
       <div><strong>{{.Actor.FullName}}</strong></div>
@@ -82,14 +78,14 @@
       <div class="sidebar-attribution">{{.Brand.FullName}} · v{{.Brand.BrandVersion}}</div>
     </div>
   </aside>
-  <main class="main">
+  <main id="main-content" class="main" tabindex="-1">
     {{if .Actor.MustRotatePassword}}
-    <div class="alert alert-err">
+    <div class="alert alert-err" role="alert">
       <strong>Password rotation required:</strong> Please set a new personal password below before accessing other administrative sections.
     </div>
     {{end}}
-    {{if .Flash}}<div class="alert alert-ok">{{.Flash}}</div>{{end}}
-    {{if .Error}}<div class="alert alert-err">{{.Error}}</div>{{end}}
+    {{if .Flash}}<div class="alert alert-ok" role="status" aria-live="polite">{{.Flash}}</div>{{end}}
+    {{if .Error}}<div class="alert alert-err" role="alert">{{.Error}}</div>{{end}}
     {{template "content" .}}
   </main>
 </div>

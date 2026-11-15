@@ -2,7 +2,7 @@
 
 **Platform Identity:** LOVELACE Booking System (`internal/branding`)  
 **Initial Managed Property:** Tir Bach Campsite, Pembrokeshire, Wales  
-**Current Scope:** Phases 1–5 implemented (`Phase 1–2.1.1` core/direct booking, `Phase 3 M1–M3 + 3.3.2` ops/maintenance/CRM/privacy, `Phase 4` live OTA sync, `Phase 5` reporting & BI + accuracy remediation). `Phase 3 Milestone 4` (Public Guest Portal) remains deferred; **Personalisation & Workspace Experience (`PWE-1`–`PWE-5`)** is `PROPOSED / FUTURE` only.
+**Current Scope:** Phases 1–5 implemented (`Phase 1–2.1.1` core/direct booking, `Phase 3 M1–M3 + 3.3.2` ops/maintenance/CRM/privacy, `Phase 4` live OTA sync, `Phase 5` reporting & BI + accuracy remediation), plus **`PWE-1`** (Admin Design System & Theme Engine in `internal/branding` + `internal/webui`). `Phase 3 Milestone 4` (Public Guest Portal) remains deferred; **`PWE-2`–`PWE-5`** remain `PROPOSED / FUTURE`.
 **Stack:** Go 1.24 (`net/http`, `html/template`, `embed`) + PostgreSQL 17 (`pgx/v5`, `btree_gist`) + Next.js 16 Public Frontend (`apps/public-web/`)
 
 ---
@@ -62,20 +62,20 @@ For an independent glamping and camping business like Tir Bach, operational reli
 | **Phase 4** | **External Channels & Distribution** | **Implemented (`0019_phase4_live_ota_sync.sql`):** Live provider integrations (`Beds24`, `Smoobu`, `Lodgify`, `Channex`), encrypted credentials vault, lease-fenced job worker (`channel_sync_jobs`), incremental digests/checkpoints, anti-SSRF HTTP client, HMAC replay nonces (`channel_hmac_nonces`), and separated webhook delete / token revocation disconnect handling. |
 | **Phase 5** | **Reporting & Business Intelligence** | **Implemented (`0020_phase5_reporting_bi.sql`, `0021_phase5_accuracy_remediation.sql`):** Property-scoped date-aware occupancy (`unit_status_history` + `inventory_history_gaps`), per-currency ADR/RevPAR and cash/refund reconciliation (`refunds.occurred_at`), channel comparisons, seasonal views, read-only OTB + 90-day pace forecasting with non-duplicated currency allocation, privacy-safe aggregate guest retention analytics, and audited `lovelace.accounting.v1` CSV exports. |
 
-### 2.1 Proposed Future Workstream — LOVELACE Personalisation & Workspace Experience (`PROPOSED / FUTURE`)
+### 2.1 Personalisation & Workspace Experience Workstream (`PWE-1` Implemented; `PWE-2`–`PWE-5` `PROPOSED / FUTURE`)
 
-> **Status: `PROPOSED / FUTURE` (Not Implemented).** This workstream is an architectural roadmap extension and does **not** alter committed phase/milestone numbering (`Phases 1–5`, `Phase 3 M1–M4`), nor is it a prerequisite for Phase 3.2 acceptance, direct public bookings, channel sync, or Phase 5 reporting.
+> **Status:** **`PWE-1` Implemented** (`internal/branding/theme.go`, `internal/webui/static/app.css`, `internal/webui/templates/partials.html`, shared admin chrome & representative pages). **`PWE-2`–`PWE-5` remain `PROPOSED / FUTURE` (Not Implemented)** and do not alter committed phase numbering (`Phases 1–5`, `Phase 3 M1–M4`) or introduce database preference persistence yet.
 
 - **Placement & Rationale:** Positioned **after** Phase 3 operations and CRM foundations (**Milestones 1–3**) are mature, because role-aligned workspace presets and configurable operational widgets require settled RBAC roles (`owner_admin`, `manager`, `staff`, `maintenance_staff`, `housekeeping_staff`, `viewer`), changeover/maintenance/CRM workflows, strict CSP (`style-src 'self'`), and `properties.branding_config` separation.
 - **Boundary Invariant:** Admin personalization remains inside Go SSR (`internal/webui`) with `style-src 'self'` CSS custom properties and strictly declarative configuration, keeping `apps/public-web/` (Next.js) separately deployed and restricted to approved `/api/public/v1/*` property-branding projections per [ADR-0001](adr/0001-public-admin-separation-and-pwe-boundaries.md).
 
-| Milestone (`PROPOSED / FUTURE`) | Name | Scope Summary |
+| Milestone | Name | Status & Scope Summary |
 |---|---|---|
-| **PWE-1** | **Design System & Theme Engine** | Static CSS token system, typography/spacing/table/calendar/component standards, light/dark/system/high-contrast themes, curated accents, reduced motion, WCAG AA compliance in Go SSR (`internal/webui`). |
-| **PWE-2** | **User Personalisation** | Global accessibility/theme preferences vs. user+property navigation shortcuts, landing routes, calendar/table defaults, and saved operational views; strict cross-user & cross-property isolation. |
-| **PWE-3** | **Customisable Dashboard Builder** | Permission-filtered typed widget registry (`ops.*`, `maint.*`, `res.*`, `crm.*`, `channels.*`, `reports.*`, `workspace.*`), add/remove/reorder/resize, reset-to-default; zero executable HTML/JS; presentation-only. |
-| **PWE-4** | **Property Branding** | Safe property logo, contrast-verified palette, display name, bounded domain terminology, server-rendered preview, and 3-way Platform / Property / User identity separation extending `properties.branding_config` without coupling deployments. |
-| **PWE-5** | **Workspace Profiles** | Role-oriented Owner/Administrator, Reception, Housekeeping, and Maintenance presentation presets customizable within user bounds while existing server-side RBAC remains authoritative. |
+| **PWE-1** | **Design System & Theme Engine** | **Implemented:** Static CSS token contract, allowlisted `data-theme`/`data-accent`/`data-contrast`/`data-motion`/`data-density`/`data-text-scale` attributes, solid chrome, SSR partials, light/dark/system/high-contrast themes, curated accents, reduced motion, WCAG AA contrast & accessibility verification (`internal/webui`). |
+| **PWE-2** | **User Personalisation** | *`PROPOSED / FUTURE`:* Global accessibility/theme preferences vs. user+property navigation shortcuts, landing routes, calendar/table defaults, and saved operational views; strict cross-user & cross-property isolation. |
+| **PWE-3** | **Customisable Dashboard Builder** | *`PROPOSED / FUTURE`:* Permission-filtered typed widget registry (`ops.*`, `maint.*`, `res.*`, `crm.*`, `channels.*`, `reports.*`, `workspace.*`), add/remove/reorder/resize, reset-to-default; zero executable HTML/JS; presentation-only. |
+| **PWE-4** | **Property Branding** | *`PROPOSED / FUTURE`:* Safe property logo, contrast-verified palette, display name, bounded domain terminology, server-rendered preview, and 3-way Platform / Property / User identity separation extending `properties.branding_config` without coupling deployments. |
+| **PWE-5** | **Workspace Profiles** | *`PROPOSED / FUTURE`:* Role-oriented Owner/Administrator, Reception, Housekeeping, and Maintenance presentation presets customizable within user bounds while existing server-side RBAC remains authoritative. |
 
 See the full canonical specification in [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](personalisation-workspace-experience.md) and [ADR-0001: Public/Admin Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md).
 

@@ -32,12 +32,19 @@ type Handler struct {
 	svc       *service.Service
 	cfg       config.Config
 	brand     branding.PlatformBrand
+	theme     branding.ThemeSelection
 	loginTmpl *template.Template
 	errorTmpl *template.Template
 	pages     map[string]*template.Template
 }
 
+// New creates a Handler with the default platform PWE-1 theme contract.
 func New(svc *service.Service, cfg config.Config) (*Handler, error) {
+	return NewWithTheme(svc, cfg, branding.DefaultTheme())
+}
+
+// NewWithTheme creates a Handler using a strictly allowlisted PWE-1 theme selection.
+func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeSelection) (*Handler, error) {
 	funcs := template.FuncMap{
 		"formatMoney": domain.FormatPence,
 		"formatDate":  domain.FormatDate,
@@ -232,13 +239,41 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 			}
 			return fmt.Sprintf("%.2f%%", float64(*bps)/100.0)
 		},
+		"dict": func(values ...any) (map[string]any, error) {
+			if len(values)%2 != 0 {
+				return nil, fmt.Errorf("dict expects even number of arguments")
+			}
+			out := make(map[string]any, len(values)/2)
+			for i := 0; i < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict keys must be strings")
+				}
+				out[key] = values[i+1]
+			}
+			return out, nil
+		},
+		"statusGlyph": func(cls string) string {
+			switch cls {
+			case "badge-ok", "ok":
+				return "✓"
+			case "badge-warn", "warn":
+				return "!"
+			case "badge-err", "err":
+				return "×"
+			case "badge-info", "info":
+				return "i"
+			default:
+				return "–"
+			}
+		},
 	}
 
-	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html")
+	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html", "templates/partials.html")
 	if err != nil {
 		return nil, err
 	}
-	errorTmpl, err := template.New("error.html").Funcs(funcs).ParseFS(embeddedFS, "templates/error.html")
+	errorTmpl, err := template.New("error.html").Funcs(funcs).ParseFS(embeddedFS, "templates/error.html", "templates/partials.html")
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +311,7 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
-		t, err := template.New("layout.html").Funcs(funcs).ParseFS(embeddedFS, "templates/layout.html", "templates/"+name)
+		t, err := template.New("layout.html").Funcs(funcs).ParseFS(embeddedFS, "templates/partials.html", "templates/layout.html", "templates/"+name)
 		if err != nil {
 			return nil, err
 		}
@@ -287,6 +322,7 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 		svc:       svc,
 		cfg:       cfg,
 		brand:     branding.Default(),
+		theme:     branding.ResolveTheme(theme),
 		loginTmpl: loginTmpl,
 		errorTmpl: errorTmpl,
 		pages:     pages,
@@ -382,6 +418,7 @@ type baseView struct {
 	Title                 string
 	ActiveNav             string
 	Brand                 branding.PlatformBrand
+	Theme                 branding.ThemeSelection
 	Actor                 service.Actor
 	CSRFToken             string
 	Property              domain.Property
@@ -431,6 +468,7 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		Title:                 title,
 		ActiveNav:             nav,
 		Brand:                 h.brand,
+		Theme:                 h.theme,
 		Actor:                 actor,
 		CSRFToken:             actor.CSRFToken,
 		Property:              prop,
@@ -488,11 +526,13 @@ func (h *Handler) renderError(w http.ResponseWriter, status int, title, message 
 		Title   string
 		Message string
 		Brand   branding.PlatformBrand
+		Theme   branding.ThemeSelection
 	}{
 		Status:  status,
 		Title:   title,
 		Message: message,
 		Brand:   h.brand,
+		Theme:   h.theme,
 	})
 }
 

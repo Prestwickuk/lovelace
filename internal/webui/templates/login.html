@@ -1,36 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html {{template "html_attrs" .}}>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="application-name" content="{{.Brand.FullName}}">
-  <meta name="theme-color" content="{{.Brand.Palette.CoastalTeal}}">
+{{template "head_assets" .}}
   <title>Sign In — {{.Brand.FullName}}</title>
-  <link rel="icon" type="image/png" href="{{.Brand.Assets.Favicon}}">
-  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <div class="login-page">
+  <main class="login-page">
     <div class="login-card">
       <div class="login-logo-wrap">
         <img src="{{.Brand.Assets.FullLogo}}" alt="{{.Brand.Assets.AltText}}" class="login-logo">
       </div>
       <h1>Administrative Console</h1>
       <p class="subtitle">Property, Inventory &amp; Channel Administration</p>
-      {{if .Error}}<div class="alert alert-err mt-3">{{.Error}}</div>{{end}}
+      {{if .Error}}<div class="alert alert-err mt-3" role="alert" id="login-error">{{.Error}}</div>{{end}}
       <form method="post" action="/login" class="grid mt-3">
         <div class="field">
           <label for="email">Email</label>
-          <input id="email" name="email" type="email" autocomplete="username" required value="{{.Email}}">
+          <input id="email" name="email" type="email" autocomplete="username" required value="{{.Email}}"{{if .Error}} aria-invalid="true" aria-describedby="login-error"{{end}}>
         </div>
         <div class="field">
           <label for="password">Password</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <input id="password" name="password" type="password" autocomplete="current-password" required{{if .Error}} aria-invalid="true" aria-describedby="login-error"{{end}}>
         </div>
         <button type="submit" class="btn btn-primary mt-1">Sign in</button>
       </form>
       <div class="login-footer">{{.Brand.AttributionText}}</div>
     </div>
-  </div>
+  </main>
 </body>
 </html>
