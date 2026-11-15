@@ -226,6 +226,25 @@ var auditEnumSets = map[string]map[string]bool{
 		"PENDING": true, "PROCESSING": true, "DISPATCHING": true, "DISPATCH_UNKNOWN": true,
 		"CANCEL_REQUESTED": true, "CANCELLED": true, "SENT": true, "FAILED": true,
 	},
+	"channel_ownership_mode": {
+		"LOVELACE_ARI_PROVIDER_BOOKINGS": true, "READ_ONLY_IMPORT": true,
+	},
+	"channel_job_type": {
+		"VERIFY_CONNECTION": true, "DISCOVER_LISTINGS": true, "PUSH_AVAILABILITY": true,
+		"PUSH_RATES": true, "PULL_RESERVATIONS": true, "PROCESS_WEBHOOK_EVENT": true,
+	},
+	"channel_job_status": {
+		"PENDING": true, "RUNNING": true, "SUCCEEDED": true,
+		"FAILED_RETRYABLE": true, "FAILED_TERMINAL": true, "CANCELLED": true,
+	},
+	"channel_import_status": {
+		"IMPORTED": true, "UPDATED": true, "CANCELLED": true,
+		"CONFLICT_OVERBOOKED": true, "UNMAPPED": true, "FAILED": true,
+	},
+	"channel_webhook_status": {
+		"RECEIVED": true, "QUEUED": true, "PROCESSED": true,
+		"CONFLICT": true, "IGNORED": true, "FAILED": true,
+	},
 }
 
 var auditMovedCountsAllowedKeys = map[string]bool{
@@ -355,7 +374,39 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 	"channel_connection": {
 		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "provider_code": rCode,
 		"auth_method": rCode, "status": rCode, "has_credentials": rBool, "has_live_adapter": rBool,
-		"credentials_updated_at": rTSNull, "version": rVersion, "created_at": rTS, "updated_at": rTS,
+		"credentials_updated_at": rTSNull, "token_expires_at": rTSNull,
+		"last_verified_at": rTSNull, "last_synced_at": rTSNull, "last_sync_error_code": rCodeOpt,
+		"version": rVersion, "created_at": rTS, "updated_at": rTS,
+	},
+	"channel_external_reservation": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"listing_mapping_id": rUUIDNull, "provider_code": rCode,
+		"external_reservation_id": rCode, "external_revision": rCodeOpt,
+		"reservation_id": rUUIDNull, "import_status": rEnum("channel_import_status"),
+		"created_at": rTS, "updated_at": rTS,
+	},
+	"channel_listing_mapping": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"provider_code": rCode, "external_property_id": rCodeOpt, "external_listing_id": rCode,
+		"external_rate_plan_id": rCodeOpt, "unit_type_id": rUUID, "unit_id": rUUIDNull,
+		"rate_plan_id": rUUIDNull, "booking_channel_code": rCode, "currency": rCurrency,
+		"timezone": rTZ, "sync_availability": rBool, "sync_rates": rBool,
+		"sync_reservations": rBool, "ownership_mode": rEnum("channel_ownership_mode"),
+		"is_active": rBool, "version": rVersion, "created_at": rTS, "updated_at": rTS,
+	},
+	"channel_sync_job": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"listing_mapping_id": rUUIDNull, "provider_code": rCode,
+		"job_type": rEnum("channel_job_type"), "status": rEnum("channel_job_status"),
+		"attempts": rCount, "max_attempts": rCount, "fence_epoch": rCount,
+		"last_error_code": rCodeOpt, "started_at": rTSNull, "completed_at": rTSNull,
+		"created_at": rTS, "updated_at": rTS,
+	},
+	"channel_webhook_event": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"provider_code": rCode, "external_event_id": rCode, "event_type": rCode,
+		"signature_verified": rBool, "status": rEnum("channel_webhook_status"),
+		"received_at": rTS, "processed_at": rTSNull,
 	},
 	"communication_automation_rule": {
 		"redacted": rRedacted, "id": rUUID, "property_id": rUUID,

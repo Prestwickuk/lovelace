@@ -111,7 +111,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				workerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				workerCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 				if expired, err := svc.SweepExpiredHolds(workerCtx); err != nil {
 					slog.Warn("hold expiry sweep error", "error", err)
 				} else if expired > 0 {
@@ -135,6 +135,11 @@ func main() {
 					slog.Warn("automated guest communications sweep error", "error", err)
 				} else if queued > 0 {
 					slog.Info("queued automated guest communications", "count", queued)
+				}
+				if synced, err := svc.ProcessPendingChannelSyncJobs(workerCtx, 10); err != nil {
+					slog.Warn("channel sync job sweep error", "error", err)
+				} else if synced > 0 {
+					slog.Info("processed channel sync jobs", "count", synced)
 				}
 				cancel()
 			}

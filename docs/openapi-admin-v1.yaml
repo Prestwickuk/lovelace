@@ -600,6 +600,104 @@ paths:
         "200": { description: Updated advisory retention policy }
         "422": { description: Validation error (including auto_anonymize_enabled=true when worker is inactive) }
 
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/verify:
+    post:
+      summary: Verify provider credentials via live probe and promote connection to CONNECTED (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "200": { description: Verified connection with capability matrix }
+        "401": { description: Provider authentication failed }
+        "422": { description: Invalid configuration or unsupported provider }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/disconnect:
+    post:
+      summary: Disconnect provider, clear encrypted secrets, cancel queued jobs, and report honest token revocation status (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: Disconnected status and warnings (including NOT_IMPLEMENTED vendor revoke notes) } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/listings:
+    get:
+      summary: Discover external listings/apartments/room types and rate plans from provider API (`channels:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: External listing catalog } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/health:
+    get:
+      summary: Fetch Phase 4 connection health, capability statuses, mappings, recent sync jobs, external reservations, and conflicts (`channels:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: Provider health summary } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/mappings:
+    get:
+      summary: List property-scoped external listing mappings for provider (`channels:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: Mapping list } }
+    put:
+      summary: Create or update property-scoped external listing mapping (`channels:write`, currency & ownership validated)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "200": { description: Saved mapping }
+        "422": { description: Currency/ownership/validation error }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/mappings/{mappingID}:
+    delete:
+      summary: Delete a channel listing mapping (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+        - $ref: "#/components/parameters/MappingID"
+      responses: { "204": { description: Deleted } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/sync/preview:
+    post:
+      summary: Preview scope and confirmation requirement prior to pushing availability/rates or pulling bookings (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "200": { description: Sync scope preview (`requires_confirmation`, item counts, blocked capability notes) }
+        "422": { description: Blocked capability (e.g. Lodgify availability) or invalid date range }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/sync:
+    post:
+      summary: Enqueue idempotent durable channel sync jobs (`channels:write`; requires `confirm_scope=true` for multi-listing or >14d pushes)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "202": { description: Queued sync jobs }
+        "422": { description: Confirmation required, unverified connection, or capability blocked }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/jobs/process:
+    post:
+      summary: Manually trigger bounded leased processing of due channel sync jobs (`channels:write`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Processed job count } }
+
+  /api/v1/webhooks/channels/{providerCode}/{connectionID}:
+    post:
+      summary: Public webhook ingress for Beds24/Smoobu/Lodgify/Channex (signature/secret verified; deduplicated & queued; zero session auth)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderCode"
+        - $ref: "#/components/parameters/ConnectionID"
+      responses:
+        "202": { description: Verified and queued for asynchronous hydration }
+        "200": { description: Deduplicated replay }
+        "401": { description: Missing/invalid signature, expired timestamp, or replayed HMAC nonce }
+
 components:
   securitySchemes:
     adminSessionCookie:
@@ -664,6 +762,21 @@ components:
       schema: { type: string, format: uuid }
     RuleID:
       name: ruleID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProviderCode:
+      name: providerCode
+      in: path
+      required: true
+      schema: { type: string, enum: [beds24, smoobu, lodgify, channex] }
+    MappingID:
+      name: mappingID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConnectionID:
+      name: connectionID
       in: path
       required: true
       schema: { type: string, format: uuid }

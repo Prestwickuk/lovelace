@@ -2,7 +2,7 @@
 <div class="page-header">
   <div>
     <h1>Settings → Integrations → Channel Manager</h1>
-    <p class="subtitle">Provider registry &amp; encrypted credential vault (AES-256-GCM at rest). External OTA sync adapters activate in Phase 4; no live external calls are made or simulated here.</p>
+    <p class="subtitle">Encrypted credential vault (AES-256-GCM at rest). Verify connectivity, map external listings to unit types, and run explicit preview-confirmed ARI sync and webhooks.</p>
   </div>
 </div>
 
@@ -86,6 +86,16 @@
 
   {{if $conn}}
   <div class="days-row mt-2">
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/verify" class="inline">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn-primary btn-sm">Verify Live Connection</button>
+    </form>
+    {{if eq (printf "%s" $conn.Status) "CONNECTED"}}
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/disconnect" class="inline">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn-secondary btn-sm">Disconnect</button>
+    </form>
+    {{end}}
     {{if eq (printf "%s" $conn.Status) "DISABLED"}}
     <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/status" class="inline">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -104,6 +114,127 @@
       <button type="submit" class="btn btn-danger btn-sm">Remove Credentials</button>
     </form>
   </div>
+
+  <div class="mt-3">
+    <p class="subtitle"><strong>Webhook Callback Path:</strong> <code>/api/v1/webhooks/channels/{{$def.Code}}/{{$conn.ID}}</code></p>
+    {{if $conn.LastSyncErrorCode}}
+    <p class="subtitle"><strong>Last Error Code:</strong> <span class="badge badge-danger">{{$conn.LastSyncErrorCode}}</span></p>
+    {{end}}
+    {{if .Health.Capabilities}}
+    <details class="mt-2">
+      <summary>Provider Capability Matrix</summary>
+      <table class="table mt-2">
+        <thead><tr><th>Capability</th><th>Status</th><th>Contract Note</th></tr></thead>
+        <tbody>
+          {{range .Health.Capabilities}}
+          <tr>
+            <td><code>{{.Name}}</code></td>
+            <td><span class="badge {{if eq (printf "%s" .Status) "SUPPORTED"}}badge-success{{else if eq (printf "%s" .Status) "BLOCKED"}}badge-danger{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+            <td>{{.Detail}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </details>
+    {{end}}
+  </div>
+
+  {{if $.CanWriteChannels}}
+  <div class="mt-3">
+    <h3>Listing Mappings ({{len .Health.Mappings}})</h3>
+    {{if .Health.Mappings}}
+    <table class="table mt-2">
+      <thead><tr><th>External ID</th><th>Rate Plan ID</th><th>Channel</th><th>Currency</th><th>Ownership</th><th>Action</th></tr></thead>
+      <tbody>
+        {{range .Health.Mappings}}
+        <tr>
+          <td><code>{{.ExternalListingID}}</code> {{if .ExternalName}}({{.ExternalName}}){{end}}</td>
+          <td>{{if .ExternalRatePlanID}}<code>{{.ExternalRatePlanID}}</code>{{else}}-{{end}}</td>
+          <td>{{.BookingChannelCode}}</td>
+          <td>{{.Currency}}</td>
+          <td><code>{{.OwnershipMode}}</code></td>
+          <td>
+            <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/mappings/{{.ID}}/delete" class="inline">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{end}}
+
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/mappings" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <div class="form-grid">
+        <div class="field"><label>External Listing / Room Type ID *</label><input name="external_listing_id" type="text" required placeholder="e.g. 101 or uuid"></div>
+        <div class="field"><label>External Property ID</label><input name="external_property_id" type="text" placeholder="Optional"></div>
+        <div class="field"><label>External Rate Plan ID</label><input name="external_rate_plan_id" type="text" placeholder="Optional"></div>
+        <div class="field"><label>Unit Type *</label>
+          <select name="unit_type_id" required>
+            {{range $.UnitTypes}}<option value="{{.ID}}">{{.Name}} ({{.Code}})</option>{{end}}
+          </select>
+        </div>
+        <div class="field"><label>Rate Plan</label>
+          <select name="rate_plan_id">
+            <option value="">Property Default</option>
+            {{range $.RatePlans}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          </select>
+        </div>
+        <div class="field"><label>Booking Channel *</label>
+          <select name="booking_channel_code" required>
+            {{range $.BookingChannels}}<option value="{{.Code}}">{{.Name}} ({{.Code}})</option>{{end}}
+          </select>
+        </div>
+        <div class="field"><label>Currency *</label><input name="currency" type="text" value="{{$.Property.Currency}}" required></div>
+        <div class="field"><label>Timezone *</label><input name="timezone" type="text" value="{{$.Property.Timezone}}" required></div>
+      </div>
+      <div class="days-row mt-2">
+        <label><input type="checkbox" name="sync_availability" value="1" checked> Availability</label>
+        <label><input type="checkbox" name="sync_rates" value="1" checked> Rates</label>
+        <label><input type="checkbox" name="sync_reservations" value="1" checked> Pull Reservations</label>
+        <button type="submit" class="btn btn-secondary btn-sm">Save Mapping</button>
+      </div>
+    </form>
+
+    {{if eq (printf "%s" $conn.Status) "CONNECTED"}}
+    <form method="post" action="/settings/integrations/channel-manager/{{$def.Code}}/sync" class="mt-3">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <div class="form-grid">
+        <div class="field"><label>Start Date</label><input name="start_date" type="date"></div>
+        <div class="field"><label>End Date (Exclusive)</label><input name="end_date" type="date"></div>
+      </div>
+      <div class="days-row mt-2">
+        <label><input type="checkbox" name="sync_availability" value="1"> Push Availability</label>
+        <label><input type="checkbox" name="sync_rates" value="1" checked> Push Rates</label>
+        <label><input type="checkbox" name="pull_reservations" value="1" checked> Pull Reservations</label>
+        <label><input type="checkbox" name="confirm_scope" value="1"> Confirm Multi-Listing / &gt;14d Push</label>
+        <button type="submit" class="btn btn-primary btn-sm">Enqueue Sync Job</button>
+      </div>
+    </form>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .Health.ExternalReservations}}
+  <div class="mt-3">
+    <h4>Recent Imported Reservations &amp; Conflicts ({{len .Health.ExternalReservations}})</h4>
+    <table class="table mt-2">
+      <thead><tr><th>External Booking</th><th>Status</th><th>Reason</th><th>Updated</th></tr></thead>
+      <tbody>
+        {{range .Health.ExternalReservations}}
+        <tr>
+          <td><code>{{.ExternalReservationID}}</code></td>
+          <td><span class="badge {{if eq (printf "%s" .ImportStatus) "CONFLICT_OVERBOOKED"}}badge-danger{{else if eq (printf "%s" .ImportStatus) "UNMAPPED"}}badge-warn{{else}}badge-success{{end}}">{{.ImportStatus}}</span></td>
+          <td>{{.ConflictReason}}</td>
+          <td>{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
   {{end}}
   {{end}}
 </div>

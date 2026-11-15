@@ -42,6 +42,11 @@ func (h *Handler) registerPhase1_1Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}", h.requirePageAuth(true, h.handleChannelManagerSavePost))
 	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/status", h.requirePageAuth(true, h.handleChannelManagerStatusPost))
 	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/delete", h.requirePageAuth(true, h.handleChannelManagerDeletePost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/verify", h.requirePageAuth(true, h.handleChannelManagerVerifyPost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/disconnect", h.requirePageAuth(true, h.handleChannelManagerDisconnectPost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/mappings", h.requirePageAuth(true, h.handleChannelManagerMappingPost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/mappings/{mappingID}/delete", h.requirePageAuth(true, h.handleChannelManagerMappingDeletePost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/sync", h.requirePageAuth(true, h.handleChannelManagerSyncPost))
 }
 
 // --- Calendar ---
@@ -748,6 +753,11 @@ func (h *Handler) handleReleasesCancelPost(w http.ResponseWriter, r *http.Reques
 
 // --- Channel Manager Integrations ---
 
+type channelProviderUIItem struct {
+	service.ChannelProviderView
+	Health service.ChannelHealthSummary
+}
+
 func (h *Handler) handleChannelManagerGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
@@ -759,12 +769,31 @@ func (h *Handler) handleChannelManagerGet(w http.ResponseWriter, r *http.Request
 		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load channel integrations")
 		return
 	}
+	unitTypes, _ := h.svc.ListUnitTypes(r.Context(), actor, base.Property.ID)
+	ratePlans, _ := h.svc.ListRatePlans(r.Context(), actor, base.Property.ID)
+	bookingChannels, _ := h.svc.ListBookingChannels(r.Context(), actor, base.Property.ID, true)
+
+	uiProviders := make([]channelProviderUIItem, 0, len(providers))
+	for _, p := range providers {
+		health, _ := h.svc.GetChannelHealth(r.Context(), actor, base.Property.ID, p.Provider.Code)
+		uiProviders = append(uiProviders, channelProviderUIItem{
+			ChannelProviderView: p,
+			Health:              health,
+		})
+	}
+
 	h.renderPage(w, "channel_manager.html", struct {
 		baseView
-		Providers []service.ChannelProviderView
+		Providers       []channelProviderUIItem
+		UnitTypes       []domain.UnitType
+		RatePlans       []domain.RatePlan
+		BookingChannels []domain.BookingChannel
 	}{
-		baseView:  base,
-		Providers: providers,
+		baseView:        base,
+		Providers:       uiProviders,
+		UnitTypes:       unitTypes,
+		RatePlans:       ratePlans,
+		BookingChannels: bookingChannels,
 	})
 }
 
@@ -820,6 +849,127 @@ func (h *Handler) handleChannelManagerDeletePost(w http.ResponseWriter, r *http.
 		return
 	}
 	redirectMsg(w, r, "/settings/integrations/channel-manager", "Stored channel credentials removed.")
+}
+
+func (h *Handler) handleChannelManagerVerifyPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		return
+	}
+	res, err := h.svc.VerifyChannelConnection(r.Context(), actor, base.Property.ID, providerCode)
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", "Channel connection verified: "+res.AccountName)
+}
+
+func (h *Handler) handleChannelManagerDisconnectPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		return
+	}
+	res, err := h.svc.DisconnectChannelConnection(r.Context(), actor, base.Property.ID, providerCode)
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", res.Detail)
+}
+
+func (h *Handler) handleChannelManagerMappingPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		return
+	}
+	unitTypeID, err := uuid.Parse(strings.TrimSpace(r.FormValue("unit_type_id")))
+	if err != nil {
+		redirectMsg(w, r, "/settings/integrations/channel-manager", "Valid accommodation type is required.")
+		return
+	}
+	var ratePlanID *uuid.UUID
+	if rpStr := strings.TrimSpace(r.FormValue("rate_plan_id")); rpStr != "" {
+		if id, pErr := uuid.Parse(rpStr); pErr == nil {
+			ratePlanID = &id
+		}
+	}
+	syncAvail := r.FormValue("sync_availability") != ""
+	syncRates := r.FormValue("sync_rates") != ""
+	syncRes := r.FormValue("sync_reservations") != ""
+
+	_, err = h.svc.UpsertChannelListingMapping(r.Context(), actor, service.UpsertChannelMappingInput{
+		PropertyID:         base.Property.ID,
+		ProviderCode:       providerCode,
+		ExternalPropertyID: r.FormValue("external_property_id"),
+		ExternalListingID:  r.FormValue("external_listing_id"),
+		ExternalRatePlanID: r.FormValue("external_rate_plan_id"),
+		ExternalName:       r.FormValue("external_name"),
+		UnitTypeID:         unitTypeID,
+		RatePlanID:         ratePlanID,
+		BookingChannelCode: r.FormValue("booking_channel_code"),
+		Currency:           r.FormValue("currency"),
+		Timezone:           r.FormValue("timezone"),
+		SyncAvailability:   &syncAvail,
+		SyncRates:          &syncRates,
+		SyncReservations:   &syncRes,
+	})
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", "Channel listing mapping saved.")
+}
+
+func (h *Handler) handleChannelManagerMappingDeletePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		return
+	}
+	mapID, err := uuid.Parse(r.PathValue("mappingID"))
+	if err != nil {
+		redirectMsg(w, r, "/settings/integrations/channel-manager", "Invalid mapping identifier.")
+		return
+	}
+	if err := h.svc.DeleteChannelListingMapping(r.Context(), actor, base.Property.ID, mapID); err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", "Listing mapping removed.")
+}
+
+func (h *Handler) handleChannelManagerSyncPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		return
+	}
+	res, err := h.svc.TriggerChannelSync(r.Context(), actor, service.ChannelSyncRequest{
+		PropertyID:       base.Property.ID,
+		ProviderCode:     providerCode,
+		StartDate:        r.FormValue("start_date"),
+		EndDate:          r.FormValue("end_date"),
+		SyncAvailability: r.FormValue("sync_availability") != "",
+		SyncRates:        r.FormValue("sync_rates") != "",
+		PullReservations: r.FormValue("pull_reservations") != "",
+		ConfirmScope:     r.FormValue("confirm_scope") != "",
+	})
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	msg := "Channel sync job queued."
+	if len(res.BlockedWarnings) > 0 {
+		msg = "Sync queued with capability notice: " + strings.Join(res.BlockedWarnings, "; ")
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", msg)
 }
 
 func parseUUIDsForm(vals []string) []uuid.UUID {

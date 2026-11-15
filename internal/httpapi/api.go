@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/config"
 	"github.com/tirbach/tir-bach/internal/domain"
 	"github.com/tirbach/tir-bach/internal/httpx"
@@ -409,6 +410,20 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "conflict", "resource conflict or stale version")
 	case errors.Is(err, domain.ErrRateLimited):
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many failed attempts; please try again later")
+	case errors.Is(err, domain.ErrChannelSyncBlocked), errors.Is(err, channels.ErrOperationBlocked):
+		writeError(w, http.StatusUnprocessableEntity, "capability_blocked", err.Error())
+	case errors.Is(err, domain.ErrChannelConfirmationRequired):
+		writeError(w, http.StatusUnprocessableEntity, "confirmation_required", "broad live sync requires explicit confirm_scope=true confirmation")
+	case errors.Is(err, domain.ErrChannelWebhookUnauthorized), errors.Is(err, channels.ErrWebhookVerificationFailed):
+		writeError(w, http.StatusUnauthorized, "webhook_unauthorized", "channel webhook verification failed")
+	case errors.Is(err, channels.ErrAuthFailed), errors.Is(err, channels.ErrTokenExpired):
+		writeError(w, http.StatusUnprocessableEntity, "provider_auth_failed", "channel provider authentication failed")
+	case errors.Is(err, channels.ErrRateLimited):
+		writeError(w, http.StatusTooManyRequests, "provider_rate_limited", "channel provider rate limit exceeded")
+	case errors.Is(err, channels.ErrInvalidInput):
+		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
+	case errors.Is(err, channels.ErrProviderUnavailable), errors.Is(err, channels.ErrInvalidResponse), errors.Is(err, channels.ErrRedirectBlocked), errors.Is(err, channels.ErrResponseTooLarge):
+		writeError(w, http.StatusBadGateway, "provider_error", "channel provider communication error")
 	case errors.Is(err, domain.ErrValidation):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
 	default:

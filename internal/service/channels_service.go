@@ -82,9 +82,9 @@ func (s *Service) SaveChannelConfig(ctx context.Context, actor Actor, in SaveCha
 		})
 	}
 
-	if in.TargetStatus == channels.StatusConnected && !def.HasLiveAdapter {
+	if in.TargetStatus == channels.StatusConnected {
 		return channels.ChannelConnection{}, domain.NewValidationError(map[string]string{
-			"status": "CONNECTED is prohibited in Phase 1.1 because no verified live adapter exists yet (Phase 4)",
+			"status": "CONNECTED can only be entered via live connection verification",
 		})
 	}
 
@@ -193,9 +193,9 @@ func (s *Service) SetChannelStatus(ctx context.Context, actor Actor, propertyID 
 			"provider_code": "unsupported channel manager provider",
 		})
 	}
-	if status == channels.StatusConnected && !def.HasLiveAdapter {
+	if status == channels.StatusConnected {
 		return channels.ChannelConnection{}, domain.NewValidationError(map[string]string{
-			"status": "CONNECTED is prohibited without a verified live Phase 4 adapter",
+			"status": "CONNECTED can only be entered via live connection verification",
 		})
 	}
 	switch status {

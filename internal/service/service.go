@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tirbach/tir-bach/internal/auth"
+	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/config"
 	"github.com/tirbach/tir-bach/internal/domain"
 	"github.com/tirbach/tir-bach/internal/mailer"
@@ -135,6 +136,60 @@ type Service struct {
 	dispatchMu       sync.Mutex
 	dispatchCfg      DispatchConfig
 	activeDispatches map[uuid.UUID]activeDispatchHandle
+
+	channelMu           sync.Mutex
+	channelAdapterCfg   channels.AdapterConfig
+	channelConnLocks    map[uuid.UUID]*sync.Mutex
+	channelSyncWorkerID string
+}
+
+// SetChannelAdapterConfig injects channel adapter HTTP/clock/test endpoint overrides.
+// Only tests should supply ProviderBaseURLs / AllowHTTPForTests; production always uses official endpoints.
+func (s *Service) SetChannelAdapterConfig(cfg channels.AdapterConfig) {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
+	s.channelAdapterCfg = cfg
+}
+
+func (s *Service) effectiveChannelAdapterConfig() channels.AdapterConfig {
+	s.channelMu.Lock()
+	cfg := s.channelAdapterCfg
+	s.channelMu.Unlock()
+	if cfg.Clock == nil && s.nowOverride != nil {
+		cfg.Clock = s.nowOverride
+	}
+	return cfg
+}
+
+func (s *Service) channelConnectionLock(connID uuid.UUID) *sync.Mutex {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
+	if s.channelConnLocks == nil {
+		s.channelConnLocks = make(map[uuid.UUID]*sync.Mutex)
+	}
+	mu, ok := s.channelConnLocks[connID]
+	if !ok {
+		mu = &sync.Mutex{}
+		s.channelConnLocks[connID] = mu
+	}
+	return mu
+}
+
+// SetChannelSyncWorkerID overrides the durable worker identity for channel sync job leasing tests.
+func (s *Service) SetChannelSyncWorkerID(workerID string) {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
+	s.channelSyncWorkerID = strings.TrimSpace(workerID)
+}
+
+func (s *Service) effectiveChannelWorkerID() string {
+	s.channelMu.Lock()
+	w := s.channelSyncWorkerID
+	s.channelMu.Unlock()
+	if w != "" {
+		return w
+	}
+	return "channel-sync-worker"
 }
 
 // SetDispatchConfig validates and stores worker lease, heartbeat, and transport timeout settings.

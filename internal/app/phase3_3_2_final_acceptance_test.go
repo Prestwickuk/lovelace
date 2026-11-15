@@ -324,7 +324,32 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 		"channel_connection": {
 			"id": uid, "property_id": prop.ID.String(), "provider_code": "beds24",
 			"auth_method": "API_KEY", "status": "CONFIGURED", "has_credentials": true,
-			"has_live_adapter": false, "version": 1, "created_at": nowStr, "updated_at": nowStr,
+			"has_live_adapter": true, "version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_external_reservation": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "beds24", "external_reservation_id": "EXT-101",
+			"import_status": "IMPORTED", "created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_listing_mapping": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "beds24", "external_listing_id": "101",
+			"unit_type_id": uid2, "booking_channel_code": "AIRBNB",
+			"currency": "GBP", "timezone": "Europe/London",
+			"sync_availability": true, "sync_rates": true, "sync_reservations": true,
+			"ownership_mode": "LOVELACE_ARI_PROVIDER_BOOKINGS", "is_active": true,
+			"version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_sync_job": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "beds24", "job_type": "PUSH_RATES", "status": "SUCCEEDED",
+			"attempts": 1, "max_attempts": 5, "fence_epoch": 1,
+			"created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_webhook_event": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "channex", "external_event_id": "evt-1", "event_type": "booking",
+			"signature_verified": true, "status": "QUEUED", "received_at": nowStr,
 		},
 		"communication_automation_rule": {
 			"id": uid, "property_id": prop.ID.String(), "trigger_event": "PRE_ARRIVAL",
@@ -480,8 +505,8 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 	}
 
 	supportedTypes := service.SupportedAuditResourceTypes()
-	if len(supportedTypes) != 37 {
-		t.Fatalf("expected 37 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
+	if len(supportedTypes) != 41 {
+		t.Fatalf("expected 41 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
 	}
 
 	for _, rt := range supportedTypes {

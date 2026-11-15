@@ -1,0 +1,81 @@
+name: Phase 4 Live OTA and Channel Sync
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  phase4:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PGPASSWORD: ci-only-postgres-password
+      TEST_DATABASE_URL: postgres://lovelace_test_runner:ci-only-runner-password@127.0.0.1:5432/lovelace_phase4_ci_test?sslmode=disable
+      TEST_APP_DATABASE_URL: postgres://lovelace_app:ci-only-app-password@127.0.0.1:5432/lovelace_phase4_ci_test?sslmode=disable
+      GOTOOLCHAIN: go1.24.0
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.x
+          cache: true
+
+      - name: Provision isolated PostgreSQL 17 databases and least-privilege roles
+        run: |
+          psql -X -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE lovelace_migrator LOGIN PASSWORD 'ci-only-migrator-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          CREATE ROLE lovelace_app LOGIN PASSWORD 'ci-only-app-password' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE ROLE lovelace_test_runner LOGIN PASSWORD 'ci-only-runner-password' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE lovelace_phase4_ci_test OWNER lovelace_test_runner;
+          CREATE DATABASE lovelace_phase4_fresh_test OWNER lovelace_migrator;
+          CREATE DATABASE lovelace_phase4_upgrade_test OWNER lovelace_migrator;
+          GRANT CONNECT ON DATABASE lovelace_phase4_ci_test, lovelace_phase4_fresh_test, lovelace_phase4_upgrade_test TO lovelace_app, lovelace_test_runner, lovelace_migrator;
+          SQL
+          for db in lovelace_phase4_ci_test lovelace_phase4_fresh_test lovelace_phase4_upgrade_test; do
+            owner=lovelace_migrator
+            if [ "$db" = lovelace_phase4_ci_test ]; then owner=lovelace_test_runner; fi
+            psql -X -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION btree_gist; ALTER SCHEMA public OWNER TO $owner; GRANT USAGE ON SCHEMA public TO lovelace_app, lovelace_test_runner, lovelace_migrator;"
+          done
+
+      - name: Verify formatting, build, and vet
+        run: |
+          test -z "$(gofmt -l .)"
+          go build ./...
+          go vet ./...
+
+      - name: Apply fresh migrations through 0019 as lovelace_migrator
+        env:
+          MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_phase4_fresh_test?sslmode=disable
+        run: |
+          go run ./cmd/migrate
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0019_phase4_live_ota_sync.sql'"
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('channel_listing_mappings','channel_sync_jobs','channel_sync_checkpoints','channel_external_reservations','channel_webhook_events','channel_hmac_nonces')" | grep -qx '6'
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT has_table_privilege('lovelace_app', 'public.channel_sync_jobs', 'INSERT,UPDATE,DELETE,SELECT') AND NOT has_table_privilege('lovelace_app', 'public.audit_log_redactions', 'INSERT')" | grep -qx 't'
+
+      - name: Verify populated upgrade migration path through 0019
+        env:
+          MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_phase4_upgrade_test?sslmode=disable
+        run: |
+          ./scripts/test-migration-upgrade.sh
+          go run ./cmd/migrate
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0019_phase4_live_ota_sync.sql'"
+
+      - name: Run full unit and PostgreSQL integration test suite (no skips)
+        run: go test -count=1 ./...
+
+      - name: Run race detector across full unit and PostgreSQL integration suite
+        run: go test -count=1 -race ./...

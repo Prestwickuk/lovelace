@@ -317,6 +317,10 @@ func (s *Store) TransitionReservationStatusWithTasks(
 		now := time.Now().UTC()
 		cancelledAt = now
 	}
+	var updatedBy *uuid.UUID
+	if actorID != uuid.Nil {
+		updatedBy = &actorID
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE reservations
 		SET status = $3,
@@ -326,7 +330,7 @@ func (s *Store) TransitionReservationStatusWithTasks(
 		    version = version + 1,
 		    updated_at = NOW()
 		WHERE property_id = $1 AND id = $2 AND version = $7
-	`, propertyID, id, string(nextStatus), strings.TrimSpace(reason), cancelledAt, actorID, version)
+	`, propertyID, id, string(nextStatus), strings.TrimSpace(reason), cancelledAt, updatedBy, version)
 	if err != nil {
 		return domain.Reservation{}, nil, MapErr(err)
 	}
@@ -356,7 +360,7 @@ func (s *Store) TransitionReservationStatusWithTasks(
 			UPDATE inventory_claims
 			SET status = $3, released_at = NOW(), released_by = $4, updated_at = NOW()
 			WHERE property_id = $1 AND reservation_id = $2 AND status = 'ACTIVE'
-		`, propertyID, id, claimStatus, actorID); err != nil {
+		`, propertyID, id, claimStatus, updatedBy); err != nil {
 			return domain.Reservation{}, nil, MapErr(err)
 		}
 		if nextStatus != domain.ResStatusCheckedOut {

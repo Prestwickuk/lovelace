@@ -456,8 +456,8 @@ func TestPhase1_6InventoryLifecycleDateEditsReconciliationAndSmoobu(t *testing.T
 			t.Fatal("Smoobu must not require manual user_id input")
 		}
 	}
-	if len(smoobuDef.Fields) != 2 {
-		t.Fatalf("expected exactly 2 Smoobu fields (api_key, api_secret), got %d", len(smoobuDef.Fields))
+	if len(smoobuDef.Fields) != 3 {
+		t.Fatalf("expected 3 Smoobu fields (api_key, api_secret, optional webhook_secret), got %d", len(smoobuDef.Fields))
 	}
 
 	// Reject stale user_id field cleanly (422)

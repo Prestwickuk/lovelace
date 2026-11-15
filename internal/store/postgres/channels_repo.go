@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -11,6 +13,15 @@ import (
 	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/domain"
 )
+
+const channelConnectionSelectCols = `
+	id, property_id, provider_code, display_name, auth_method, status,
+	public_config, encrypted_credentials, credentials_key_version,
+	credential_hints, last_error, credentials_updated_at,
+	capabilities, capability_statuses, token_expires_at,
+	last_verified_at, last_synced_at, last_sync_error_code, webhook_endpoint_token,
+	version, created_at, updated_at
+`
 
 type ChannelConnectionRecord struct {
 	Connection           channels.ChannelConnection
@@ -23,10 +34,7 @@ func (s *Store) ListChannelConnections(ctx context.Context, db DBTX, propertyID 
 		db = s.pool
 	}
 	rows, err := db.Query(ctx, `
-		SELECT id, property_id, provider_code, display_name, auth_method, status,
-		       public_config, encrypted_credentials, credentials_key_version,
-		       credential_hints, last_error, credentials_updated_at,
-		       version, created_at, updated_at
+		SELECT `+channelConnectionSelectCols+`
 		FROM channel_connections
 		WHERE property_id = $1
 		ORDER BY provider_code ASC
@@ -52,13 +60,23 @@ func (s *Store) GetChannelConnection(ctx context.Context, db DBTX, propertyID uu
 		db = s.pool
 	}
 	row := db.QueryRow(ctx, `
-		SELECT id, property_id, provider_code, display_name, auth_method, status,
-		       public_config, encrypted_credentials, credentials_key_version,
-		       credential_hints, last_error, credentials_updated_at,
-		       version, created_at, updated_at
+		SELECT `+channelConnectionSelectCols+`
 		FROM channel_connections
 		WHERE property_id = $1 AND provider_code = $2
 	`, propertyID, providerCode)
+	rec, err := scanChannelConnection(row)
+	return rec, MapErr(err)
+}
+
+func (s *Store) GetChannelConnectionByID(ctx context.Context, db DBTX, id uuid.UUID) (ChannelConnectionRecord, error) {
+	if db == nil {
+		db = s.pool
+	}
+	row := db.QueryRow(ctx, `
+		SELECT `+channelConnectionSelectCols+`
+		FROM channel_connections
+		WHERE id = $1
+	`, id)
 	rec, err := scanChannelConnection(row)
 	return rec, MapErr(err)
 }
@@ -91,16 +109,19 @@ func (s *Store) UpsertChannelConnection(
 		now := time.Now().UTC()
 		credUpdatedAt = &now
 	}
+	whToken := generateWebhookToken()
 
 	row := tx.QueryRow(ctx, `
 		INSERT INTO channel_connections (
 			id, property_id, provider_code, display_name, auth_method, status,
 			public_config, encrypted_credentials, credentials_key_version,
-			credential_hints, credentials_updated_at, created_by, updated_by
+			credential_hints, credentials_updated_at, webhook_endpoint_token,
+			created_by, updated_by
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, 1,
-			$9, $10, $11, $11
+			$9, $10, $11,
+			$12, $12
 		)
 		ON CONFLICT (property_id, provider_code) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
@@ -113,16 +134,17 @@ func (s *Store) UpsertChannelConnection(
 				ELSE channel_connections.credential_hints
 			END,
 			credentials_updated_at = COALESCE(EXCLUDED.credentials_updated_at, channel_connections.credentials_updated_at),
+			webhook_endpoint_token = CASE
+				WHEN channel_connections.webhook_endpoint_token = '' THEN EXCLUDED.webhook_endpoint_token
+				ELSE channel_connections.webhook_endpoint_token
+			END,
 			updated_by = EXCLUDED.updated_by,
 			version = channel_connections.version + 1,
 			updated_at = NOW()
-		RETURNING id, property_id, provider_code, display_name, auth_method, status,
-		          public_config, encrypted_credentials, credentials_key_version,
-		          credential_hints, last_error, credentials_updated_at,
-		          version, created_at, updated_at
+		RETURNING `+channelConnectionSelectCols+`
 	`,
 		id, propertyID, providerCode, displayName, string(authMethod), string(status),
-		pubJSON, nullableBytes(encryptedCreds), hintsJSON, credUpdatedAt, actorID,
+		pubJSON, nullableBytes(encryptedCreds), hintsJSON, credUpdatedAt, whToken, actorID,
 	)
 	rec, err := scanChannelConnection(row)
 	return rec, MapErr(err)
@@ -140,10 +162,7 @@ func (s *Store) SetChannelConnectionStatus(
 		UPDATE channel_connections
 		SET status = $3, updated_by = $4, version = version + 1, updated_at = NOW()
 		WHERE property_id = $1 AND provider_code = $2
-		RETURNING id, property_id, provider_code, display_name, auth_method, status,
-		          public_config, encrypted_credentials, credentials_key_version,
-		          credential_hints, last_error, credentials_updated_at,
-		          version, created_at, updated_at
+		RETURNING `+channelConnectionSelectCols+`
 	`, propertyID, providerCode, string(status), actorID)
 	rec, err := scanChannelConnection(row)
 	return rec, MapErr(err)
@@ -165,12 +184,15 @@ func (s *Store) DeleteChannelConnection(ctx context.Context, tx pgx.Tx, property
 func scanChannelConnection(r scannable) (ChannelConnectionRecord, error) {
 	var rec ChannelConnectionRecord
 	var authMethod, status string
-	var pubRaw, hintsRaw []byte
+	var pubRaw, hintsRaw, capRaw, capStatRaw []byte
 	err := r.Scan(
 		&rec.Connection.ID, &rec.Connection.PropertyID, &rec.Connection.ProviderCode,
 		&rec.Connection.DisplayName, &authMethod, &status,
 		&pubRaw, &rec.EncryptedCredentials, &rec.KeyVersion,
 		&hintsRaw, &rec.Connection.LastError, &rec.Connection.CredentialsUpdatedAt,
+		&capRaw, &capStatRaw, &rec.Connection.TokenExpiresAt,
+		&rec.Connection.LastVerifiedAt, &rec.Connection.LastSyncedAt,
+		&rec.Connection.LastSyncErrorCode, &rec.Connection.WebhookEndpointToken,
 		&rec.Connection.Version, &rec.Connection.CreatedAt, &rec.Connection.UpdatedAt,
 	)
 	if err != nil {
@@ -191,7 +213,15 @@ func scanChannelConnection(r scannable) (ChannelConnectionRecord, error) {
 	if rec.Connection.CredentialHints == nil {
 		rec.Connection.CredentialHints = map[string]string{}
 	}
+	_ = json.Unmarshal(capRaw, &rec.Connection.Capabilities)
+	_ = json.Unmarshal(capStatRaw, &rec.Connection.CapabilityStatuses)
 	return rec, nil
+}
+
+func generateWebhookToken() string {
+	var b [24]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 func nonNilStringMap(m map[string]string) map[string]string {

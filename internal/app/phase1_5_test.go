@@ -418,7 +418,7 @@ func TestPhase1_5HardeningChannelAllocationsAndRebrand(t *testing.T) {
 	var savedConn channels.ChannelConnection
 	_ = json.NewDecoder(saveSmoobu.Body).Decode(&savedConn)
 	saveSmoobu.Body.Close()
-	if savedConn.AuthMethod != channels.AuthHMAC || savedConn.HasLiveAdapter || savedConn.Status == channels.StatusConnected {
+	if savedConn.AuthMethod != channels.AuthHMAC || !savedConn.HasLiveAdapter || savedConn.Status == channels.StatusConnected {
 		t.Fatalf("unexpected saved Smoobu connection state: %+v", savedConn)
 	}
 	if savedConn.CredentialHints["api_secret"] == "smoobu_hmac_secret_9988" {
