@@ -3,13 +3,14 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/tirbach/tir-bach/internal/branding"
 )
 
 const (
@@ -100,28 +101,28 @@ type UnitTypeImage struct {
 
 // PublicPropertyView exposes strictly safe property and branding metadata to the public web frontend.
 type PublicPropertyView struct {
-	ID                uuid.UUID             `json:"id"`
-	Slug              string                `json:"slug"`
-	Name              string                `json:"name"`
-	Tagline           string                `json:"tagline"`
-	PublicDescription string                `json:"public_description"`
-	CountryCode       string                `json:"country_code"`
-	Region            string                `json:"region"`
-	AddressLine1      string                `json:"address_line1,omitempty"`
-	AddressLine2      string                `json:"address_line2,omitempty"`
-	Town              string                `json:"town"`
-	Postcode          string                `json:"postcode"`
-	Timezone          string                `json:"timezone"`
-	Currency          string                `json:"currency"`
-	CheckInTime       string                `json:"check_in_time"`
-	CheckOutTime      string                `json:"check_out_time"`
-	VATRegistered     bool                  `json:"vat_registered"`
-	ContactEmail      string                `json:"contact_email"`
-	ContactPhone      string                `json:"contact_phone"`
-	WebsiteURL        string                `json:"website_url,omitempty"`
-	CustomDomain      string                `json:"custom_domain,omitempty"`
-	Branding          json.RawMessage       `json:"branding"`
-	Policy            PropertyBookingPolicy `json:"policy"`
+	ID                uuid.UUID                       `json:"id"`
+	Slug              string                          `json:"slug"`
+	Name              string                          `json:"name"`
+	Tagline           string                          `json:"tagline"`
+	PublicDescription string                          `json:"public_description"`
+	CountryCode       string                          `json:"country_code"`
+	Region            string                          `json:"region"`
+	AddressLine1      string                          `json:"address_line1,omitempty"`
+	AddressLine2      string                          `json:"address_line2,omitempty"`
+	Town              string                          `json:"town"`
+	Postcode          string                          `json:"postcode"`
+	Timezone          string                          `json:"timezone"`
+	Currency          string                          `json:"currency"`
+	CheckInTime       string                          `json:"check_in_time"`
+	CheckOutTime      string                          `json:"check_out_time"`
+	VATRegistered     bool                            `json:"vat_registered"`
+	ContactEmail      string                          `json:"contact_email"`
+	ContactPhone      string                          `json:"contact_phone"`
+	WebsiteURL        string                          `json:"website_url,omitempty"`
+	CustomDomain      string                          `json:"custom_domain,omitempty"`
+	Branding          branding.PublicPropertyBranding `json:"branding"`
+	Policy            PropertyBookingPolicy           `json:"policy"`
 }
 
 // PublicUnitTypeView exposes customer-facing accommodation details without internal operational notes or unit IDs.

@@ -8,6 +8,7 @@ import type {
   PublicAvailabilityResponse,
   PublicCatalogResponse,
   PublicConfirmationView,
+  PublicPropertyBranding,
   PublicUnitTypeDetailResponse,
   QuoteExtraSelection,
 } from "./types";
@@ -275,4 +276,33 @@ export async function requestBookingCancellation(
     },
     clientIp,
   );
+}
+
+export async function fetchPublicPropertyBranding(
+  slug = PROPERTY_SLUG,
+): Promise<PublicPropertyBranding | undefined> {
+  try {
+    const catalog = await fetchPublicCatalog(slug);
+    return catalog.property.branding;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function fetchPublicPropertyLogo(
+  slug = PROPERTY_SLUG,
+  clientIp = "",
+): Promise<Response> {
+  const headers = new Headers();
+  if (PUBLIC_API_SECRET) {
+    headers.set("X-Lovelace-Public-Key", PUBLIC_API_SECRET);
+  }
+  if (clientIp) {
+    headers.set("X-Forwarded-For", clientIp);
+  }
+  return fetch(`${API_BASE}/api/public/v1/properties/${encodeURIComponent(slug)}/logo`, {
+    method: "GET",
+    headers,
+    cache: "no-store",
+  });
 }

@@ -465,6 +465,12 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"extra_adult_nightly_pence": 1500, "child_nightly_pence": 500, "infant_nightly_pence": 0,
 			"booking_terms_version": "v1", "stripe_enabled": false, "version": 1, "updated_at": nowStr,
 		},
+		"property_branding": {
+			"property_id": prop.ID.String(), "action": "logo_uploaded", "schema_version": 1,
+			"version": 2, "has_custom_palette": true, "has_terminology_overrides": true,
+			"has_logo": true, "logo_content_type": "image/png", "logo_size_bytes": 1024,
+			"logo_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "logo_version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
 		"property_retention_policy": {
 			"property_id": prop.ID.String(), "enquiry_retention_days": 365,
 			"inactive_guest_retention_days": 1095, "comms_retention_days": 365,
@@ -510,8 +516,8 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 	}
 
 	supportedTypes := service.SupportedAuditResourceTypes()
-	if len(supportedTypes) != 42 {
-		t.Fatalf("expected 42 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
+	if len(supportedTypes) != 43 {
+		t.Fatalf("expected 43 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
 	}
 
 	for _, rt := range supportedTypes {

@@ -46,6 +46,10 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 	slug = strings.TrimSpace(strings.ToLower(slug))
 	var out domain.PublicPropertyView
 	var p domain.PropertyBookingPolicy
+	var legacyBranding []byte
+	var publicBrandingJSON []byte
+	var hasLogo bool
+	var logoWidth, logoHeight, logoVersion int
 	err := db.QueryRow(ctx, `
 		SELECT prop.id, prop.slug, prop.name, prop.tagline, prop.public_description,
 		       prop.country_code, prop.region, prop.address_line1, prop.address_line2,
@@ -53,6 +57,11 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 		       to_char(prop.check_in_time, 'HH24:MI'), to_char(prop.check_out_time, 'HH24:MI'),
 		       prop.vat_registered, prop.contact_email, prop.contact_phone,
 		       prop.website_url, prop.custom_domain, prop.branding_config,
+		       COALESCE(pbs.public_branding, '{}'::jsonb),
+		       (pbs.logo_storage_key IS NOT NULL AND pbs.logo_storage_key <> ''),
+		       COALESCE(pbs.logo_width, 0),
+		       COALESCE(pbs.logo_height, 0),
+		       COALESCE(pbs.logo_version, 0),
 		       pol.property_id, pol.hold_duration_minutes, pol.deposit_mode,
 		       pol.deposit_percentage, pol.deposit_fixed_pence, pol.balance_due_days_before_arrival,
 		       pol.extra_adult_nightly_pence, pol.child_nightly_pence, pol.infant_nightly_pence,
@@ -61,13 +70,15 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 		       pol.stripe_enabled, pol.version, pol.updated_at
 		FROM properties prop
 		LEFT JOIN property_booking_policies pol ON pol.property_id = prop.id
+		LEFT JOIN property_branding_settings pbs ON pbs.property_id = prop.id
 		WHERE prop.slug = $1 AND prop.public_enabled = TRUE
 	`, slug).Scan(
 		&out.ID, &out.Slug, &out.Name, &out.Tagline, &out.PublicDescription,
 		&out.CountryCode, &out.Region, &out.AddressLine1, &out.AddressLine2,
 		&out.Town, &out.Postcode, &out.Timezone, &out.Currency,
 		&out.CheckInTime, &out.CheckOutTime, &out.VATRegistered,
-		&out.ContactEmail, &out.ContactPhone, &out.WebsiteURL, &out.CustomDomain, &out.Branding,
+		&out.ContactEmail, &out.ContactPhone, &out.WebsiteURL, &out.CustomDomain, &legacyBranding,
+		&publicBrandingJSON, &hasLogo, &logoWidth, &logoHeight, &logoVersion,
 		&p.PropertyID, &p.HoldDurationMinutes, &p.DepositMode,
 		&p.DepositPercentage, &p.DepositFixedPence, &p.BalanceDueDaysBeforeArrival,
 		&p.ExtraAdultNightlyPence, &p.ChildNightlyPence, &p.InfantNightlyPence,
@@ -78,6 +89,18 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 	if err != nil {
 		return domain.PublicPropertyView{}, MapErr(err)
 	}
+	out.Branding = domain.BuildPublicPropertyBranding(
+		out.Slug,
+		out.Name,
+		out.Tagline,
+		out.Region,
+		publicBrandingJSON,
+		legacyBranding,
+		hasLogo,
+		logoWidth,
+		logoHeight,
+		logoVersion,
+	)
 	out.Policy = p
 	return out, nil
 }

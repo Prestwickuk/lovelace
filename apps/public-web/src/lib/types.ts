@@ -20,6 +20,30 @@ export interface PropertyBookingPolicy {
   version: number;
 }
 
+export interface PublicPropertyBranding {
+  schema_version: number;
+  display_name: string;
+  tagline: string;
+  region_label?: string;
+  primary_color: string;
+  primary_on_color: string;
+  primary_hover_color: string;
+  primary_dark_color?: string;
+  primary_dark_on_color?: string;
+  secondary_color: string;
+  secondary_on_color: string;
+  secondary_hover_color?: string;
+  secondary_dark_color?: string;
+  secondary_dark_on_color?: string;
+  has_custom_palette: boolean;
+  has_logo: boolean;
+  logo_url?: string;
+  logo_alt?: string;
+  logo_width?: number;
+  logo_height?: number;
+  logo_version?: number;
+}
+
 export interface PublicPropertyView {
   id: string;
   slug: string;
@@ -38,6 +62,7 @@ export interface PublicPropertyView {
   contact_email: string;
   contact_phone: string;
   website_url: string;
+  branding?: PublicPropertyBranding;
   policy: PropertyBookingPolicy;
 }
 

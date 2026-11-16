@@ -15,7 +15,7 @@ export default async function PrivacyPage() {
 
   return (
     <>
-      <SiteHeader propertyName={prop?.name} region={prop?.region} />
+      <SiteHeader propertyName={prop?.name} region={prop?.region} branding={prop?.branding} propertySlug={prop?.slug} />
       <main className="container section" style={{ maxWidth: "780px" }}>
         <div className="card-panel">
           <h1 className="section-title">Guest Privacy Notice</h1>

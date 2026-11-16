@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="page-header">
   <div>
-    <h1>Reservations</h1>
-    <p class="subtitle">Administrative reservation ledger (manual bookings, occupancy enforcement &amp; lifecycle tracking; payments deferred to Phase 2).</p>
+    <h1>{{if eq .PropertyTerms.StayLabel "Reservation"}}Reservations{{else}}{{.PropertyTerms.StayLabel}}s{{end}}</h1>
+    <p class="subtitle">Administrative {{.PropertyTerms.StayLabel}} ledger (manual bookings, occupancy enforcement &amp; lifecycle tracking; payments deferred to Phase 2).</p>
   </div>
   {{if .CanWriteReservations}}
   <a href="/reservations/new" class="btn btn-primary">+ Create Manual Reservation</a>

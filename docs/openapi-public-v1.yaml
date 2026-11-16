@@ -12,7 +12,11 @@ servers:
 paths:
   /api/public/v1/properties/{slug}:
     get:
-      summary: Get public property configuration, branding, and booking policies
+      summary: Get public property configuration, allowlisted PWE-4 public branding projection, and booking policies
+      description: >
+        Returns strictly projected public property branding (display_name, tagline, region_label,
+        contrast-verified hex tokens, and safe public logo URL). Admin-only branding, terminology
+        overrides, and internal storage keys are never included.
       parameters:
         - name: slug
           in: path
@@ -21,9 +25,23 @@ paths:
             type: string
       responses:
         "200":
-          description: Public property details and booking policy
+          description: Public property details, PublicPropertyBranding projection, and booking policy
         "404":
           description: Property not found or public booking disabled
+  /api/public/v1/properties/{slug}/logo:
+    get:
+      summary: Serve validated public property logo bytes safely from private storage
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Validated PNG, JPEG, or WebP property logo with X-Content-Type-Options nosniff
+        "404":
+          description: Property or uploaded logo not found
   /api/public/v1/accommodation:
     get:
       summary: List publicly bookable accommodation categories and available extras

@@ -58,7 +58,12 @@ export default async function StayDetailPage({
 
   return (
     <>
-      <SiteHeader propertyName={prop.name} region={prop.region} />
+      <SiteHeader
+        propertyName={prop.name}
+        region={prop.region}
+        branding={prop.branding}
+        propertySlug={prop.slug}
+      />
 
       <main className="container section">
         <div style={{ marginBottom: "1rem" }}>

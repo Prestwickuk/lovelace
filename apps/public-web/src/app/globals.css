@@ -88,15 +88,31 @@ a {
 
 .brand-mark {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
   text-decoration: none;
+}
+
+.brand-mark-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-mark-logo {
+  display: block;
+  max-height: 44px;
+  max-width: 140px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
 }
 
 .brand-mark-title {
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   font-size: 1.35rem;
   font-weight: 700;
-  color: var(--brand-forest);
+  color: var(--property-brand, var(--brand-forest));
   line-height: 1.1;
 }
 
@@ -126,6 +142,11 @@ a {
   color: var(--brand-terracotta);
 }
 
+.site-nav a.btn-primary,
+.site-nav a.btn-primary:hover {
+  color: var(--property-brand-on, #ffffff);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -149,21 +170,21 @@ a {
 }
 
 .btn-primary {
-  background: var(--brand-forest);
-  color: #ffffff;
+  background: var(--property-brand, var(--brand-forest));
+  color: var(--property-brand-on, #ffffff);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--brand-forest-hover);
+  background: var(--property-brand-hover, var(--brand-forest-hover));
 }
 
 .btn-accent {
-  background: var(--brand-terracotta);
-  color: #ffffff;
+  background: var(--property-brand-secondary, var(--brand-terracotta));
+  color: var(--property-brand-secondary-on, #ffffff);
 }
 
 .btn-accent:hover:not(:disabled) {
-  background: #80472c;
+  background: var(--property-brand-secondary, #80472c);
 }
 
 .btn-secondary {

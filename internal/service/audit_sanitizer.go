@@ -222,6 +222,12 @@ var auditEnumSets = map[string]map[string]bool{
 	"deposit_mode": {
 		"FULL": true, "PERCENTAGE": true, "FIXED": true,
 	},
+	"branding_action": {
+		"updated": true, "logo_uploaded": true, "logo_deleted": true,
+	},
+	"branding_logo_mime": {
+		"image/png": true, "image/jpeg": true, "image/webp": true,
+	},
 	"outbox_status": {
 		"PENDING": true, "PROCESSING": true, "DISPATCHING": true, "DISPATCH_UNKNOWN": true,
 		"CANCEL_REQUESTED": true, "CANCELLED": true, "SENT": true, "FAILED": true,
@@ -565,6 +571,14 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 	"payment_webhook_event": {
 		"redacted": rRedacted, "event_id": rCode, "event_type": rCode,
 		"event_livemode": rBool, "expected_livemode": rBool, "environment": rCode, "payment_attempt": rCodeOpt,
+	},
+	"property_branding": {
+		"redacted": rRedacted, "property_id": rUUID, "action": rEnum("branding_action"),
+		"schema_version": rCount, "version": rVersion,
+		"has_custom_palette": rBool, "has_terminology_overrides": rBool, "has_logo": rBool,
+		"logo_content_type": rEnum("branding_logo_mime"), "logo_size_bytes": rSizeByte,
+		"logo_sha256": rSHA256, "logo_version": rCount,
+		"created_at": rTS, "updated_at": rTS,
 	},
 	"property": {
 		"redacted": rRedacted, "id": rUUID, "slug": rCode, "country_code": rCountry,

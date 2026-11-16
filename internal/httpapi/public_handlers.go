@@ -21,6 +21,7 @@ func (h *Handler) registerPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("OPTIONS /api/public/v1/", h.handlePublicPreflight)
 
 	mux.HandleFunc("GET /api/public/v1/properties/{slug}", h.publicEndpoint(false, true, h.handlePublicGetProperty))
+	mux.HandleFunc("GET /api/public/v1/properties/{slug}/logo", h.publicEndpoint(false, true, h.handlePublicGetPropertyLogo))
 	mux.HandleFunc("GET /api/public/v1/accommodation", h.publicEndpoint(false, true, h.handlePublicListAccommodation))
 	mux.HandleFunc("GET /api/public/v1/accommodation/{code}", h.publicEndpoint(false, true, h.handlePublicGetAccommodationDetail))
 	mux.HandleFunc("POST /api/public/v1/availability", h.publicEndpoint(false, true, h.handlePublicAvailabilitySearch))

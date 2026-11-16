@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { buildPropertyBrandCssVars } from "@/lib/branding";
+import { fetchPublicPropertyBranding } from "@/lib/lovelace-api";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,14 +12,16 @@ export const metadata: Metadata = {
     "Wildflower meadow camping, furnished bell tents, handcrafted Preseli shepherd's huts, and coastal touring pitches in Pembrokeshire, Wales.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const branding = await fetchPublicPropertyBranding();
+  const brandVars = buildPropertyBrandCssVars(branding);
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body style={brandVars}>{children}</body>
     </html>
   );
 }

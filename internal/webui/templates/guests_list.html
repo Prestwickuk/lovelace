@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="page-header">
   <div>
-    <h1>Guest Directory</h1>
-    <p class="subtitle">Search returning guests, upcoming stays, preferences, open enquiries, and consent status.</p>
+    <h1>{{.PropertyTerms.GuestSingular}} Directory</h1>
+    <p class="subtitle">Search returning {{.PropertyTerms.GuestPlural}}, upcoming stays, preferences, open enquiries, and consent status.</p>
   </div>
   <div class="inline-row">
     {{if gt .DuplicateCount 0}}

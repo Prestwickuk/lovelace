@@ -11,7 +11,7 @@
   - `FullName`: `LOVELACE Booking System`
   - `Attribution`: `Powered by LOVELACE Booking System`
   - `LogoAlt`: `LOVELACE Booking System logo`
-- **Per-Property Public Branding:** Stored cleanly per property in `properties.branding_config` (`JSONB`, added in `migrations/0003_phase1_5.sql`), parsed via `branding.ParsePropertyBranding`. In Phases 2–5, the **separate Public frontend** renders property-specific branding (logos, themes, custom domains, multi-property routing), while the **separate Administrative frontend** (`internal/webui`) remains consistently **LOVELACE Booking System** branded regardless of which property or custom domain is being managed.
+- **Per-Property Branding (`PWE-4` Implemented):** Persisted cleanly in `public.property_branding_settings` (`migrations/0024_pwe4_property_branding.sql`, projecting public-safe summaries back to `properties.branding_config` via `domain.PublicPropertyBranding`). The **separate Public storefront** renders allowlisted public branding (`display_name`, `tagline`, `region_label`, validated primary/secondary hex tokens, and BFF-proxied `/api/public/v1/properties/{slug}/logo` assets), while the **Administrative Console** (`internal/webui`) keeps permanent **LOVELACE Booking System** identity across login (`login.html`), error pages (`error.html`), and platform chrome alongside bounded per-property header/badge accents (`--property-brand-*` via same-origin `/branding/property.css`), optional property logo thumbnail, and admin-only terminology labels.
 
 ## 2. Authoritative Brand Assets
 
@@ -44,9 +44,9 @@ Dark mode (`[data-theme="dark"]` and OS-following `[data-theme="system"]` via `@
 
 ---
 
-## 4. PWE Status & Future Extensions (`PWE-1`–`PWE-3` Implemented; `PWE-4`–`PWE-5` `PROPOSED / FUTURE`)
+## 4. PWE Status & Future Extensions (`PWE-1`–`PWE-4` Implemented; `PWE-5` `PROPOSED / FUTURE`)
 
-`PWE-1` (Admin Design System & Theme Engine), `PWE-2` (per-user theme, accessibility, navigation, and property-scoped operational preferences in `0022_pwe2_user_personalisation.sql`), and `PWE-3` (customisable permission-filtered `/workspace` dashboard builder in `0023_pwe3_dashboard_builder.sql`) are **Implemented**. The planned expansion to property-level branding previews/terminology (`PWE-4` building on `properties.branding_config`), workspace presets (`PWE-5`), and three-way Platform / Property / User identity separation remains **`PROPOSED / FUTURE`** and is documented in:
+`PWE-1` (Admin Design System & Theme Engine), `PWE-2` (per-user theme, accessibility, navigation, and property-scoped operational preferences in `0022_pwe2_user_personalisation.sql`), `PWE-3` (customisable permission-filtered `/workspace` dashboard builder in `0023_pwe3_dashboard_builder.sql`), and `PWE-4` (Property Branding with server-validated custom `#RRGGBB` palettes, PNG/JPEG/WebP sanitized `BlobStore` logo management, non-destructive preview, admin-only terminology overrides, and strict public projection in `0024_pwe4_property_branding.sql`) are **Implemented**. Workspace presets (`PWE-5`) remain **`PROPOSED / FUTURE`** and are documented in:
 
 - [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](personalisation-workspace-experience.md)
 - [ADR-0001: Public/Administrative Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md)

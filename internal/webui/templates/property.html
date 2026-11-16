@@ -172,6 +172,149 @@
   </form>
 </div>
 
+<div class="card" id="property-branding">
+  <div class="ops-section-head">
+    <div>
+      <h2>Property Branding &amp; Workspace Terminology</h2>
+      <p class="subtitle">Customise bounded visual tokens, upload a verified PNG/JPEG/WebP property logo, and configure admin-only labels while keeping LOVELACE identity intact.</p>
+    </div>
+    {{if .BrandingPreview}}
+    <span class="badge badge-warn">Unsaved Preview Active</span>
+    {{end}}
+  </div>
+
+  {{if .BrandingPreview}}
+  <div class="alert alert-info mb-3" role="status">
+    <strong>Unsaved preview mode:</strong> You are previewing draft palette and terminology tokens. Saved property branding and the live public booking website have <strong>not</strong> been modified.
+    <a href="/property#property-branding" class="btn btn-secondary btn-sm ml-2">Discard Preview</a>
+  </div>
+  {{end}}
+
+  <div class="grid grid-2 mb-3">
+    <div class="property-preview-panel">
+      <div class="kpi-label">Logo Asset (Private Storage, Safe Public Endpoint)</div>
+      <div class="property-logo-preview-frame mt-2">
+        {{if .PropertyBranding.HasLogo}}
+        <img src="/property/logo?v={{.PropertyBranding.LogoVersion}}" alt="{{.PropertyBranding.PublicProjection.LogoAlt}}" class="property-logo-preview-img">
+        {{else}}
+        <span class="muted">No custom property logo uploaded</span>
+        {{end}}
+      </div>
+      {{if .PropertyBranding.HasLogo}}
+      <div class="mono mt-2">{{.PropertyBranding.LogoContentType}} · {{.PropertyBranding.LogoWidth}}×{{.PropertyBranding.LogoHeight}} px · {{.PropertyBranding.LogoSizeBytes}} bytes</div>
+      {{end}}
+      {{if .CanWriteProperty}}
+      <form method="post" action="/property/branding/logo" enctype="multipart/form-data" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="branding_version" value="{{.PropertyBranding.Version}}">
+        <div class="field">
+          <label for="property_logo_file">Upload / Replace Property Logo (PNG, JPEG, WebP · max 2 MiB)</label>
+          <input id="property_logo_file" name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
+        </div>
+        <div class="inline-row mt-2">
+          <button type="submit" class="btn btn-secondary btn-sm">Upload Property Logo</button>
+        </div>
+      </form>
+      {{if .PropertyBranding.HasLogo}}
+      <form method="post" action="/property/branding/logo/delete" class="mt-2">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="branding_version" value="{{.PropertyBranding.Version}}">
+        <button type="submit" class="btn btn-danger btn-sm">Remove Logo</button>
+      </form>
+      {{end}}
+      {{end}}
+    </div>
+
+    <div class="property-preview-panel">
+      <div class="kpi-label">Bounded Chrome &amp; Public Palette Preview</div>
+      <div class="property-preview-sample mt-2">
+        <div class="property-preview-header">
+          <div>
+            <div class="property-preview-eyebrow">{{if .BrandingDraft.HeaderLabel}}{{.BrandingDraft.HeaderLabel}}{{else}}Active Property{{end}}</div>
+            <div class="property-preview-title">{{if .PropertyBranding.PublicProjection.DisplayName}}{{.PropertyBranding.PublicProjection.DisplayName}}{{else}}{{.Property.Name}}{{end}}</div>
+            <div class="property-preview-sub">{{if .PropertyBranding.PublicProjection.Tagline}}{{.PropertyBranding.PublicProjection.Tagline}}{{else}}{{.Property.Tagline}}{{end}}</div>
+          </div>
+          <span class="property-preview-chip">{{.BrandingDraft.EffectiveTerms.UnitPlural}} · {{.BrandingDraft.EffectiveTerms.GuestPlural}}</span>
+        </div>
+        <div class="property-preview-actions mt-3">
+          <span class="property-preview-cta">Search {{.BrandingDraft.EffectiveTerms.StayLabel}} Availability</span>
+          <span class="property-preview-secondary-badge">Contrast-verified token</span>
+        </div>
+      </div>
+      <p class="subtitle mt-2">LOVELACE platform chrome, semantic statuses, focus indicators, and public guest wording remain protected.</p>
+    </div>
+  </div>
+
+  <form method="post" action="/property/branding">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="branding_version" value="{{.PropertyBranding.Version}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="branding_display_name">Brand Display Name (Public &amp; Console)</label>
+        <input id="branding_display_name" name="display_name" type="text" maxlength="80" value="{{.BrandingDraft.DisplayName}}" placeholder="{{.Property.Name}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="branding_tagline">Property Tagline</label>
+        <input id="branding_tagline" name="tagline" type="text" maxlength="140" value="{{.BrandingDraft.Tagline}}" placeholder="{{.Property.Tagline}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="branding_region_label">Region Label</label>
+        <input id="branding_region_label" name="region_label" type="text" maxlength="80" value="{{.BrandingDraft.RegionLabel}}" placeholder="{{.Property.Region}}" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="branding_header_label">Admin Sidebar Property Label</label>
+        <input id="branding_header_label" name="header_label" type="text" maxlength="48" value="{{.BrandingDraft.HeaderLabel}}" placeholder="Active Property" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="branding_logo_alt">Logo Alt Text</label>
+        <input id="branding_logo_alt" name="logo_alt" type="text" maxlength="120" value="{{.BrandingDraft.LogoAlt}}" placeholder="Property emblem logo" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="branding_primary_color">Primary Colour (#RRGGBB, ≥ 4.5:1 contrast)</label>
+        <input id="branding_primary_color" name="primary_color" type="text" maxlength="7" value="{{.BrandingDraft.PrimaryColor}}" placeholder="#2F4F4A" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+      <div class="field">
+        <label for="branding_secondary_color">Secondary Colour (#RRGGBB, ≥ 4.5:1 contrast)</label>
+        <input id="branding_secondary_color" name="secondary_color" type="text" maxlength="7" value="{{.BrandingDraft.SecondaryColor}}" placeholder="#6B4E14" {{if not .CanWriteProperty}}disabled{{end}}>
+      </div>
+    </div>
+
+    <fieldset class="branding-fieldset mt-3">
+      <legend>Administrative Terminology Overrides (Admin Console Only)</legend>
+      <p class="subtitle mb-2">Only changes bounded labels inside the administrative workspace. Public guest booking wording, URLs, email variables, and audit logs remain fixed.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="term_unit_singular">Unit Singular Label</label>
+          <input id="term_unit_singular" name="unit_singular" type="text" maxlength="24" value="{{.BrandingDraft.UnitSingular}}" placeholder="Unit" {{if not .CanWriteProperty}}disabled{{end}}>
+        </div>
+        <div class="field">
+          <label for="term_unit_plural">Unit Plural Label</label>
+          <input id="term_unit_plural" name="unit_plural" type="text" maxlength="24" value="{{.BrandingDraft.UnitPlural}}" placeholder="Units" {{if not .CanWriteProperty}}disabled{{end}}>
+        </div>
+        <div class="field">
+          <label for="term_guest_singular">Guest Singular Label</label>
+          <input id="term_guest_singular" name="guest_singular" type="text" maxlength="24" value="{{.BrandingDraft.GuestSingular}}" placeholder="Guest" {{if not .CanWriteProperty}}disabled{{end}}>
+        </div>
+        <div class="field">
+          <label for="term_guest_plural">Guest Plural Label</label>
+          <input id="term_guest_plural" name="guest_plural" type="text" maxlength="24" value="{{.BrandingDraft.GuestPlural}}" placeholder="Guests" {{if not .CanWriteProperty}}disabled{{end}}>
+        </div>
+        <div class="field">
+          <label for="term_stay_label">Stay / Booking Label</label>
+          <input id="term_stay_label" name="stay_label" type="text" maxlength="24" value="{{.BrandingDraft.StayLabel}}" placeholder="Reservation" {{if not .CanWriteProperty}}disabled{{end}}>
+        </div>
+      </div>
+    </fieldset>
+
+    {{if .CanWriteProperty}}
+    <div class="inline-row mt-3">
+      <button type="submit" name="branding_action" value="preview" class="btn btn-secondary">Preview Branding</button>
+      <button type="submit" name="branding_action" value="save" class="btn btn-primary">Save Property Branding</button>
+    </div>
+    {{end}}
+  </form>
+</div>
+
 {{if .PaymentExceptions}}
 <div class="card" id="payment-exceptions">
   <div class="ops-section-head">

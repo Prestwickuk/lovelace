@@ -1,8 +1,8 @@
-# LOVELACE Personalisation & Workspace Experience (`PWE-1`–`PWE-3` Implemented; `PWE-4`–`PWE-5` `PROPOSED / FUTURE`)
+# LOVELACE Personalisation & Workspace Experience (`PWE-1`–`PWE-4` Implemented; `PWE-5` `PROPOSED / FUTURE`)
 
-> **Document Status:** `PWE-1` (Design System & Theme Engine), `PWE-2` (User Personalisation), and `PWE-3` (Customisable Dashboard Builder) are **Implemented** in Go SSR & REST (`internal/branding/theme.go`, `internal/domain/personalisation.go`, `internal/domain/dashboard.go`, `migrations/0022_pwe2_user_personalisation.sql`, `migrations/0023_pwe3_dashboard_builder.sql`, `internal/store/postgres/personalisation_repo.go`, `internal/store/postgres/dashboard_repo.go`, `internal/service/personalisation_service.go`, `internal/service/dashboard_service.go`, `internal/httpapi/handlers_workspace.go`, `internal/webui`). `PWE-4` and `PWE-5` remain **`PROPOSED / FUTURE`** specification only.
+> **Document Status:** `PWE-1` (Design System & Theme Engine), `PWE-2` (User Personalisation), `PWE-3` (Customisable Dashboard Builder), and `PWE-4` (Property Branding) are **Implemented** (`internal/branding/theme.go`, `internal/branding/property_branding.go`, `internal/storage/logo.go`, `internal/domain/personalisation.go`, `internal/domain/dashboard.go`, `internal/domain/property_branding.go`, `migrations/0022_pwe2_user_personalisation.sql`, `migrations/0023_pwe3_dashboard_builder.sql`, `migrations/0024_pwe4_property_branding.sql`, `internal/store/postgres/`, `internal/service/`, `internal/httpapi/`, `internal/webui`, and `apps/public-web/`). `PWE-5` remains **`PROPOSED / FUTURE`** specification only.
 >
-> **Implementation Status:** **PWE-1, PWE-2 & PWE-3 Implemented** (`0022` adds `admin_user_preferences` and `admin_user_property_workspaces`; `0023` adds `dashboard_schema_version` and `dashboard_layout` to `admin_user_property_workspaces` under `lovelace_app` DML grants while keeping `must_rotate_password`, live DB RBAC, and `PWE-2` retention rules intact; `PWE-4` property branding extensions, `PWE-5` workspace profiles, and `apps/public-web/` changes do not exist).
+> **Implementation Status:** **PWE-1 through PWE-4 Implemented** (`0022` adds `admin_user_preferences` and `admin_user_property_workspaces`; `0023` adds `dashboard_schema_version` and `dashboard_layout`; `0024` adds `property_branding_settings` and `property_branding` audit allowlist rules under `lovelace_app` DML grants while keeping `must_rotate_password`, live DB RBAC, and `PWE-2` retention rules intact; `PWE-5` workspace profiles remain unimplemented).
 
 ---
 
@@ -188,11 +188,11 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
   - **Property-scoped workspace data** (`last_visited` defaults per property, per-property dashboard layouts, saved calendar filters mentioning `unit_type_id`s or `channel`s, and property branding).
 - **Zero Cross-Property Leakage:** Every future PWE read/write API MUST run through existing authentication + `must_rotate_password = FALSE` verification + `HasPermission` + `requirePropertyScope`. Saved filter presets, widget configs referencing UUIDs (such as `unit_type_id`), and property logos MUST validate same-property ownership in service & PostgreSQL constraints before save and on read. Preference APIs must never disclose existence, names, or configs of properties the caller is not authorized to access.
 
-### 4.3 Persistence Design (`PWE-2` & `PWE-3` Implemented; `PWE-4`–`PWE-5` `PROPOSED / FUTURE`)
-`PWE-2` (`migrations/0022_pwe2_user_personalisation.sql`) and `PWE-3` (`migrations/0023_pwe3_dashboard_builder.sql`) implement the hybrid relational + schema-versioned JSONB design under `lovelace_migrator` DDL and `lovelace_app` DML-only grants, while keeping `PWE-4` and `PWE-5` persistence deferred:
+### 4.3 Persistence Design (`PWE-2`–`PWE-4` Implemented; `PWE-5` `PROPOSED / FUTURE`)
+`PWE-2` (`migrations/0022_pwe2_user_personalisation.sql`), `PWE-3` (`migrations/0023_pwe3_dashboard_builder.sql`), and `PWE-4` (`migrations/0024_pwe4_property_branding.sql`) implement the hybrid relational + schema-versioned JSONB design under `lovelace_migrator` DDL and `lovelace_app` DML-only grants, while keeping `PWE-5` persistence deferred:
 
-1. **Property Branding & Workspace Defaults (`PWE-4` — `PROPOSED / FUTURE`):**
-   - Evolve/validate `properties.branding_config` (or introduce `property_workspace_settings` `PRIMARY KEY (property_id)` referencing `properties(id)` with `schema_version INTEGER NOT NULL`, `public_branding JSONB`, `admin_branding JSONB`, `workspace_defaults JSONB`, `updated_at`, `updated_by`) so public branding (`public_branding`) and admin-only defaults (`admin_branding`, `workspace_defaults`) stay structurally separated even at rest.
+1. **Property Branding & Workspace Defaults (`PWE-4` — Implemented in `0024`):**
+   - `public.property_branding_settings` (`property_id UUID PRIMARY KEY REFERENCES properties(id) ON DELETE CASCADE`, `schema_version`, structurally separated `public_branding JSONB` and `admin_branding JSONB`, validated `BlobStore` logo metadata `logo_storage_key`/`logo_content_type`/`logo_size_bytes`/`logo_sha256`/`logo_width`/`logo_height`/`logo_version`, optimistic-lock `version`, `updated_by`, `updated_at`) plus public-safe projection into `PublicPropertyBranding` (and `properties.branding_config`), keeping `admin_branding`, bounded admin terminology, and storage keys strictly off `/api/public/v1/*`.
 2. **Global User Preferences (`PWE-1`, `PWE-2` — Implemented in `0022`):**
    - `public.admin_user_preferences` (`user_id UUID PRIMARY KEY REFERENCES admin_users(id) ON DELETE CASCADE`, `schema_version INTEGER NOT NULL`, typed columns `theme_mode`, `accent`, `density`, `text_scale`, `high_contrast`, `reduced_motion`, `default_route`, optional re-validated `last_property_id UUID NULL REFERENCES properties(id) ON DELETE SET NULL`, validated `preferences JSONB`, `created_at`, `updated_at`).
 3. **User + Property Scoped Workspaces & Dashboard Layouts (`PWE-2` in `0022`, `PWE-3` in `0023`; `PWE-5` `PROPOSED / FUTURE`):**
@@ -207,7 +207,7 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
 
 ---
 
-## 5. Per-Milestone Testable Acceptance Checklists (`PWE-1`–`PWE-3` Implemented; `PWE-4`–`PWE-5` `PROPOSED / FUTURE`)
+## 5. Per-Milestone Testable Acceptance Checklists (`PWE-1`–`PWE-4` Implemented; `PWE-5` `PROPOSED / FUTURE`)
 
 ### PWE-1 Acceptance Checklist (**Implemented & Verified**)
 - [x] Zero JS frameworks or inline `style="..."` / `<script>` attributes added; strict `style-src 'self'` CSP remains intact across all pages.
@@ -228,11 +228,11 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
 - [x] Default dashboard renders usable out-of-the-box without user setup.
 - [x] Removing a user's permission hides the corresponding widget automatically on next render, while backend endpoints continue returning `403 Forbidden` regardless of dashboard state.
 
-### PWE-4 Acceptance Checklist
-- [ ] Authorized `PermPropertyWrite` operator can configure property logo, approved contrast-verified primary/secondary colours, display name, optional domain terminology, and preview changes before saving.
-- [ ] Uploaded logo assets enforce magic-byte verification (PNG/JPEG/WebP only; SVG/scripts/HTML rejected), strict size limits, and safe serving headers (`X-Content-Type-Options: nosniff`).
-- [ ] LOVELACE platform branding stays intact on login, system errors, and attribution; personal user themes (`PWE-2`) never overwrite property identity.
-- [ ] Cross-property isolation rejects edits or reads outside `property_id`; `/api/public/v1/properties/{slug}` exposes solely approved public branding subset (zero admin preferences/internal layout data).
+### PWE-4 Acceptance Checklist (**Implemented & Verified**)
+- [x] Authorized `PermPropertyWrite` operator can configure property logo, approved contrast-verified `#RRGGBB` primary/secondary colours, display name, bounded admin-only domain terminology, and preview changes non-destructively before saving.
+- [x] Uploaded logo assets enforce magic-byte verification (PNG/JPEG/WebP only; SVG/scripts/HTML/dimension bombs rejected), EXIF/metadata stripping, `BlobStore` storage outside web roots, strict byte limits, and safe serving headers (`X-Content-Type-Options: nosniff`).
+- [x] LOVELACE platform branding stays intact on login, system errors, and attribution; personal user themes (`PWE-2`) never overwrite property identity.
+- [x] Cross-property isolation rejects edits or reads outside `property_id`; `/api/public/v1/properties/{slug}` exposes solely approved `PublicPropertyBranding` projection and `/api/public/v1/properties/{slug}/logo` streams sanitized logo bytes cleanly via Next.js BFF without exposing admin terminology or internal paths.
 
 ### PWE-5 Acceptance Checklist
 - [ ] Owner/Administrator, Reception, Housekeeping, and Maintenance workspace presets resolve valid default widgets, shortcuts, and density aligned with LOVELACE RBAC roles.
@@ -242,14 +242,14 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
 
 ---
 
-## 6. Unresolved Product Decisions & Open Owner Questions
+## 6. Product Decisions & Open Owner Questions
 
-The following product questions require explicit owner decision prior to scheduling `PWE-4`–`PWE-5` implementation or changing established reversible `PWE-2` defaults:
+The owner has confirmed all `PWE-4` decisions (items 1, 3, and 4 below, implemented in `0024`), while the established reversible `PWE-2` defaults (items 2 and 5) remain open owner decisions prior to changing retention or multi-property UX or scheduling `PWE-5`:
 
-1. **Custom Brand Palette Scope (`PWE-4`):** Should property admin brand colours be restricted exclusively to a curated set of pre-tested WCAG-compliant heritage palettes, or allow arbitrary hex input validated dynamically against `>= 4.5:1` contrast thresholds?
+1. **Custom Brand Palette Scope (`PWE-4` — Confirmed Owner Decision):** Property branding accepts normalized six-digit `#RRGGBB` hex inputs validated server-side against every text, control, hover, light/dark, and high-contrast foreground/background pairing (`>= 4.5:1` normal text, `>= 3.0:1` UI boundaries, `>= 7.0:1` high contrast), deriving legible on-brand ink and applying tokens strictly through bounded `--property-brand-*` CSS custom properties over same-origin `/branding/property.css`.
 2. **Global Multi-Property Operator UX (`PWE-2` — Open Owner Decision):** When a platform-wide `owner_admin` manages multiple properties, should LOVELACE remember their last active `property_id` per session/user preference cleanly, and should global saved filters ever span multiple properties? *(Implemented PWE-2 default stays reversible: stores an optional server-revalidated `last_property_id` hint only without cross-property switcher promotion, and keeps saved operational views strictly property-scoped.)*
-3. **Custom Terminology Breadth (`PWE-4`):** Should optional domain terminology (e.g., `"Pitch"` vs `"Pod"` vs `"Cabin"`) apply strictly to admin UI labels, or eventually feed approved guest-facing labels in `apps/public-web/` (while keeping email automation template placeholders immutable)?
-4. **Property Logo Storage & Limits (`PWE-4`):** Should property logos reuse the existing `TIRBACH_ATTACHMENT_DIR` storage volume pattern or dedicated object storage once multi-instance scaling is needed?
+3. **Custom Terminology Breadth (`PWE-4` — Confirmed Owner Decision):** Bounded terminology overrides apply strictly to administrative UI labels inside Go SSR (`internal/webui`), keeping public guest wording (`apps/public-web/`), URLs/routes, API field names, email template variables, audit resource types, and database schemas immutable.
+4. **Property Logo Storage & Limits (`PWE-4` — Confirmed Owner Decision):** Property logos persist via the existing `TIRBACH_ATTACHMENT_DIR` / `storage.BlobStore` topology outside web roots (`2 MiB` max, PNG/JPEG/WebP only, `16..2048px` bounds, metadata/EXIF stripped) and are served through dedicated safe handlers (`/property/logo`, `/api/public/v1/properties/{slug}/logo`, and Next.js BFF `/api/public/property/logo`) with fixed `Content-Type` and `X-Content-Type-Options: nosniff`.
 5. **Preference Erasure & Retention (`PWE-2` — Open Owner Decision):** Should `admin_users` preferences be deleted immediately upon account deactivation, or retained until explicit user record purge? *(Implemented PWE-2 default stays reversible: retains rows on soft deactivation `is_active = FALSE` for admin reactivation and cascades deletion on hard `admin_users` purge via `ON DELETE CASCADE`.)*
 
 ---

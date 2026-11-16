@@ -463,6 +463,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerGuestCRMRoutes(mux)
 	h.registerReportRoutes(mux)
 	h.registerWorkspaceRoutes(mux)
+	h.registerPropertyBrandingRoutes(mux)
 }
 
 type pageHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -531,6 +532,11 @@ type baseView struct {
 	Actor                 service.Actor
 	CSRFToken             string
 	Property              domain.Property
+	PropertyBranding      domain.PropertyBrandingView
+	PropertyTerms         branding.AdminTerminology
+	PropertyCSSHref       string
+	BrandingDraft         propertyBrandingDraft
+	BrandingPreview       bool
 	Flash                 string
 	Error                 string
 	CanWriteProperty      bool
@@ -569,6 +575,13 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 	ws := domain.DefaultResolvedWorkspace()
 	ws.Theme = theme
 	var prop domain.Property
+	var propBranding domain.PropertyBrandingView
+	propTerms := branding.DefaultAdminTerminology()
+	propCSSHref := ""
+	brandingDraft := propertyBrandingDraft{EffectiveTerms: propTerms}
+	brandingPreview := false
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
 
 	if h.svc != nil && !actor.MustRotatePassword {
 		props, err := h.svc.ListProperties(ctx, actor)
@@ -590,6 +603,66 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 				ws = resolved
 				theme = resolved.Theme
 			}
+			if prop.ID != uuid.Nil {
+				if pb, pberr := h.svc.GetPropertyBranding(ctx, actor, prop.ID); pberr == nil {
+					propBranding = pb
+					propTerms = pb.ResolvedTerms
+					propCSSHref = fmt.Sprintf("/branding/property.css?v=%d", pb.Version)
+					brandingDraft = propertyBrandingDraft{
+						DisplayName:    pb.DisplayName,
+						Tagline:        pb.Tagline,
+						RegionLabel:    pb.RegionLabel,
+						PrimaryColor:   pb.PrimaryColor,
+						SecondaryColor: pb.SecondaryColor,
+						LogoAlt:        pb.LogoAlt,
+						HeaderLabel:    pb.HeaderLabel,
+						UnitSingular:   pb.Terminology.UnitSingular,
+						UnitPlural:     pb.Terminology.UnitPlural,
+						GuestSingular:  pb.Terminology.GuestSingular,
+						GuestPlural:    pb.Terminology.GuestPlural,
+						StayLabel:      pb.Terminology.StayLabel,
+						EffectiveTerms: pb.ResolvedTerms,
+					}
+					if nav == "property" && r.URL.Query().Get("preview") == "1" && auth.HasPermission(actor.Role, auth.PermPropertyWrite) {
+						qDraft := draftFromFormOrQuery(func(key string) string {
+							return r.URL.Query().Get(key)
+						})
+						if pal, perr := h.svc.ValidatePropertyBrandingPreview(ctx, actor, prop.ID, qDraft.PrimaryColor, qDraft.SecondaryColor); perr == nil {
+							brandingPreview = true
+							brandingDraft = qDraft
+							propTerms = qDraft.EffectiveTerms
+							propBranding.Palette = pal
+							if qDraft.DisplayName != "" {
+								propBranding.DisplayName = qDraft.DisplayName
+								propBranding.PublicProjection.DisplayName = qDraft.DisplayName
+							}
+							if qDraft.Tagline != "" {
+								propBranding.Tagline = qDraft.Tagline
+								propBranding.PublicProjection.Tagline = qDraft.Tagline
+							}
+							if qDraft.RegionLabel != "" {
+								propBranding.RegionLabel = qDraft.RegionLabel
+								propBranding.PublicProjection.RegionLabel = qDraft.RegionLabel
+							}
+							if qDraft.HeaderLabel != "" {
+								propBranding.HeaderLabel = qDraft.HeaderLabel
+							}
+							propBranding.PublicProjection.PrimaryColor = pal.Primary.Base
+							propBranding.PublicProjection.PrimaryOnColor = pal.Primary.OnColor
+							propBranding.PublicProjection.PrimaryHoverColor = pal.Primary.Hover
+							propBranding.PublicProjection.SecondaryColor = pal.Secondary.Base
+							propBranding.PublicProjection.SecondaryOnColor = pal.Secondary.OnColor
+							pq := url.Values{}
+							pq.Set("preview", "1")
+							pq.Set("primary_color", qDraft.PrimaryColor)
+							pq.Set("secondary_color", qDraft.SecondaryColor)
+							propCSSHref = "/branding/property.css?" + pq.Encode()
+						} else if flashErr == "" {
+							flashErr = perr.Error()
+						}
+					}
+				}
+			}
 		}
 	}
 	return baseView{
@@ -601,8 +674,13 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		Actor:                 actor,
 		CSRFToken:             actor.CSRFToken,
 		Property:              prop,
-		Flash:                 r.URL.Query().Get("msg"),
-		Error:                 r.URL.Query().Get("err"),
+		PropertyBranding:      propBranding,
+		PropertyTerms:         propTerms,
+		PropertyCSSHref:       propCSSHref,
+		BrandingDraft:         brandingDraft,
+		BrandingPreview:       brandingPreview,
+		Flash:                 flashMsg,
+		Error:                 flashErr,
 		CanWriteProperty:      auth.HasPermission(actor.Role, auth.PermPropertyWrite),
 		CanWriteInventory:     auth.HasPermission(actor.Role, auth.PermInventoryWrite),
 		CanWriteRates:         auth.HasPermission(actor.Role, auth.PermRatesWrite),

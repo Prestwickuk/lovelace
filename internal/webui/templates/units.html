@@ -1,14 +1,14 @@
 {{define "content"}}
 <div class="page-header">
   <div>
-    <h1>Physical Units &amp; Pitches</h1>
-    <p class="subtitle">Individual bookable glamping units, pitches, zones, and operational status.</p>
+    <h1>Physical {{.PropertyTerms.UnitPlural}} &amp; Pitches</h1>
+    <p class="subtitle">Individual bookable glamping {{.PropertyTerms.UnitPlural}}, pitches, zones, and operational status.</p>
   </div>
 </div>
 
 {{if .CanWriteInventory}}
 <div class="card">
-  <h2>{{if .Editing}}Edit Unit: {{.Editing.Code}}{{else}}Add Physical Unit / Pitch{{end}}</h2>
+  <h2>{{if .Editing}}Edit {{.PropertyTerms.UnitSingular}}: {{.Editing.Code}}{{else}}Add Physical {{.PropertyTerms.UnitSingular}} / Pitch{{end}}</h2>
   <form method="post" action="{{if .Editing}}/units/{{.Editing.ID}}/update{{else}}/units{{end}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     {{if .Editing}}<input type="hidden" name="version" value="{{.Editing.Version}}">{{end}}

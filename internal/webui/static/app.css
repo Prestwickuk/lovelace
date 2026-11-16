@@ -29,9 +29,15 @@
   --lovelace-olive: #6b7b4e;
   --lovelace-charcoal: #1e211e;
 
-  /* Property Chrome Separation Token (separate from interactive accent for PWE-4) */
+  /* Property Chrome Separation Tokens (overridable via PWE-4 /branding/property.css) */
   --property-brand: var(--lovelace-teal);
+  --property-brand-hover: #213b37;
+  --property-brand-on: #ffffff;
+  --property-brand-soft: rgba(47, 79, 74, 0.12);
   --property-brand-border: var(--lovelace-gold);
+  --property-brand-secondary: #6b4e14;
+  --property-brand-secondary-on: #ffffff;
+  --property-brand-secondary-soft: rgba(107, 78, 20, 0.12);
 
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
@@ -1634,6 +1640,7 @@ progress.report-progress { width: 100%; height: 0.625rem; accent-color: var(--ac
   background: var(--sidebar-hover);
 }
 .nav-group > a {
+  display: block;
   margin-left: 0.25rem;
 }
 
@@ -1920,6 +1927,156 @@ progress.report-progress { width: 100%; height: 0.625rem; accent-color: var(--ac
     position: static;
     min-width: 8.5rem;
   }
+}
+
+/* ==========================================================================
+   11. PWE-4 Property Branding Chrome, Logo Preview & Safe Token Preview
+   ========================================================================== */
+.brand-property-card {
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 3px solid var(--property-brand-border);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.brand-property-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border: 1.5px solid var(--property-brand-border);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.375rem;
+  margin-bottom: 0.375rem;
+  max-width: 100%;
+}
+
+.brand-property-logo {
+  display: block;
+  max-width: 140px;
+  max-height: 36px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.property-preview-panel {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  padding: var(--space-3);
+}
+
+.property-logo-preview-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  padding: 0.625rem;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  background: var(--input-bg);
+}
+
+.property-logo-preview-img {
+  max-width: 240px;
+  max-height: 76px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.property-preview-sample {
+  border: var(--border-width) solid var(--property-brand);
+  border-top: 4px solid var(--property-brand);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-3);
+}
+
+.property-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.property-preview-eyebrow {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--property-brand-secondary);
+}
+
+.property-preview-title {
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.property-preview-sub {
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.property-preview-chip {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: var(--property-brand-soft);
+  color: var(--property-brand);
+  border: 1px solid var(--property-brand);
+}
+
+.property-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.property-preview-cta {
+  display: inline-block;
+  padding: 0.4375rem 0.875rem;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  background: var(--property-brand);
+  color: var(--property-brand-on);
+}
+
+.property-preview-secondary-badge {
+  display: inline-block;
+  padding: 0.3125rem 0.625rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: var(--property-brand-secondary);
+  color: var(--property-brand-secondary-on);
+}
+
+.branding-fieldset {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
+
+.branding-fieldset legend {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  padding: 0 0.375rem;
+  color: var(--ink);
+}
+
+.ml-2 {
+  margin-left: var(--space-2);
 }
 
 @media (forced-colors: active) {

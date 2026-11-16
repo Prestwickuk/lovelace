@@ -99,6 +99,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerGuestCRMRoutes(mux)
 	h.registerReportRoutes(mux)
 	h.registerWorkspaceRoutes(mux)
+	h.registerPropertyBrandingRoutes(mux)
 	h.registerPublicRoutes(mux)
 }
 

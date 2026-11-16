@@ -1,19 +1,38 @@
 import Link from "next/link";
-import type { PublicPropertyView } from "@/lib/types";
+import { buildPropertyBrandCssVars, getPublicLogoSrc } from "@/lib/branding";
+import type { PublicPropertyBranding, PublicPropertyView } from "@/lib/types";
 
 export function SiteHeader({
   propertyName = "Tir Bach Campsite",
   region = "Pembrokeshire, Wales",
+  branding,
+  propertySlug = "tir-bach",
 }: {
   propertyName?: string;
   region?: string;
+  branding?: PublicPropertyBranding;
+  propertySlug?: string;
 }) {
+  const title = branding?.display_name || propertyName;
+  const sub = branding?.region_label || region;
+  const logoSrc = getPublicLogoSrc(branding, propertySlug);
+  const cssVars = buildPropertyBrandCssVars(branding);
+
   return (
-    <header className="site-header">
+    <header className="site-header" style={cssVars}>
       <div className="container site-header-inner">
         <Link href="/" className="brand-mark">
-          <span className="brand-mark-title">{propertyName}</span>
-          <span className="brand-mark-sub">{region}</span>
+          {logoSrc ? (
+            <img
+              src={logoSrc}
+              alt={branding?.logo_alt || `${title} logo`}
+              className="brand-mark-logo"
+            />
+          ) : null}
+          <span className="brand-mark-text">
+            <span className="brand-mark-title">{title}</span>
+            <span className="brand-mark-sub">{sub}</span>
+          </span>
         </Link>
 
         <nav className="site-nav" aria-label="Main navigation">

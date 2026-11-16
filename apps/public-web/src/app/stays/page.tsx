@@ -99,6 +99,8 @@ export default async function StaysPage({
       <SiteHeader
         propertyName={prop?.name || "Tir Bach Campsite"}
         region={prop?.region || "Pembrokeshire, Wales"}
+        branding={prop?.branding}
+        propertySlug={prop?.slug}
       />
 
       <main className="container section">
