@@ -19,6 +19,7 @@
     </div>
     <nav class="nav" aria-label="Administrative navigation">
       <a href="/" class="{{if eq .ActiveNav "dashboard"}}active{{end}}" {{if eq .ActiveNav "dashboard"}}aria-current="page"{{end}}>Operations Centre</a>
+      <a href="/workspace" class="{{if eq .ActiveNav "workspace"}}active{{end}}" {{if eq .ActiveNav "workspace"}}aria-current="page"{{end}}>My Workspace</a>
       {{if and (not .Actor.MustRotatePassword) .Workspace.Shortcuts}}
       <div class="nav-section">Pinned Shortcuts</div>
       {{range .Workspace.Shortcuts}}

@@ -44,9 +44,9 @@ Dark mode (`[data-theme="dark"]` and OS-following `[data-theme="system"]` via `@
 
 ---
 
-## 4. PWE Status & Future Extensions (`PWE-1` & `PWE-2` Implemented; `PWE-3`–`PWE-5` `PROPOSED / FUTURE`)
+## 4. PWE Status & Future Extensions (`PWE-1`–`PWE-3` Implemented; `PWE-4`–`PWE-5` `PROPOSED / FUTURE`)
 
-`PWE-1` (Admin Design System & Theme Engine) and `PWE-2` (per-user theme, accessibility, navigation, and property-scoped operational preferences in `0022_pwe2_user_personalisation.sql`) are **Implemented**. The planned expansion to customizable dashboards (`PWE-3`), property-level branding previews/terminology (`PWE-4` building on `properties.branding_config`), workspace presets (`PWE-5`), and three-way Platform / Property / User identity separation remains **`PROPOSED / FUTURE`** and is documented in:
+`PWE-1` (Admin Design System & Theme Engine), `PWE-2` (per-user theme, accessibility, navigation, and property-scoped operational preferences in `0022_pwe2_user_personalisation.sql`), and `PWE-3` (customisable permission-filtered `/workspace` dashboard builder in `0023_pwe3_dashboard_builder.sql`) are **Implemented**. The planned expansion to property-level branding previews/terminology (`PWE-4` building on `properties.branding_config`), workspace presets (`PWE-5`), and three-way Platform / Property / User identity separation remains **`PROPOSED / FUTURE`** and is documented in:
 
 - [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](personalisation-workspace-experience.md)
 - [ADR-0001: Public/Administrative Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md)

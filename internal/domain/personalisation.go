@@ -96,6 +96,7 @@ type AdminRouteOption struct {
 
 var adminRoutes = []AdminRouteOption{
 	{Path: "/", Label: "Operations Centre", PermKey: "ops:read"},
+	{Path: "/workspace", Label: "My Workspace", PermKey: ""},
 	{Path: "/calendar", Label: "Booking Calendar", PermKey: "reservations:read", Section: "maintenance"},
 	{Path: "/reservations", Label: "Reservations", PermKey: "reservations:read", Section: "maintenance"},
 	{Path: "/payment-exceptions", Label: "Payment Exceptions", PermKey: "reservations:read", Section: "maintenance"},

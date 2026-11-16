@@ -57,7 +57,7 @@ jobs:
           go build ./...
           go vet ./...
 
-      - name: Apply fresh migrations through 0022 as lovelace_migrator
+      - name: Apply fresh migrations through 0023 as lovelace_migrator
         env:
           MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_phase5_fresh_test?sslmode=disable
         run: |
@@ -65,11 +65,12 @@ jobs:
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0020_phase5_reporting_bi.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0021_phase5_accuracy_remediation.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0022_pwe2_user_personalisation.sql'"
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0023_pwe3_dashboard_builder.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT audit_is_allowed_enum('report_export', 'resource_type')" | grep -qx 't'
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT has_table_privilege('lovelace_app', 'public.unit_status_history', 'SELECT,INSERT') AND NOT has_table_privilege('lovelace_app', 'public.unit_status_history', 'UPDATE') AND NOT has_table_privilege('lovelace_app', 'public.audit_log_redactions', 'INSERT')" | grep -qx 't'
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT has_table_privilege('lovelace_app', 'public.admin_user_preferences', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('lovelace_app', 'public.admin_user_property_workspaces', 'SELECT,INSERT,UPDATE,DELETE')" | grep -qx 't'
 
-      - name: Verify populated upgrade migration path through 0022
+      - name: Verify populated upgrade migration path through 0023
         env:
           MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_phase5_upgrade_test?sslmode=disable
         run: |
@@ -77,6 +78,7 @@ jobs:
           go run ./cmd/migrate
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0021_phase5_accuracy_remediation.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0022_pwe2_user_personalisation.sql'"
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0023_pwe3_dashboard_builder.sql'"
 
       - name: Run full unit and PostgreSQL integration test suite with race detector
         run: |

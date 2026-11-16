@@ -300,6 +300,48 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 			q.Set("saved_view", v.ID)
 			return base + "?" + q.Encode()
 		},
+		"cfgBool":   domain.ConfigBool,
+		"cfgInt":    domain.ConfigInt,
+		"cfgString": domain.ConfigString,
+		"cfgSlice":  domain.ConfigStringSlice,
+		"seqPositions": func(n int) []int {
+			out := make([]int, n)
+			for i := 0; i < n; i++ {
+				out[i] = i + 1
+			}
+			return out
+		},
+		"add1": func(i int) int { return i + 1 },
+		"priorityBadgeClass": func(v any) string {
+			switch strings.ToUpper(fmt.Sprint(v)) {
+			case "URGENT", "CRITICAL":
+				return "badge-err"
+			case "HIGH":
+				return "badge-warn"
+			case "MEDIUM":
+				return "badge-info"
+			default:
+				return "badge-muted"
+			}
+		},
+		"calCellShort": func(status string) string {
+			switch status {
+			case "AVAILABLE":
+				return "A"
+			case "BOOKED":
+				return "B"
+			case "PENDING":
+				return "P"
+			case "ALLOCATED":
+				return "L"
+			case "BLOCKED":
+				return "X"
+			case "UNRELEASED":
+				return "U"
+			default:
+				return "·"
+			}
+		},
 	}
 
 	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html", "templates/partials.html")
@@ -313,6 +355,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 
 	pageNames := []string{
 		"dashboard.html",
+		"workspace.html",
 		"maintenance_list.html",
 		"maintenance_new.html",
 		"maintenance_detail.html",
@@ -419,6 +462,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerMaintenanceRoutes(mux)
 	h.registerGuestCRMRoutes(mux)
 	h.registerReportRoutes(mux)
+	h.registerWorkspaceRoutes(mux)
 }
 
 type pageHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
