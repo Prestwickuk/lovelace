@@ -60,7 +60,7 @@ The `audit_logs` source is append-only. `audit_log_redactions` stores a separate
 - **Unlinked Anonymous Holds & Unlinked Enquiries:** Abandoned checkout `booking_holds` that never completed payment (`guest_id IS NULL`) and unlinked web/phone `guest_enquiries` (`guest_id IS NULL AND reservation_id IS NULL`) are **not** matched automatically by unvalidated email/phone strings during `ExportGuestData` or `AnonymizeGuest` to avoid cross-customer collision / impersonation risk.
 - **Advisory Retention Policies Only (`ExecutionMode = "ADVISORY_ONLY"`):** `property_retention_policies` still stores advisory windows (`auto_anonymize_enabled` remains disabled and rejected if set `true`) because automated background deletion/anonymisation requires operator sign-off on legal retention rules in a dedicated future phase.
 - **No Email Recall After SMTP/Provider Acceptance:** Once the mail transport accepts an outbound message, LOVELACE cannot recall it remotely; if concurrent `AnonymizeGuest` encounters a message already accepted by transport, `email_outbox.status` truthfully records `SENT` and `communication_delivery_events` records `ACCEPTED` while scrubbing stored recipient/body copies.
-- **No Milestone 4 Guest Portal:** Self-service customer DSAR download/erasure endpoints remain intentionally out of scope until Milestone 4 authentication and identity verification exist.
+- **No Milestone 4 Guest Portal:** Self-service customer DSAR download/erasure endpoints remain intentionally deferred until owner approval and verified implementation of Milestone 4 authentication, identity verification, and review workflows (see [Phase 3 Milestone 4 Guest Portal (`PROPOSED / OWNER REVIEW REQUIRED`)](phase3-milestone4-guest-portal.md)).
 
 ---
 

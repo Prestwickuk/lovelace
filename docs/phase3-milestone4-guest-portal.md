@@ -1,0 +1,248 @@
+# LOVELACE Phase 3 Milestone 4 — Self-Service Public Guest Portal (`PROPOSED / OWNER REVIEW REQUIRED`)
+
+> **Document Status:** **`PROPOSED / OWNER REVIEW REQUIRED`** — Discovery & Architecture Specification Only.  
+> **Implementation Status:** **Phase 3 Milestone 4 remains DEFERRED / NOT IMPLEMENTED.**  
+> **Current Codebase Baseline:** Phases 1–5 + **PWE-1 through PWE-5 Implemented** (commit `8da9f0c1b787915b444d2dc4a02a4b6601f48ea8` on `codex/phase5-reporting-accuracy-fixes`, all three GitHub Actions CI workflows green).  
+> **Strict Guardrail:** This specification proposes options, boundaries, and unresolved decisions for owner approval. It does **not** authorize schema migrations, authentication changes, API changes, or UI implementation until the owner resolves the **Decision Gate** in [Section 11](#11-unresolved-owner-decision-gate).
+
+---
+
+## 1. Evidence Legend & Scope Boundaries
+
+To prevent assumptions from silently hardening into requirements, every statement in this document distinguishes:
+- **[FACT]:** Directly observed in repository files, SQL migrations, handlers, tests, or documentation as of commit `8da9f0c1b787915b444d2dc4a02a4b6601f48ea8`.
+- **[RECOMMENDATION]:** Proposed architectural, security, or product approach awaiting owner confirmation.
+- **[OWNER DECISION REQUIRED]:** Policy, legal, or product choice that blocks specific implementation slices until confirmed.
+
+### 1.1 Explicit Non-Goals (Out of Scope for Initial Milestone 4)
+1. **No Unified Admin/Guest Auth:** Administrative authentication (`admin_users`, `admin_sessions`, `tirbach_session`, `/api/v1/*`, `internal/webui`) MUST remain physically and logically disjoint from public guest sessions and portal routes ([ADR-0001](adr/0001-public-admin-separation-and-pwe-boundaries.md)).
+2. **No Exposure of Internal CRM or Operations Data:** Internal `guest_notes`, `guest_enquiry_messages` where `direction = 'INTERNAL'` (`is_internal = TRUE`), reservation `internal_notes`, `admin_users` identities, staff attribution (`created_by`, `updated_by`, `resolved_by`, `StaffUserName`), raw `audit_logs` / `audit_log_redactions`, PWE workspace profiles/preferences (`PWE-1`–`PWE-5`), and admin-only terminology (`PWE-4`) MUST NEVER cross into `apps/public-web/` or `/api/public/v1/*`.
+3. **No Direct Reservation Financial/Date/Unit Mutation:** Guests MUST NOT bypass `booking_quotes`, Stripe payment reconciliation, `inventory_claims` GiST exclusions, or Phase 4 OTA channel authority by directly rewriting stay dates, assigned physical units, room rates, or payment amounts.
+4. **No Unreviewed Self-Service Legal Exemptions:** Automated release of unredacted CRM records (`ExportGuestData`) or instant self-erasure blocking legal retention, active dispatches, or financial settlement is prohibited without explicit owner/legal policy sign-off.
+5. **No Cross-Application Code Coupling:** `apps/public-web/` remains Next.js/React/TypeScript using its `server-only` BFF (`apps/public-web/src/lib/lovelace-api.ts`); it MUST NOT query PostgreSQL directly or call `/api/v1/*`.
+
+---
+
+## 2. Observed Repository Baseline (`[FACT]`)
+
+| Domain Area | Observed Current State in Repository | Source Evidence |
+|---|---|---|
+| **Public Frontend Topology** | Separate Next.js 16 standalone app (`apps/public-web/`). BFF (`src/lib/lovelace-api.ts`) enforces `import "server-only"`, injects `X-Lovelace-Public-Key` (`PUBLIC_API_SECRET`) + `X-Lovelace-Client-IP`, and disables response caching (`cache: "no-store"`). Today it defaults to a single configured property slug (`LOVELACE_PROPERTY_SLUG`, default `"tir-bach"`). | `apps/public-web/src/lib/lovelace-api.ts` |
+| **Confirmation Lookup & Token Lifecycle** | Direct bookings issue a high-entropy 256-bit `confirmation_access_tokens` bearer token (stored SHA-256 hashed). Initial hold expiry is `hold.expires_at + 2h`; on confirmed payment it extends to `GREATEST(expires_at, departure_date + 30d)`. Query `?token=` is forbidden (`400 query_token_forbidden`); client `ConfirmationViewClient.tsx` caches tokens in browser `sessionStorage`. Existing endpoints allow POST lookup, token rotation, and cancellation-request recording (`cancellation_requested_at`, `cancellation_request_note`) — **no public customer session cookie or account login exists today**. | `migrations/0005_phase2.sql`, `migrations/0006_phase2_1.sql`, `internal/service/public_booking_service.go`, `internal/store/postgres/public_booking_repo.go`, `apps/public-web/src/components/ConfirmationViewClient.tsx` |
+| **Guest CRM Tenancy & Uniqueness** | `guests` is strictly `(property_id)`-scoped (`uq_guests_property_id_id`). `idx_guests_property_norm_email` is **non-unique** — multiple active `guests` rows in one property can share the same email address. `FindOrCreateGuest` matches the oldest non-`MERGED`/non-`ANONYMIZED` row by email (`FindOrCreateGuestForChannelImport` also excludes `erasure_requested_at IS NOT NULL`). | `migrations/0002_phase1_1.sql`, `migrations/0011_phase3_guest_crm_comms.sql`, `internal/store/postgres/reservations_repo.go`, `internal/store/postgres/channels_phase4_repo.go` |
+| **Reservation Data & Sources** | `reservations` supports `INQUIRY`, `PENDING`, `CONFIRMED`, `CHECKED_IN`, `CHECKED_OUT`, `CANCELLED`, `NO_SHOW`, `channel_code` (`DIRECT`, `AIRBNB`, `BOOKING_COM`, etc.), `occupant_details` (plain text), `internal_notes`, `cancellation_requested_at`, and `cancellation_request_note`. There is currently no dedicated portal `estimated_arrival_time` column. | `migrations/0002_phase1_1.sql`, `migrations/0011_phase3_guest_crm_comms.sql`, `internal/domain/reservations.go` |
+| **Enquiries, Comms & Consent** | `guest_enquiries` + `guest_enquiry_messages` isolate internal messages (`direction = 'INTERNAL'` / `is_internal = TRUE`). `guest_consent_records` is an append-only ledger (`consent_type = 'MARKETING_EMAIL'`, `'GRANTED'`/`'WITHDRAWN'`, `occurred_at` server-set; absent history defaults to `NOT_SUBSCRIBED`) with `guest_consent_redactions` / `guest_consent_records_effective` overlay protection. `email_outbox` uses fenced worker leases (`DISPATCHING`, `DISPATCH_UNKNOWN`). | `migrations/0011_phase3_guest_crm_comms.sql`, `migrations/0015_phase3_3_2_remediation_hardening.sql`, `docs/privacy-pii-inventory.md` |
+| **Export & Erasure Semantics** | `ExportGuestData` exports unbounded guest records **including internal `guest_notes` and `INTERNAL` enquiry messages** (explicitly documented as needing staff exemption review before Art. 15 release). `AnonymizeGuest` scrubs canonical + `merged_into_guest_id` cluster, preserves financial/accounting totals and `email_outbox` proof, sets `erasure_requested_at`, and returns `409 ErrConflict` while emails are `DISPATCHING` or `DISPATCH_UNKNOWN`. `property_retention_policies` stays `ADVISORY_ONLY`. | `internal/service/guest_crm_service.go`, `docs/privacy-pii-inventory.md` |
+| **Public API Security & Rate Limits** | `/api/public/v1/*` validates `X-Lovelace-Public-Key` (`publicEndpoint`) and process-local sliding rate limits (`publicGlobalLimiter`, `publicReadLimiter`, `publicWriteLimiter`, `publicLookupLimiter`; BFF also has in-memory `checkBffRateLimit`). Public confirmation responses send `Cache-Control: no-store, private`, `Referrer-Policy: no-referrer`, and `X-Robots-Tag: noindex, nofollow`. | `internal/httpapi/public_handlers.go`, `apps/public-web/src/app/api/public/booking/confirmation/route.ts`, `apps/public-web/next.config.ts` |
+| **Public Branding vs. Admin Boundary** | PWE-4 exposes solely `PublicPropertyBranding` (`display_name`, `tagline`, `region_label`, validated hex palette, `/api/public/v1/properties/{slug}/logo`) via `/api/public/v1/properties/{slug}` and BFF `/api/public/property/logo`. Admin-only branding, terminology, and PWE-1–PWE-5 user/profile settings never cross to public routes. | `docs/adr/0001-public-admin-separation-and-pwe-boundaries.md`, `docs/openapi-public-v1.yaml` |
+
+---
+
+## 3. Threat Boundaries & Non-Enumeration Guarantees
+
+1. **Application & Network Boundary:** Browsers talk **only** to the Next.js public storefront (`apps/public-web/`). Next.js Route Handlers / Server Components call Go `/api/public/v1/portal/*` using `import "server-only"` with `X-Lovelace-Public-Key` and validated forwarded customer IP headers. Browsers never hold `PUBLIC_API_SECRET` and never reach `/api/v1/*`.
+2. **Cookie & Session Separation:**
+   - Administrative session cookie: `tirbach_session` (host-only on admin origin, backed by `admin_sessions`).
+   - Proposed Guest Portal session cookie: **`lovelace_guest_session`** (host-only on public origin, backed by dedicated public portal session storage). Even if both apps share a parent test domain locally, distinct cookie names, distinct storage tables, and distinct BFF vs SSR handlers ensure neither session can cross or elevate into the other.
+3. **Zero Opaque-ID Authorization:** Possession of a guest `UUID`, `reservation_id`, `booking_reference`, email address alone, or URL path slug NEVER grants access. Every portal read/write MUST verify:
+   - An authenticated, non-revoked, non-expired portal session (`booking` or `account` scope) **bound in the database** to the active `property_id` and owning canonical `guest_id` (or exact `reservation_id` for booking-scoped access), **or**
+   - Valid `booking_reference` + `confirmation_access_tokens` hash for legacy/booking-scoped single-booking access.
+4. **Strict Anti-Enumeration:**
+   - Auth initiation endpoints (magic link / OTP request, recovery, resend) MUST return uniform `202 Accepted` responses regardless of whether an email exists, is merged, is anonymized, or has bookings.
+   - Verification / confirmation errors MUST collapse invalid reference, missing booking, revoked token, and unauthorized property scope into uniform `401`/`404` error envelopes without revealing whether an account or reservation exists.
+   - Property slugs outside configured active booking policies return generic `404`.
+5. **No Raw Secrets in Logs, URLs, Referrers, or Audits:**
+   - Challenge tokens / OTPs and portal session secrets are generated with 256-bit CSPRNG (6–8 digit numeric/alphanumeric OTPs with strict attempt caps *or* 256-bit magic-link nonces), stored **only** as SHA-256 hashes (or HMAC-SHA256 keyed with server secret), never logged in plaintext, and never placed in URL query strings once redeemed (`POST` redemption only; `Cache-Control: no-store, private`; `Referrer-Policy: no-referrer`; `X-Robots-Tag: noindex, nofollow`).
+   - Future portal audit events appended to `audit_logs` MUST add explicit key schemas to `auditResourceAllowlists` (`internal/service/audit_sanitizer.go`) and PostgreSQL `audit_resource_key_rule` (`0018`) before implementation, using pseudonymous actor `"guest@public.lovelace"` + opaque session/challenge IDs (zero plaintext guest emails or token hashes).
+
+---
+
+## 4. Guest Identity, Verification & Multi-Property Design
+
+### 4.1 Why Existing Mechanisms Are Insufficient
+- `[FACT]` **`confirmation_access_tokens`** is tied strictly to a direct checkout `booking_holds` -> `reservations` record, expires 30 days post-departure, cannot link multiple stays or pre-stay manual/OTA bookings, and does not verify continued inbox ownership once an email link has been forwarded to another party.
+- `[FACT]` **`guests`** is strictly per-property, allows duplicate emails, has no password/credential columns, and can enter `MERGED`, `ANONYMIZED`, or `DO_NOT_CONTACT` / `erasure_requested_at` states asynchronously via admin CRM or OTA import workflows.
+
+### 4.2 Recommended Two-Tier Verification Model (`[RECOMMENDATION]`)
+
+| Tier | Identity Proof Required | What It Unlocks | Why Separated |
+|---|---|---|---|
+| **Tier A — Single-Booking Scoped Access** | Existing `booking_reference` + `confirmation_access_tokens` **OR** `[DECISION #1/#4]` `booking_reference` + one-time OTP sent to the reservation's recorded email (`guest_email`) | View that single booking's summary, arrival instructions, payment status; submit change/cancellation request for that booking only | Keeps friction low for one-off guests, manual/OTA arrivals, and guests without accounts, while preventing a forwarded confirmation link from leaking past/future stays, CRM preferences, consent history, or data export/erasure |
+| **Tier B — Verified Guest Portal Session (Passwordless Default)** | Email possession verification via single-use **6-digit OTP or magic-link + same-browser binding token** sent via `email_outbox` (`PORTAL_VERIFICATION` category) + `POST` redemption (`[DECISION #1]`) | Full self-service portal: list upcoming/past direct (and permitted OTA) stays across verified links, update own contact/arrival details & marketing consent, open/reply to non-internal CRM enquiries, view consent state, and trigger SAR/erasure workflows (`[DECISION #6/#7]`) | Proves active possession of the verified inbox *at session creation time*; browser-bound `POST` redemption ensures antivirus/corporate link-prefetch bots clicking a GET link cannot silently pre-authenticate or hijack sessions |
+
+> **Anti-Link-Forwarding & Email-Scanner Defense (`[RECOMMENDATION]`):**  
+> Do **not** auto-authenticate from an email `GET` link alone. A magic link URL should carry only a non-authenticating flow prompt (`GET /portal/verify`) paired with either (a) a mandatory one-time short code entered on the page, or (b) an HTTP-only same-browser challenge nonce cookie verified on an explicit `POST /api/public/portal/auth/verify` user click (with standard email-code fallback if the guest opens the link in another device/app). Forwarded confirmation tokens remain locked to **Tier A** single-booking view and NEVER upgrade to a Tier B account session without a fresh inbox challenge.
+
+### 4.3 Edge Cases & Lifecycle Behavior
+
+| Edge Case | Required System Behavior |
+|---|---|
+| **Email / Phone Changes** | `[RECOMMENDATION]` Changing primary portal email MUST NOT update login identity directly. Require a verification OTP sent to the **new** email address (`pending_email`), send a security notification to the **old** verified email address, atomically update `guest_portal_identities` + canonical `guests.email`/`normalized_email`, **revoke all other active portal sessions**, and record an anonymized `audit_logs` event (`guest_portal.email_changed`). Updating phone or contact preferences sends an out-of-band confirmation email and records a `guests` update without breaking email identity. |
+| **Shared Email Addresses / Multiple `guests` Rows** | `[FACT]` Today a property can contain 2+ active `guests` rows with the same `normalized_email` (e.g., partner bookings, corporate assistant, or pre-merge duplicates). `[RECOMMENDATION]` Portal identity MUST bind to a **canonical non-merged `guest_id`** unless disambiguated or explicitly consolidated (`[DECISION #3]`): never silently expose another distinct `guests` row sharing the same email without matching verification or staff merge. |
+| **Merged Guests (`status = 'MERGED'`)** | `[FACT]` Staff CRM merges move future/historical attribution via `guests.merged_into_guest_id`. `[RECOMMENDATION]` Portal login/resolution follows `merged_into_guest_id` cycle-guarded to the active canonical target (`status IN ('ACTIVE', 'VIP', 'DO_NOT_CONTACT')`). If an older `guest_portal_identities` row pointed at `source_guest_id`, `MergeGuests` atomically repoints or freezes duplicate portal links cleanly (`CHECK (canonical target IS ACTIVE)`), preserving continuity for legitimate guests without leaving orphaned stale rows. `[OWNER DECISION #3]` must confirm merge policy if two separate portal-verified identities merge! |
+| **Anonymized or Pending-Erasure Guests** | `[FACT]` `status = 'ANONYMIZED'`, `anonymized_at IS NOT NULL`, or `erasure_requested_at IS NOT NULL`. `[RECOMMENDATION]` Auth initiation returns standard `202` generic response with **zero email sent**; verification/refresh rejects with `401` and revokes any surviving `lovelace_guest_session` cookies immediately. No anonymized reservation or guest history is accessible via portal sessions or confirmation tokens. |
+| **Stale Contact Info / Account Recovery** | `[RECOMMENDATION]` If a guest no longer controls the original booking email, self-service email OTP cannot verify them without risking account takeover. Recovery MUST fall back to property staff support (authenticated admin verifying guest offline per SOP, updating `guests.email` / `reservations.guest_email` in Admin CRM with full audit trail, and triggering fresh verification to the confirmed email). |
+| **Forwarded / Replayed Credentials** | `[RECOMMENDATION]` Email challenges and OTPs are **single-use** (`consumed_at IS NOT NULL` atomic `UPDATE ... RETURNING`), short-lived (10–15 minutes), capped to max attempts (e.g., 5 guesses per challenge), and invalidated upon newer challenge issuance or email change. Replaying any spent token returns a generic expired/invalid error cleanly. Confirmation token rotation (`RotateConfirmationToken`) invalidates the prior direct confirmation link without affecting Tier B sessions (or optionally revokes Tier A state). |
+| **Multi-Property vs. Single-Property Accounts** | `[FACT]` LOVELACE supports multi-property admin tenancy (`properties`), whereas `guests` rows and CRM data are strictly per-property, and `apps/public-web/` currently binds one `LOVELACE_PROPERTY_SLUG` per deployment unless multi-tenant routing is added. `[RECOMMENDATION]` Scope `guest_portal_identities` and `lovelace_guest_session` strictly to **one `(property_id, canonical_guest_id)` per origin/property** by default (`[DECISION #2]`), eliminating cross-property PII correlation risks. |
+
+---
+
+## 5. Guest Session Design & Technical Architecture
+
+### 5.1 Proposed Public Guest Session Specification (`[RECOMMENDATION]`)
+- **Cookie Contract:** `lovelace_guest_session` (`HttpOnly`, `Secure` in production, `SameSite=Lax`, `Path=/`, `Domain` omitted -> host-only on public origin).
+- **Storage (`PostgreSQL`):** 256-bit CSPRNG opaque secret returned to Next.js BFF, stored **exclusively as SHA-256 hash** (`session_token_hash`) in a dedicated `guest_portal_sessions` table containing `(id, property_id, portal_identity_id, scope_type ['BOOKING'|'ACCOUNT'], scoped_reservation_id NULL, csrf_secret_hash, idle_expires_at, absolute_expires_at, revoked_at, last_seen_at, created_ip_hash)`.
+- **Browser vs. BFF Handling:**
+  - `apps/public-web/` stores ONLY the opaque `lovelace_guest_session` cookie (no PII/JWT claims in cookies, eliminating JWT revocation delays and client payload inspection!).
+  - Removing reliance on browser `sessionStorage` for portal sessions protects credentials against script access and ensures explicit server-side logout/revocation works across browser restarts or mobile redirects.
+  - All mutating portal routes (`/api/public/portal/*`) require CSRF protection via a double-submit / session-bound `X-CSRF-Token` fetched from an HTTP BFF session endpoint + `Origin` / `Referer` header match against configured property public origin(s).
+- **TTLs, Rotation & Revocation (`[DECISION #8]` defaults recommended):**
+  - Verification challenge / OTP TTL: **15 minutes** (single-use, max 5 failed guesses).
+  - Tier A (`BOOKING` scope) session TTL: **2 hours idle / 12 hours absolute** (or expiry of booking window).
+  - Tier B (`ACCOUNT` scope) session TTL: **60 minutes sliding idle / 7 days absolute**.
+  - Immediate revocation on: explicit sign-out (`POST /portal/logout`), email change, passwordless session-reset request, admin `DO_NOT_CONTACT` freeze (`[DECISION]`), or guest anonymisation / `erasure_requested_at`.
+- **Rate Limits & Scaling (`[FACT]` + `[RECOMMENDATION]`):**
+  - `[FACT]` Both Go (`internal/httpapi/public_handlers.go`) and Next.js BFF (`apps/public-web/src/lib/rate-limit.ts`) currently warn that process-local rate limiters apply only to single-instance topologies (`docs/security.md` Section 7).
+  - `[RECOMMENDATION]` Enforce multi-key limits on auth endpoints (per client IP, per normalized email hash, and per booking reference hash) in Go **plus** BFF, and require shared PostgreSQL-backed / Redis counters before horizontal scaling.
+
+### 5.2 Boundary Diagram
+
+```text
+Browser (Customer Public Origin :3000)
+  │ HTTPS + Cookie: lovelace_guest_session + CSRF Header (NEVER sees PUBLIC_API_SECRET or /api/v1/*)
+  ▼
+Next.js BFF (`apps/public-web/`, server-only `src/lib/lovelace-api.ts`)
+  │ Validates Origin + BFF CSRF + BFF Rate Limit -> Forwards `X-Lovelace-Public-Key` + `X-Guest-Session` + Client IP
+  ▼
+Go Public API Router (`/api/public/v1/portal/*`, isolated from `/api/v1/*`)
+  │ Validates `X-Lovelace-Public-Key` + `guest_portal_sessions` (property-scoped) + Portal Service Layer
+  ▼
+`internal/service/portal_service.go` ──► Existing Domain/Service/Store (`reservations`, `guests`, `guest_enquiries`, `guest_consent_records`, `email_outbox`)
+```
+
+---
+
+## 6. User Journeys, Capabilities & Authorization Matrix
+
+### 6.1 Capability Matrix (`[RECOMMENDATION]` Pending Owner Gate)
+
+| Capability | Min Auth Tier | Booking / Guest Scope & Rules | Direct Mutation vs. Request Workflow | Audit & Notification |
+|---|---|---|---|---|
+| **1. View Upcoming / Past Bookings** | Tier A (that booking) / Tier B (owned stays) | Direct bookings always eligible; OTA bookings subject to `[DECISION #4]`. Excludes `ANONYMIZED`/`MERGED` aliases (resolves canonical). Shows property name, public branding/logo, dates, unit type/name, party counts, payment totals/status, cancellation policy. **Hides** `internal_notes`, `guest_notes`, provider tokens, `customer_session_hash`. | Read-only (`no-store`) | Access timestamp on `last_used_at`; optional login alert email |
+| **2. View / Download Receipt / Stay Summary** | Tier A / Tier B | Direct paid/partially refunded bookings show LOVELACE itemized quote & payment summary. **OTA merchant-of-record bookings** (`AIRBNB`/`BOOKING_COM`/etc. collector) MUST display clear *"Managed & billed via `<ChannelName>`"* notice rather than fabricated property invoices. | Read-only sanitized PDF/HTML receipt view | N/A |
+| **3. Update Self Contact & Arrival Details** | Tier B (contact/language); Tier A/B (ETA & arrival notes `[DECISION]`) | Active (`ACTIVE`/`VIP`) non-erased guests can update `phone`, `preferred_contact_method`, `preferred_language` (`en`/`cy`/configured), and reservation-specific **ETA / arrival notes** (`[MIGRATION]`) cleanly within length/char bounds. Primary email change requires full re-verification flow (Section 4.3). `DO_NOT_CONTACT` guests blocked from silent self-updates (`[DECISION]`). | Direct validated update on `guests` / new arrival fields; **never** touches `email` without challenge or overwrites OTA billing identity without `[DECISION #4]` | Sanitised `audit_logs` diff (`changed_fields` only, zero PII values) + security/confirmation notice in `email_outbox` / `guest_communications` |
+| **4. Request Booking Change (Dates, Unit Type, Party Count)** | Tier A / Tier B | Validated against live stay status (`PENDING` / `CONFIRMED` before check-in; NOT `CHECKED_IN`/`CHECKED_OUT`/`CANCELLED`/`NO_SHOW`; `[DECISION #4]` for OTA: direct guests only or direct-guest via LOVELACE vs OTA redirect!). Enforces bounded text & target dates (`check_out > check_in`). | **Request-Only (`guest_enquiries` category `BOOKING` / `AVAILABILITY`, `source = 'PORTAL'`)** — staff review quote delta & availability before mutating `reservations`/`inventory_claims` | `enquiry.created` sanitized audit + confirmation email (`guest_communications`) |
+| **5. Cancel Booking / Request Cancellation** | Tier A / Tier B | Direct `PENDING`/`CONFIRMED` reservations (`CHECKED_IN`/`CHECKED_OUT`/`CANCELLED` rejected). OTA bookings MUST instruct guest to cancel on the originating OTA (`[DECISION #4]`) so channel inventory sync stays authoritative. `[DECISION #5]` decides whether portal uses existing `RecordCustomerCancellationRequest` (`cancellation_requested_at`) or policy-gated auto-cancel + refund workflow. | **Current Default (`[FACT]`/`[RECOMMENDATION]`):** Request-Only (`RequestPublicCancellation`) for confirmed paid stays, or instant release for unpaid `PENDING` hold if permitted by `[DECISION #5]` | `reservation.cancellation_requested` audit + property & guest notification via `email_outbox` |
+| **6. Manage Preferences & Marketing Consent** | Tier B | Reads current effective consent state from `guest_consent_records_effective` (`GRANTED`, `WITHDRAWN`, or `NOT_SUBSCRIBED`) + non-internal structured `guest_preferences` (`ARRIVAL`, `ACCESSIBILITY`, `COMMUNICATION`, `PET` `[DECISION]`). Hides staff internal `notes` columns completely! | Appends immutable `guest_consent_records` row (`consent_type = 'MARKETING_EMAIL'`, `method = 'PORTAL'`, `source = 'apps/public-web'`, `recorded_by = NULL`, server `occurred_at`). Also see one-click unsubscribe in Section 7. | `guest_consent.recorded` sanitized audit (status/method/policy_version only) |
+| **7. Enquiry Messaging (Two-Way Support Thread)** | Tier B (and scoped Tier A for booking-linked enquiry?) | Shows ONLY guest-visible `guest_enquiries` belonging to `(property_id, canonical_guest_id)` and `guest_enquiry_messages` where **`direction IN ('INBOUND', 'OUTBOUND') AND is_internal = FALSE`**. Strips `staff_user_id` (displays property/team label `"Reservations Team"`, never staff personal name unless configured!). | Appends validated `INBOUND` `guest_enquiry_messages` + reopens resolved enquiry (`WAITING_FOR_PROPERTY` state transition review needed) | `enquiry.message_added` sanitized audit + ops alert |
+| **8. Personal Data Export (GDPR Art. 15 / Portability)** | Tier B (fresh verification <= 15m recommended) | **CRITICAL:** `[FACT]` Existing `ExportGuestData` exports `guest_notes` & `INTERNAL` messages! Therefore portal MUST NOT expose `ExportGuestData` directly. `[DECISION #6]` selects either (a) tracked Art. 15 request (`guest_enquiries`) fulfilled after staff review, or (b) self-service guest-only structured JSON/HTML summary strictly excluding `guest_notes`, `INTERNAL` messages, `duplicate_dismissals`, and third-party info. | Subject to `[DECISION #6]` (Tracked SAR request recommended initially) | `guest.sar_requested` sanitized audit + confirmation email |
+| **9. Erasure Request (GDPR Art. 17)** | Tier B (fresh verification <= 15m recommended) | **CRITICAL:** `[FACT]` Active/upcoming stays, unpaid balances, unresolved exceptions, statutory financial records, and live `email_outbox` `DISPATCHING`/`DISPATCH_UNKNOWN` states make instant blind self-anonymisation unsafe. Portal submits verified erasure request, optionally flags/queues review without immediately scrubbing active stays/accounting (`[DECISION #7]`). | **Request-Only (`guest_enquiries` `OTHER`/`COMPLAINT` + optional `erasure_requested_at` gating rule per `[DECISION #7]`)** — finalized via existing staff `AnonymizeGuest` workflow | `guest.erasure_requested` sanitized audit + acknowledgment email |
+
+### 6.2 Booking & Record Coverage Rules
+
+1. **Direct Bookings (`channel_code = 'DIRECT'`):** Covered across `HOLD` (active payment session via Tier A token), `PENDING`, `CONFIRMED`, `CHECKED_IN`, and historical `CHECKED_OUT` / `CANCELLED` (subject to retention & `[DECISION]` visibility window).
+2. **OTA-Imported Reservations (`AIRBNB`, `BOOKING_COM`, `SMOOBU`, `BEDS24`, `LODGIFY`, `CHANNEX`, etc.):** `[FACT]` Imported by Phase 4 (`FindOrCreateGuestForChannelImport`) onto `guests` + `reservations` with `channel_code != 'DIRECT'` and often anonymized relay/proxy email addresses (e.g., proxy OTA email domains) and zero `confirmation_access_tokens`.
+   - **Rule (`[RECOMMENDATION]`):** Read-only stay visibility & arrival ETA notes **only if** the guest verifies a valid non-proxy personal email linked to that canonical guest (or matches Tier A OTP challenge + policy allows OTA portal view); billing/receipts/cancellations/date edits defer strictly to the originating OTA platform (`[DECISION #4]`).
+3. **Group Bookings & Secondary Party Occupants:** `[FACT]` `reservations` identifies **one primary booker** (`guest_id`, `guest_name`, `guest_email`, `guest_phone`) plus free-text `occupant_details` and per-unit guest counts (`adults`, `children`, `infants`). Secondary party members do NOT have independent `guest_id` records or verified identities in PostgreSQL today; therefore they have **no separate portal access** (avoiding privacy exposure between group guests and primary booker financial data). Any future "co-traveller invite" capability is out of scope for Milestone 4.
+4. **Pending / Unpaid / Failed Payment Holds (`HOLD` / `PENDING` / `payment_exceptions`):** `[FACT]` Unconfirmed abandoned `booking_holds` have `guest_id = NULL` until checkout confirmation (`ConfirmPaymentAndHold`). Therefore Tier B portal account views query verified `reservations` (`guest_id IN cluster`) and optionally paid/confirmed `booking_holds` — abandoned unpaid holds stay isolated strictly to Tier A hold token flow (`HOLD` expiry ~15m + 2h lookup grace).
+5. **Cancelled & No-Show Bookings:** Remain visible read-only under `"CANCELLED"` / `"NO_SHOW"` until anonymized or beyond visibility window; cancellation requests cannot be submitted twice cleanly.
+
+---
+
+## 7. Privacy, Communications & Legal Review Boundary
+
+### 7.1 Consent, Marketing Unsubscribe & Transactional Email Interaction
+- `[FACT]` `guest_consent_records` records `MARKETING_EMAIL` (`GRANTED` / `WITHDRAWN`) immutably in PostgreSQL; historical guests with no rows default to `NOT_SUBSCRIBED`.
+- **Two Separate Communication Streams (`[RECOMMENDATION]`):**
+  1. **Transactional / Service Emails (Portal OTPs, Booking Confirmations, Arrival Info, Enquiry Replies, Erasure Acknowledgments):** Governed by contract/service necessity or legal obligations. **Crucial Safeguard:** If `status = 'ANONYMIZED'` or `erasure_requested_at IS NOT NULL`, `email_outbox` queueing is already blocked cleanly (`[FACT]`). If `status = 'DO_NOT_CONTACT'`, owner decision must confirm whether automated operational templates and portal OTP logins are suppressed or permitted (`[DECISION #9]`).
+  2. **Marketing Consent (`MARKETING_EMAIL`):** Controlled freely by the guest via Tier B Portal Privacy Settings **and** recommended tokenised single-click email unsubscribe (`List-Unsubscribe` / `POST` confirmation without requiring full login!), always writing an immutable `guest_consent_records` append row with `method = 'PORTAL'` / `'EMAIL_UNSUBSCRIBE'`, `recorded_by = NULL`, and server `occurred_at`.
+
+### 7.2 Legal & Privacy Questions Requiring Owner / Legal Review
+*(Engineering specification does not constitute legal compliance advice — see `docs/privacy-pii-inventory.md` notice.)*
+
+1. **GDPR Art. 15 (SAR) Fulfilment Method (`[DECISION #6]`):** Should self-service download expose a pre-filtered guest-safe data package automatically (excluding `guest_notes` and `INTERNAL` enquiry messages), or should portal users submit an authenticated SAR request reviewed by staff via `ExportGuestData` exemption checks (30-day statutory window)?
+2. **GDPR Art. 17 (Erasure) vs. Active Contract & Tax Retention (`[DECISION #7]`):** Confirm statutory retention basis for keeping financial `reservations` / `payments` / `refunds` anonymised shells while scrubbing contact PII, and define automated vs staff-reviewed handling when a guest requests erasure with an upcoming stay or recent chargeback window.
+3. **Identity Assurance Threshold for SAR / Erasure / Shared Emails (`[DECISION #3]`):** Confirm whether single-factor email OTP possession on a shared household inbox (e.g., spouses sharing `family@example.com` across bookings) satisfies legal identity verification for Art. 15/17 actions, or whether additional corroborating booking knowledge (booking reference + postcode/phone last digits) should be required before Tier B access/SAR actions.
+4. **Telemetry Retention (`guest_portal_sessions` & verification logs):** Confirm TTL for pruning expired portal sessions and verification challenge logs (`ip_hash` / `user_agent` hashes) so portal security records do not become unnecessary long-lived PII.
+
+---
+
+## 8. Proposed API, Service & Data Model Impact (Future Implementation Blueprint)
+
+> **Reminder:** Zero files, endpoints, or migrations are implemented in this discovery task. Below is the proposed boundary pending Owner Decision Gate sign-off.
+
+### 8.1 Proposed Go Backend & BFF Surface
+
+| Layer | Proposed New / Scoped Components | Boundary / Isolation Guarantee |
+|---|---|---|
+| **Domain (`internal/domain/`)** | `portal.go` (`PortalSession`, `PortalChallenge`, `PortalBookingSummary`, `PortalProfileView`, `PortalEnquiryView`, validation rules) | Zero admin structs/roles (`AdminUser`, `ResolvedWorkspace`, `GuestNote`, `InternalNotes`) imported or serialized |
+| **Service (`internal/service/`)** | `portal_service.go` (`RequestPortalAuthChallenge`, `RedeemPortalChallenge`, `GetPortalSession`, `LogoutPortalSession`, `ListPortalBookings`, `GetPortalBooking`, `UpdatePortalContactOrArrival`, `RequestPortalBookingChange`, `SubmitPortalEnquiryMessage`, `UpdatePortalMarketingConsent`, `RequestPortalSAR`, `RequestPortalErasure`) | Enforces `property_id` isolation, canonical non-merged/non-anonymized checks, per-action rate limits, and `auditResourceAllowlists` |
+| **HTTP API (`internal/httpapi/`)** | Isolated routes under **`/api/public/v1/portal/*`** protected by `publicEndpoint` (`X-Lovelace-Public-Key`) + `X-Guest-Session` validation + `no-store` headers | Never mounted under `/api/v1/*`; never reads `tirbach_session` (`admin_sessions`) |
+| **Next.js BFF (`apps/public-web/`)** | `/portal` (App Router pages: login, bookings list, booking detail, profile/privacy settings) + `/api/public/portal/*` BFF Route Handlers (`server-only`) | Origin check + CSRF token + sets HTTP-only `lovelace_guest_session` cookie + consumes only PWE-4 `PublicPropertyBranding` |
+
+### 8.2 Additive Data Model & Migration Rationale (`[RECOMMENDATION]`)
+
+**Why Existing Schema Is Insufficient:**
+1. `[FACT]` `confirmation_access_tokens` authenticates only a single hold/reservation (`reservation_id` / `hold_id`), stores no guest identity, and carries no browser session/CSRF binding.
+2. `[FACT]` `guests` has non-unique email indexes across a property and no portal verification timestamp, pending email change verification token, or OTP/challenge state.
+3. `[FACT]` `reservations` has no structured customer arrival ETA/notes fields distinct from staff `internal_notes`.
+4. `[FACT]` `property_booking_policies` has no portal feature flag or portal self-service capability toggles.
+
+**Proposed Additive Future Schema (`0026+` Draft — Blocked Until Decision Gate):**
+1. `guest_portal_identities`: `(id UUID PK, property_id UUID, canonical_guest_id UUID, verified_email TEXT, normalized_verified_email TEXT, pending_email TEXT, pending_email_expires_at TIMESTAMPTZ, email_verified_at TIMESTAMPTZ, status TEXT CHECK (status IN ('ACTIVE','SUSPENDED')), version INT, created_at, updated_at)` with `UNIQUE (property_id, canonical_guest_id)` and `UNIQUE (property_id, normalized_verified_email)` + composite FK to `guests(property_id, id)` (`ON DELETE RESTRICT` / merge-safe repointing).
+2. `guest_portal_challenges`: `(id UUID PK, property_id UUID, normalized_email TEXT, purpose TEXT CHECK (purpose IN ('LOGIN','VERIFY_EMAIL','BOOKING_ACCESS')), token_hash TEXT UNIQUE, browser_nonce_hash TEXT, booking_reference TEXT, failed_attempts INT, max_attempts INT, expires_at TIMESTAMPTZ, consumed_at TIMESTAMPTZ, created_at TIMESTAMPTZ)`.
+3. `guest_portal_sessions`: `(id UUID PK, property_id UUID, portal_identity_id UUID NULL, scope_type TEXT CHECK (scope_type IN ('BOOKING','ACCOUNT')), scoped_reservation_id UUID NULL, session_token_hash TEXT UNIQUE, csrf_secret_hash TEXT, idle_expires_at TIMESTAMPTZ, absolute_expires_at TIMESTAMPTZ, revoked_at TIMESTAMPTZ, last_seen_at TIMESTAMPTZ, created_at TIMESTAMPTZ)` with composite property FKs.
+4. `reservations` additive columns: `estimated_arrival_time TEXT DEFAULT ''`, `guest_arrival_notes TEXT DEFAULT ''` (explicitly excluded from `internal_notes`; scrubbed cleanly inside `AnonymizeGuest` and included in `ExportGuestData`!).
+5. `property_booking_policies` additive column: `guest_portal_enabled BOOLEAN NOT NULL DEFAULT FALSE` (and capability toggles pending Decisions #4/#5/#6).
+6. **Least-Privilege Grants & Audit Sync:** Migration MUST grant strictly `SELECT, INSERT, UPDATE, DELETE` (or appropriate DML subset) to `lovelace_app`, update `AnonymizeGuest` / `MergeGuests`, and register new resource types (`guest_portal_identity`, `guest_portal_session`, etc.) cleanly in both Go `auditResourceAllowlists` (`audit_sanitizer.go`) and PG `audit_resource_key_rule` (`0018`).
+
+---
+
+## 9. Operational, Accessibility, Localization & Rollout Requirements
+
+1. **Feature-Flag & Staged Rollout (`[RECOMMENDATION]`):** Ship dark/disabled globally (`guest_portal_enabled = FALSE` on `property_booking_policies` + env gate), verify via staging CI & Playwright a11y/security checks, enable for Tir Bach Campsite pilot property on direct bookings first (`Tier A` -> `Tier B`).
+2. **Guest Support Recovery & Staff Guardrails:**
+   - Staff MUST NEVER be able to mint or impersonate a `lovelace_guest_session` or view raw OTP/magic-link codes in LOVELACE Admin.
+   - Support recovery SOP: staff verify caller identity offline per policy, update/confirm `guests.email` / `reservations.guest_email` in Admin CRM (audited), and trigger a clean `"Send Portal Verification / Booking Link"` action via `email_outbox` — or revoke active portal sessions/tokens in case of suspected compromise (`RotateConfirmationToken` / future `RevokeGuestPortalSessions`).
+3. **Abuse Monitoring & Alerts:** Emit non-PII structured operational counters/logs (`portal.auth.rate_limited`, `portal.challenge.failed`, `portal.session.revoked`, `portal.tamper.cross_property`) without printing plaintext emails, booking refs in query URLs, or tokens.
+4. **Accessibility & Localization:** Maintain WCAG 2.1 AA compliance in `apps/public-web/` (labeled forms, `aria-describedby` error bindings, keyboard-navigable disclosures/dialogs, >= 4.5:1 contrast with PWE-4 public palettes, reduced-motion support, zero horizontal scroll at 375px & 200% zoom). Support `guests.preferred_language` / property communication `locale` formatting if multi-language (`en` / `cy`) templates are enabled (`[DECISION #10]`).
+
+---
+
+## 10. Draft Acceptance Criteria (For Future Milestone 4 Implementation PRs)
+
+*(Milestone 4 cannot be marked Implemented until all owner decisions below are resolved AND all criteria below pass in automated tests + browser verification.)*
+1. **Strict Identity & Boundary Isolation:** Zero routes overlap between `admin_sessions` (`tirbach_session`, `/api/v1/*`) and `guest_portal_sessions` (`lovelace_guest_session`, `/api/public/v1/portal/*`); attempting to use one session type on the other's endpoints fails closed (`401`/`403`).
+2. **Non-Enumeration & Anti-Forgery:** Auth requests, confirmation lookups, OTP verification, and property errors return uniform non-enumerating status/messages; direct GET links never mint sessions without POST + browser-binding or code verification; CSRF validation rejects forged cross-site mutations (`403`).
+3. **Strict Lease & Privacy Hygiene:** No `guest_notes`, `INTERNAL` enquiry messages, reservation `internal_notes`, `admin_users` personal names, `audit_logs` internals, or admin-only PWE terminology ever appear in portal JSON, HTML, logs, or data exports.
+4. **Merged / Anonymized / Re-verified State Tests:** Dedicated integration tests prove `MERGED` redirects, instant lockout upon `ANONYMIZED` / `erasure_requested_at`, email-change dual notification & old-session revocation, cross-property `403`/`404` isolation, and `0018` audit allowlist test coverage (`audit_sanitizer.go` 1:1 parity).
+5. **End-to-End BFF & Accessibility Verification:** Playwright checks in `apps/public-web/` pass desktop + 375px mobile + dark/contrast/keyboard focus checks with zero console/page/network-5xx errors and verified `Cache-Control: no-store` / `Referrer-Policy: no-referrer` headers.
+
+---
+
+## 11. Unresolved Owner Decision Gate (`[OWNER DECISION REQUIRED]`)
+
+Implementation of Phase 3 Milestone 4 is **blocked** on owner sign-off for the following decisions:
+
+| ID | Topic & Question | Options Considered | Recommended Default | User & Security Impact | Implementation Blocked Until Resolved |
+|---|---|---|---|---|---|
+| **D1** | **Portal Authentication Method** | **A:** Passwordless Email Magic-Link/OTP (`POST`-redeemed) only<br>**B:** Email + Optional Customer Password (Argon2id)<br>**C:** Confirmation Ref+Token only (no account) | **Option A** (Passwordless OTP / `POST`-bound Magic Link alongside Tier A Ref+Token) | Avoids credential reuse / weak guest passwords and password-reset attack surface; ensures continued inbox possession before multi-stay access | `guest_portal_identities` / `guest_portal_challenges` auth schema & BFF `/portal/login` |
+| **D2** | **Property Scope of Guest Portal Accounts** | **A:** Strictly single-property `(property_id, canonical_guest_id)` scoped per public origin/slug<br>**B:** Platform-wide global guest login linking stays across all LOVELACE properties | **Option A** (Per-property isolated accounts, matching `guests` & multi-property privacy boundaries) | Prevents cross-property guest email correlation (`ADR-0001` multi-tenancy) and keeps public Next.js deployments property-isolated | Multi-property routing in `apps/public-web/` & `guest_portal_identities` uniqueness index |
+| **D3** | **Duplicate / Shared Email Disambiguation** | **A:** One canonical `guest_portal_identities` per verified email; disallow portal auto-bind if >1 unmerged active `guests` row shares that email until merged or verified with corroborating booking ref<br>**B:** Auto-show stays from all active rows matching email | **Option A** (Require corroborating booking verification or prior CRM merge when duplicate active rows exist) | Prevents one person sharing a family/corporate inbox from silently viewing another distinct guest's bookings pre-merge | Duplicate-match behavior in `FindOrCreateGuest`, portal bind & `MergeGuests` merge policy |
+| **D4** | **OTA Booking Self-Service Scope** | **A:** Direct (`DIRECT`) bookings get full portal management; OTA (`AIRBNB`, `BOOKING_COM`, etc.) bookings are read-only arrival view (only if verified non-proxy email) with OTA redirect for changes/cancels/billing<br>**B:** Exclude OTA bookings from portal entirely<br>**C:** Allow OTA contact updates & arrival ETA in portal | **Option A** (Read-only arrival/ETA info on verified non-proxy emails; billing/cancels/date edits must happen on OTA) | Prevents split-brain availability/financial discrepancies between LOVELACE Phase 4 OTA sync and OTA source of truth | `ListPortalBookings`, OTA proxy email detection, receipt visibility, and enquiry vs cancel gating |
+| **D5** | **Cancellation Mechanics** | **A:** Keep existing **Request-Only** (`cancellation_requested_at` + staff review/refund in Admin)<br>**B:** Auto-cancel free/eligible unpaid stays (`PENDING`) & policy-eligible direct bookings with automated Stripe refund trigger<br>**C:** Instant cancel within free-cancel window only | **Option A** initially (retain `RequestPublicCancellation`), optionally evolving later to policy-driven automation | Protects against buggy automated refunds during payment exceptions or non-refundable rate rules while preserving instant hold cancel before payment | `POST /portal/bookings/{ref}/cancel` workflow & Stripe refund automation |
+| **D6** | **Self-Service GDPR Data Export (Art. 15)** | **A:** Authenticated SAR request workflow (`guest_enquiries` queue for staff `ExportGuestData` exemption review)<br>**B:** Automated download of strictly guest-safe JSON/HTML (profile, direct stays, guest messages, consent history — excluding `guest_notes` & `INTERNAL` messages)<br>**C:** Both (instant basic summary + formal SAR request button) | **Option A** initially (or **C** with legal review confirming exemption wording) | Prevents accidental self-disclosure of unreviewed internal notes, mixed third-party data, or legal exemptions | `/portal/privacy/export` handler & response format |
+| **D7** | **Self-Service Erasure (GDPR Art. 17)** | **A:** Authenticated Erasure Request (`guest_enquiries` + manual staff `AnonymizeGuest` review)<br>**B:** Instant self-anonymisation when no active/upcoming stays or `DISPATCHING` emails exist, else request queued | **Option A** (Request-Only reviewed via staff `AnonymizeGuest` + `erasure_requested_at` controls) | Prevents financial/contract/outbox lease conflicts and ensures statutory accounting & open dispute checks happen safely | `/portal/privacy/erase` handler & outbox gating |
+| **D8** | **Session & Challenge Lifetimes & Re-Auth** | Confirm exact TTLs (recommended: 15m OTP, 5 attempts, 2h/12h Tier A, 60m/7d Tier B; <= 15m fresh step-up re-verification before email change or SAR/erasure) | Recommended defaults above | Balances hospitality convenience while travelling vs. unattended shared-device exposure | Cookie max-age & DB session expiry constants |
+| **D9** | **`DO_NOT_CONTACT` Guest Portal Behavior** | **A:** Freeze portal OTP/login or show privacy notice requiring staff contact<br>**B:** Allow guest to log in solely to view existing active stay / request erasure while suppressing non-essential comms | **Option B** (Allow transactional/privacy access only; keep `MARKETING_EMAIL = WITHDRAWN` and block marketing emails) | Ensures a `DO_NOT_CONTACT` guest with an upcoming stay or GDPR request is not locked out of legal rights | Auth check for `status = 'DO_NOT_CONTACT'` in `portal_service.go` |
+| **D10** | **Localization Scope (e.g., Welsh `cy`)** | **A:** English (`en`) UI initially, matching current `apps/public-web/` storefront<br>**B:** Full bilingual `en` + `cy` portal UI & email templates at Milestone 4 launch | **Option A** at Milestone 4 pilot; wire `preferred_language` cleanly for future `cy` localization | Aligns portal launch velocity with current storefront & email template locales | UI copy / template localization work before Milestone 4 UI build |
+
+---
+
+## Related Documentation
+- [Architecture & Five-Phase Blueprint](architecture.md)
+- [ADR-0001: Public/Administrative Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md)
+- [Security Controls & Test Isolation](security.md)
+- [Personal Data Inventory & Privacy Lifecycle](privacy-pii-inventory.md)
+- [Public Booking OpenAPI Contract (`/api/public/v1`)](openapi-public-v1.yaml)
+- [Personalisation & Workspace Experience (`PWE-1`–`PWE-5`)](personalisation-workspace-experience.md)
