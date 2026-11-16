@@ -319,7 +319,16 @@ func TestPWE3_CustomisableDashboardSecurityPermissionsAndAllWidgets(t *testing.T
 		t.Fatalf("expected Operations Centre intact on /, status=%d", respHome.StatusCode)
 	}
 
-	// 2. Manager A loads `/workspace` out-of-the-box -> renders all 11 widgets + multi-currency + history warning + zero internal CRM secrets!
+	// 2. Manager A loads `/workspace` out-of-the-box -> renders Owner / Administrator profile default,
+	// and saving the full 11-widget platform catalogue renders all widgets + multi-currency + history warning + zero internal CRM secrets!
+	respWSDef, bodyWSDef := getWebPage(t, clientMgrA, srv.URL+"/workspace")
+	if respWSDef.StatusCode != http.StatusOK || !strings.Contains(bodyWSDef, "Owner / Administrator Profile Default") {
+		t.Fatalf("expected Owner / Administrator Profile Default out-of-the-box, status=%d", respWSDef.StatusCode)
+	}
+	mgrAActorSeed := service.Actor{UserID: mgrA.ID, PropertyID: &propA.ID, Email: mgrA.Email, Role: domain.RoleManager}
+	if _, err := appSvc.SaveDashboardLayout(ctx, mgrAActorSeed, mgrA.ID, propA.ID, domain.DefaultDashboardLayout()); err != nil {
+		t.Fatalf("save 11-widget layout for manager audit: %v", err)
+	}
 	respWS, bodyWS := getWebPage(t, clientMgrA, srv.URL+"/workspace")
 	if respWS.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK on /workspace, got %d", respWS.StatusCode)
@@ -348,6 +357,9 @@ func TestPWE3_CustomisableDashboardSecurityPermissionsAndAllWidgets(t *testing.T
 		if strings.Contains(bodyWS, secret) {
 			t.Fatalf("manager /workspace leaked protected CRM PII/internal message %q", secret)
 		}
+	}
+	if _, err := appSvc.ResetDashboardLayout(ctx, mgrAActorSeed, mgrA.ID, propA.ID); err != nil {
+		t.Fatalf("reset layout after 11-widget check: %v", err)
 	}
 
 	// 3. Property B (empty dataset) renders clean empty states and ZERO Property A records.
@@ -554,7 +566,7 @@ func TestPWE3_CustomisableDashboardSecurityPermissionsAndAllWidgets(t *testing.T
 		"property_id": {propA.ID.String()},
 		"return_to":   {"/workspace"},
 	})
-	if respResetSSR.StatusCode != http.StatusOK || !strings.Contains(bodyResetSSR, "Platform Default Layout") {
+	if respResetSSR.StatusCode != http.StatusOK || !strings.Contains(bodyResetSSR, "Owner / Administrator Profile Default") {
 		t.Fatalf("SSR workspace reset failed, status=%d", respResetSSR.StatusCode)
 	}
 	pwe2WS, _, err := appSvc.GetUserPropertyWorkspace(ctx, mgrAActor, mgrA.ID, propA.ID)

@@ -14,6 +14,8 @@ import (
 
 func (h *Handler) registerWorkspaceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /workspace", h.requirePageAuth(false, h.handleWorkspaceGet))
+	mux.HandleFunc("POST /workspace/profile", h.requirePageAuth(true, h.handleWorkspaceProfileSelectPost))
+	mux.HandleFunc("POST /workspace/profile/reset", h.requirePageAuth(true, h.handleWorkspaceProfileResetPost))
 	mux.HandleFunc("POST /workspace/widgets/add", h.requirePageAuth(true, h.handleWorkspaceWidgetAddPost))
 	mux.HandleFunc("POST /workspace/widgets/{instanceID}/update", h.requirePageAuth(true, h.handleWorkspaceWidgetUpdatePost))
 	mux.HandleFunc("POST /workspace/widgets/{instanceID}/move", h.requirePageAuth(true, h.handleWorkspaceWidgetMovePost))
@@ -172,17 +174,59 @@ func (h *Handler) handleWorkspaceWidgetRemovePost(w http.ResponseWriter, r *http
 	redirectAdminWithQuery(w, r, retPath, "msg", "Widget removed from workspace.")
 }
 
+func (h *Handler) handleWorkspaceProfileSelectPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, ok := h.resolveWorkspacePostScope(w, r, actor)
+	if !ok {
+		return
+	}
+	retPath := safeAdminReturnPath(r.FormValue("return_to"), "/workspace")
+	state, err := h.svc.SelectWorkspaceProfile(r.Context(), actor, actor.UserID, propID, r.FormValue("profile_code"))
+	if err != nil {
+		h.redirectWorkspaceErr(w, r, retPath, err)
+		return
+	}
+	msg := "Workspace profile updated."
+	if state.ActiveProfile != nil {
+		msg = "Workspace profile switched to " + state.ActiveProfile.Name + "."
+	}
+	redirectAdminWithQuery(w, r, retPath, "msg", msg)
+}
+
+func (h *Handler) handleWorkspaceProfileResetPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, ok := h.resolveWorkspacePostScope(w, r, actor)
+	if !ok {
+		return
+	}
+	retPath := safeAdminReturnPath(r.FormValue("return_to"), "/workspace")
+	clearNamed := r.FormValue("clear_named_overrides") == "1" || r.FormValue("clear_named_overrides") == "true"
+	res, err := h.svc.ResetWorkspaceProfile(r.Context(), actor, actor.UserID, propID, clearNamed)
+	if err != nil {
+		h.redirectWorkspaceErr(w, r, retPath, err)
+		return
+	}
+	msg := "Workspace reset to role default profile (global theme and saved views preserved)."
+	if res.Profile.ActiveProfile != nil {
+		msg = "Workspace reset to " + res.Profile.ActiveProfile.Name + " role default profile (global theme and saved views preserved)."
+	}
+	redirectAdminWithQuery(w, r, retPath, "msg", msg)
+}
+
 func (h *Handler) handleWorkspaceResetPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	propID, ok := h.resolveWorkspacePostScope(w, r, actor)
 	if !ok {
 		return
 	}
 	retPath := safeAdminReturnPath(r.FormValue("return_to"), "/workspace")
-	if _, err := h.svc.ResetDashboardLayout(r.Context(), actor, actor.UserID, propID); err != nil {
+	resolved, err := h.svc.ResetDashboardLayout(r.Context(), actor, actor.UserID, propID)
+	if err != nil {
 		h.redirectWorkspaceErr(w, r, retPath, err)
 		return
 	}
-	redirectAdminWithQuery(w, r, retPath, "msg", "Workspace layout reset to platform default.")
+	msg := "Workspace layout reset to platform default."
+	if resolved.ProfileName != "" {
+		msg = "Workspace layout reset to " + resolved.ProfileName + " profile default."
+	}
+	redirectAdminWithQuery(w, r, retPath, "msg", msg)
 }
 
 func parseStrictFormInt(r *http.Request, key string) (int, error) {

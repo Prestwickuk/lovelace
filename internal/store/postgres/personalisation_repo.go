@@ -22,7 +22,8 @@ func (s *Store) GetUserPreferencesRaw(ctx context.Context, db DBTX, userID uuid.
 	var rawPayload []byte
 	err := db.QueryRow(ctx, `
 		SELECT user_id, schema_version, theme_mode, accent, density, text_scale,
-		       high_contrast, reduced_motion, default_route, last_property_id,
+		       high_contrast, reduced_motion, default_route,
+		       explicit_density, explicit_default_route, last_property_id,
 		       preferences, created_at, updated_at
 		FROM admin_user_preferences
 		WHERE user_id = $1
@@ -36,6 +37,8 @@ func (s *Store) GetUserPreferencesRaw(ctx context.Context, db DBTX, userID uuid.
 		&out.HighContrast,
 		&out.ReducedMotion,
 		&out.DefaultRoute,
+		&out.ExplicitDensity,
+		&out.ExplicitDefaultRoute,
 		&out.LastPropertyID,
 		&rawPayload,
 		&out.CreatedAt,
@@ -66,26 +69,30 @@ func (s *Store) UpsertUserPreferences(ctx context.Context, db DBTX, p domain.Use
 	err = db.QueryRow(ctx, `
 		INSERT INTO admin_user_preferences (
 			user_id, schema_version, theme_mode, accent, density, text_scale,
-			high_contrast, reduced_motion, default_route, last_property_id,
+			high_contrast, reduced_motion, default_route,
+			explicit_density, explicit_default_route, last_property_id,
 			preferences, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW())
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, NOW())
 		ON CONFLICT (user_id) DO UPDATE SET
-			schema_version   = EXCLUDED.schema_version,
-			theme_mode       = EXCLUDED.theme_mode,
-			accent           = EXCLUDED.accent,
-			density          = EXCLUDED.density,
-			text_scale       = EXCLUDED.text_scale,
-			high_contrast    = EXCLUDED.high_contrast,
-			reduced_motion   = EXCLUDED.reduced_motion,
-			default_route    = EXCLUDED.default_route,
-			last_property_id = EXCLUDED.last_property_id,
-			preferences      = EXCLUDED.preferences,
-			updated_at       = NOW()
+			schema_version         = EXCLUDED.schema_version,
+			theme_mode             = EXCLUDED.theme_mode,
+			accent                 = EXCLUDED.accent,
+			density                = EXCLUDED.density,
+			text_scale             = EXCLUDED.text_scale,
+			high_contrast          = EXCLUDED.high_contrast,
+			reduced_motion         = EXCLUDED.reduced_motion,
+			default_route          = EXCLUDED.default_route,
+			explicit_density       = EXCLUDED.explicit_density,
+			explicit_default_route = EXCLUDED.explicit_default_route,
+			last_property_id       = EXCLUDED.last_property_id,
+			preferences            = EXCLUDED.preferences,
+			updated_at             = NOW()
 		RETURNING user_id, schema_version, theme_mode, accent, density, text_scale,
-		          high_contrast, reduced_motion, default_route, last_property_id,
+		          high_contrast, reduced_motion, default_route,
+		          explicit_density, explicit_default_route, last_property_id,
 		          preferences, created_at, updated_at
 	`, p.UserID, schemaVer, p.ThemeMode, p.Accent, p.Density, p.TextScale,
-		p.HighContrast, p.ReducedMotion, p.DefaultRoute, p.LastPropertyID, payloadBytes,
+		p.HighContrast, p.ReducedMotion, p.DefaultRoute, p.ExplicitDensity, p.ExplicitDefaultRoute, p.LastPropertyID, payloadBytes,
 	).Scan(
 		&out.UserID,
 		&out.SchemaVersion,
@@ -96,6 +103,8 @@ func (s *Store) UpsertUserPreferences(ctx context.Context, db DBTX, p domain.Use
 		&out.HighContrast,
 		&out.ReducedMotion,
 		&out.DefaultRoute,
+		&out.ExplicitDensity,
+		&out.ExplicitDefaultRoute,
 		&out.LastPropertyID,
 		&rawPayload,
 		&out.CreatedAt,
@@ -189,13 +198,17 @@ func (s *Store) UpsertPropertyWorkspace(
 	return norm, nil
 }
 
-// DeletePropertyWorkspace removes (user_id, property_id) workspace settings and saved views.
+// DeletePropertyWorkspace clears (user_id, property_id) workspace overrides and saved views
+// while preserving PWE-3 dashboard layout and PWE-5 selected_profile_code.
 func (s *Store) DeletePropertyWorkspace(ctx context.Context, db DBTX, userID, propertyID uuid.UUID) error {
 	if db == nil {
 		db = s.pool
 	}
 	_, err := db.Exec(ctx, `
-		DELETE FROM admin_user_property_workspaces
+		UPDATE admin_user_property_workspaces
+		SET preferences = '{}'::jsonb,
+		    saved_views = '[]'::jsonb,
+		    updated_at  = NOW()
 		WHERE user_id = $1 AND property_id = $2
 	`, userID, propertyID)
 	return MapErr(err)

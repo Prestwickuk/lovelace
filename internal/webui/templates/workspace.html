@@ -6,7 +6,7 @@
     <h1>{{$prop.Name}} — Personal Workspace</h1>
     <p class="subtitle">
       Customisable, permission-filtered operational workspace for <strong>{{.Actor.FullName}}</strong>
-      ({{if $layout.IsDefault}}Platform Default Layout{{else}}Saved Custom Layout · {{.Dashboard.WidgetCount}}/{{.Dashboard.MaxWidgets}} widgets{{end}}).
+      ({{if $layout.IsDefault}}{{if $layout.ProfileName}}{{$layout.ProfileName}} Profile Default{{else}}Platform Default Layout{{end}}{{else}}Saved Custom Layout · {{.Dashboard.WidgetCount}}/{{.Dashboard.MaxWidgets}} widgets{{end}}).
     </p>
   </div>
   <div class="btn-row-gap">
@@ -18,9 +18,9 @@
     {{end}}
     {{if not $layout.IsDefault}}
     <details class="inline-disclosure">
-      <summary class="btn btn-danger btn-sm">Reset to Default</summary>
-      <div class="inline-disclosure-panel" role="region" aria-label="Confirm workspace reset">
-        <span>Discard custom layout overrides for {{$prop.Name}} and restore the default layout?</span>
+      <summary class="btn btn-secondary btn-sm">Reset Layout Only</summary>
+      <div class="inline-disclosure-panel" role="region" aria-label="Confirm layout reset">
+        <span>Discard custom widget layout for {{$prop.Name}} while keeping your profile choice and personal preferences?</span>
         <form method="post" action="/workspace/reset" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <input type="hidden" name="property_id" value="{{$prop.ID}}">
@@ -32,6 +32,61 @@
     {{end}}
   </div>
 </div>
+
+<section class="card mb-3" aria-labelledby="workspace-profile-heading">
+  <div class="profile-bar">
+    <div class="profile-meta">
+      <div class="btn-row-gap">
+        <h2 id="workspace-profile-heading">Role Workspace Profile</h2>
+        {{if .Dashboard.ActiveProfile}}
+        <span class="badge badge-info">{{.Dashboard.ActiveProfile.Name}}</span>
+        {{else}}
+        <span class="badge badge-muted">Platform Default</span>
+        {{end}}
+        <span class="badge badge-muted">Density: {{$.Theme.Density}}</span>
+        <span class="badge badge-muted">Landing: {{$.Workspace.DefaultRoute}}</span>
+      </div>
+      {{if .Dashboard.ActiveProfile}}
+      <p class="subtitle mt-1">{{.Dashboard.ActiveProfile.Description}} Profiles set starting layout and presentation defaults without granting permissions.</p>
+      {{else}}
+      <p class="subtitle mt-1">Read-only role using LOVELACE safe permission-filtered defaults.</p>
+      {{end}}
+    </div>
+
+    <div class="btn-row-gap">
+      {{if gt (len .Dashboard.EligibleProfiles) 1}}
+      <form method="post" action="/workspace/profile" class="profile-switcher-form">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="property_id" value="{{$prop.ID}}">
+        <input type="hidden" name="return_to" value="/workspace">
+        <label for="workspace_profile_select" class="sr-only">Workspace Profile</label>
+        <select id="workspace_profile_select" name="profile_code" class="input-auto">
+          {{range .Dashboard.EligibleProfiles}}
+          <option value="{{.Code}}" {{if .IsSelected}}selected{{end}}>{{.Name}}{{if .IsDefaultForRole}} (Role Default){{end}}</option>
+          {{end}}
+        </select>
+        <button type="submit" class="btn btn-secondary btn-sm">Switch Profile</button>
+      </form>
+      {{end}}
+
+      <details class="inline-disclosure">
+        <summary class="btn btn-danger btn-sm">Reset to Profile Defaults</summary>
+        <div class="inline-disclosure-panel" role="region" aria-label="Confirm reset to role profile defaults">
+          <form method="post" action="/workspace/profile/reset" class="inline-row">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="property_id" value="{{$prop.ID}}">
+            <input type="hidden" name="return_to" value="/workspace">
+            <label class="reset-option-label">
+              <input type="checkbox" name="clear_named_overrides" value="1">
+              <span>Also clear personal density, landing page, and shortcut overrides</span>
+            </label>
+            <button type="submit" class="btn btn-danger btn-sm">Confirm Profile Reset</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
 
 {{if .Dashboard.Warnings}}
 <div class="alert alert-info mb-3" role="status">

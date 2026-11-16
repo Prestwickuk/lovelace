@@ -188,16 +188,16 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 		}
 	}
 
-	// Verify User B on the same property remains on clean platform defaults (strict per-user isolation).
+	// Verify User B (staff -> Reception profile) on the same property remains on clean defaults without User A overrides (strict per-user isolation).
 	respGetB, bodyGetB := getWebPage(t, clientB, srv.URL+"/account")
 	if respGetB.StatusCode != http.StatusOK {
 		t.Fatalf("GET /account user B status=%d", respGetB.StatusCode)
 	}
-	if !strings.Contains(bodyGetB, `data-theme="system" data-accent="teal" data-contrast="standard" data-motion="system" data-density="comfortable" data-text-scale="default"`) {
+	if !strings.Contains(bodyGetB, `data-theme="system" data-accent="teal" data-contrast="standard" data-motion="system" data-density="compact" data-text-scale="default"`) {
 		t.Errorf("User B leaked User A theme tokens! HTML excerpt: %.300s", bodyGetB)
 	}
-	if strings.Contains(bodyGetB, `Pinned Shortcuts`) {
-		t.Errorf("User B must not see User A pinned shortcuts")
+	if strings.Contains(bodyGetB, `href="/reports">Reports</a>`) || strings.Contains(bodyGetB, `data-accent="brass"`) || strings.Contains(bodyGetB, `data-theme="dark"`) {
+		t.Errorf("User B must not see User A pinned shortcuts or dark/brass overrides")
 	}
 
 	// Verify User A cannot read or modify User B's preferences via service or HTTP tampering.

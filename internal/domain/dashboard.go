@@ -419,9 +419,11 @@ type DashboardLayout struct {
 type ResolvedDashboardLayout struct {
 	SchemaVersion int                       `json:"schema_version"`
 	IsDefault     bool                      `json:"is_default"`
-	SourceLayer   string                    `json:"source_layer"` // "platform" | "user_property"
-	StoredWidgets []DashboardWidgetInstance `json:"-"`            // valid persisted items prior to runtime perm filtering
-	Widgets       []DashboardWidgetInstance `json:"widgets"`      // permission-filtered visible items
+	SourceLayer   string                    `json:"source_layer"` // "platform" | "profile" | "user_property"
+	ProfileCode   string                    `json:"profile_code,omitempty"`
+	ProfileName   string                    `json:"profile_name,omitempty"`
+	StoredWidgets []DashboardWidgetInstance `json:"-"`       // valid persisted items prior to runtime perm filtering
+	Widgets       []DashboardWidgetInstance `json:"widgets"` // permission-filtered visible items
 	Warnings      []string                  `json:"warnings,omitempty"`
 	UpdatedAt     *time.Time                `json:"updated_at,omitempty"`
 }
@@ -605,11 +607,14 @@ func DecodeAndNormalizeDashboardLayout(
 	futureProfileDefault *DashboardLayout, // Extension hook for PWE-5
 ) ResolvedDashboardLayout {
 	baseLayout := DefaultDashboardLayout()
+	defaultSourceLayer := "platform"
 	if futurePropertyDefault != nil {
 		baseLayout = *futurePropertyDefault
+		defaultSourceLayer = "property"
 	}
 	if futureProfileDefault != nil {
 		baseLayout = *futureProfileDefault
+		defaultSourceLayer = "profile"
 	}
 
 	trimmed := bytesTrimSpace(rawJSON)
@@ -618,7 +623,7 @@ func DecodeAndNormalizeDashboardLayout(
 		return ResolvedDashboardLayout{
 			SchemaVersion: CurrentDashboardLayoutSchemaVersion,
 			IsDefault:     true,
-			SourceLayer:   "platform",
+			SourceLayer:   defaultSourceLayer,
 			StoredWidgets: baseLayout.Widgets,
 			Widgets:       visible,
 		}
@@ -636,11 +641,11 @@ func DecodeAndNormalizeDashboardLayout(
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&doc); err != nil {
-		warnings = append(warnings, "corrupt saved dashboard layout recovered with platform defaults")
+		warnings = append(warnings, "corrupt saved dashboard layout recovered with defaults")
 		return ResolvedDashboardLayout{
 			SchemaVersion: CurrentDashboardLayoutSchemaVersion,
 			IsDefault:     true,
-			SourceLayer:   "platform",
+			SourceLayer:   defaultSourceLayer,
 			StoredWidgets: baseLayout.Widgets,
 			Widgets:       filterWidgetsByPermission(baseLayout.Widgets, permCheck),
 			Warnings:      warnings,

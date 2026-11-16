@@ -48,6 +48,9 @@
         <p class="subtitle">Applied deterministically across your administrative sessions without altering role permissions or property isolation.</p>
       </div>
       <div class="days-row">
+        {{if $.Workspace.ActiveProfile}}
+        <span class="badge badge-info">Profile: {{$.Workspace.ActiveProfile.Name}}</span>
+        {{end}}
         <span class="badge badge-info">Theme: {{$.Theme.Mode}}</span>
         <span class="badge badge-muted">Accent: {{$.Theme.Accent}}</span>
         <span class="badge badge-muted">Density: {{$.Theme.Density}}</span>
@@ -85,8 +88,9 @@
         <div class="field">
           <label for="density">Interface Density</label>
           <select id="density" name="density">
-            <option value="comfortable" {{if eq $.Workspace.Global.Density "comfortable"}}selected{{end}}>Comfortable</option>
-            <option value="compact" {{if eq $.Workspace.Global.Density "compact"}}selected{{end}}>Compact</option>
+            <option value="inherit" {{if not $.Workspace.Global.ExplicitDensity}}selected{{end}}>Inherit from Workspace Profile{{if $.Workspace.ActiveProfile}} ({{$.Workspace.ActiveProfile.DefaultDensity}}){{end}}</option>
+            <option value="comfortable" {{if and $.Workspace.Global.ExplicitDensity (eq $.Workspace.Global.Density "comfortable")}}selected{{end}}>Comfortable (override)</option>
+            <option value="compact" {{if and $.Workspace.Global.ExplicitDensity (eq $.Workspace.Global.Density "compact")}}selected{{end}}>Compact (override)</option>
           </select>
         </div>
 
@@ -102,8 +106,9 @@
         <div class="field">
           <label for="default_route">Preferred Landing Page</label>
           <select id="default_route" name="default_route">
+            <option value="" {{if not $.Workspace.Global.ExplicitDefaultRoute}}selected{{end}}>Inherit from Workspace Profile{{if $.Workspace.ActiveProfile}} ({{$.Workspace.ActiveProfile.DefaultLandingRoute}}){{end}}</option>
             {{range .PermittedRoutes}}
-            <option value="{{.Path}}" {{if eq .Path $.Workspace.Global.DefaultRoute}}selected{{end}}>{{.Label}} ({{.Path}})</option>
+            <option value="{{.Path}}" {{if and $.Workspace.Global.ExplicitDefaultRoute (eq .Path $.Workspace.Global.DefaultRoute)}}selected{{end}}>{{.Label}} ({{.Path}})</option>
             {{end}}
           </select>
         </div>
@@ -188,6 +193,36 @@
   </div>
 
   {{if $.Property.ID}}
+  <div class="card mb-3">
+    <div class="profile-bar">
+      <div class="profile-meta">
+        <h3>Role Workspace Profile — {{$.Property.Name}}</h3>
+        {{if $.Workspace.ActiveProfile}}
+        <p class="subtitle">Active profile: <strong>{{$.Workspace.ActiveProfile.Name}}</strong>. {{$.Workspace.ActiveProfile.Description}}</p>
+        {{else}}
+        <p class="subtitle">Using safe LOVELACE permission-filtered platform defaults for your role.</p>
+        {{end}}
+      </div>
+      <div class="btn-row-gap">
+        <a href="/workspace" class="btn btn-secondary btn-sm">Open My Workspace</a>
+        {{if gt (len $.Workspace.EligibleProfiles) 1}}
+        <form method="post" action="/workspace/profile" class="profile-switcher-form">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="property_id" value="{{$.Property.ID}}">
+          <input type="hidden" name="return_to" value="/account">
+          <label for="account_profile_select" class="sr-only">Workspace Profile</label>
+          <select id="account_profile_select" name="profile_code" class="input-auto">
+            {{range $.Workspace.EligibleProfiles}}
+            <option value="{{.Code}}" {{if .IsSelected}}selected{{end}}>{{.Name}}{{if .IsDefaultForRole}} (Role Default){{end}}</option>
+            {{end}}
+          </select>
+          <button type="submit" class="btn btn-primary btn-sm">Switch Profile</button>
+        </form>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
   <div class="card mb-3">
     <h3>Active Property Workspace — {{$.Property.Name}}</h3>
     <p class="subtitle mb-2">Scoped strictly to your account and active property ({{$.Property.Slug}}). Overrides global display defaults when set.</p>

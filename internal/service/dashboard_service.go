@@ -21,12 +21,14 @@ import (
 // Dashboard View Models returned strictly from typed service builders to SSR templates or API JSON.
 
 type WorkspaceDashboardData struct {
-	Property          domain.Property                `json:"property"`
-	Layout            domain.ResolvedDashboardLayout `json:"layout"`
-	Widgets           []RenderedDashboardWidget      `json:"widgets"`
-	EligibleCatalogue []domain.WidgetRegistryEntry   `json:"eligible_catalogue"`
-	UnitTypes         []domain.UnitType              `json:"unit_types,omitempty"`
-	Warnings          []string                       `json:"warnings,omitempty"`
+	Property          domain.Property                  `json:"property"`
+	Layout            domain.ResolvedDashboardLayout   `json:"layout"`
+	Widgets           []RenderedDashboardWidget        `json:"widgets"`
+	EligibleCatalogue []domain.WidgetRegistryEntry     `json:"eligible_catalogue"`
+	ActiveProfile     *domain.WorkspaceProfileSummary  `json:"active_profile,omitempty"`
+	EligibleProfiles  []domain.WorkspaceProfileSummary `json:"eligible_profiles,omitempty"`
+	UnitTypes         []domain.UnitType                `json:"unit_types,omitempty"`
+	Warnings          []string                         `json:"warnings,omitempty"`
 }
 
 type RenderedDashboardWidget struct {
@@ -244,6 +246,38 @@ func (s *Service) GetDashboardLayout(ctx context.Context, actor Actor, targetUse
 	return s.loadResolvedDashboardLayout(ctx, user, propertyID, catalog)
 }
 
+func (s *Service) decodeDashboardLayoutWithProfile(
+	ctx context.Context,
+	db postgres.DBTX,
+	user domain.AdminUser,
+	propertyID uuid.UUID,
+	schemaVer int,
+	rawJSON []byte,
+	updatedAt *time.Time,
+	catalog domain.PropertyResourceCatalog,
+	permCheck domain.PermCheckFunc,
+) (domain.ResolvedDashboardLayout, error) {
+	storedCode, err := s.store.GetWorkspaceProfileCode(ctx, db, user.ID, propertyID)
+	if err != nil {
+		return domain.ResolvedDashboardLayout{}, err
+	}
+	prof, _, profWarnings := domain.ResolveProfileForRole(user.Role, storedCode)
+	var profileDefault *domain.DashboardLayout
+	if prof != nil {
+		dl := prof.ToDashboardLayout()
+		profileDefault = &dl
+	}
+	resolved := domain.DecodeAndNormalizeDashboardLayout(schemaVer, rawJSON, updatedAt, catalog, permCheck, nil, profileDefault)
+	if prof != nil {
+		resolved.ProfileCode = prof.Code
+		resolved.ProfileName = prof.Name
+	}
+	if len(profWarnings) > 0 {
+		resolved.Warnings = append(profWarnings, resolved.Warnings...)
+	}
+	return resolved, nil
+}
+
 func (s *Service) loadResolvedDashboardLayout(
 	ctx context.Context,
 	user domain.AdminUser,
@@ -254,11 +288,11 @@ func (s *Service) loadResolvedDashboardLayout(
 	ver, rawJSON, updatedAt, err := s.store.GetPropertyDashboardLayoutRaw(ctx, nil, user.ID, propertyID)
 	if err != nil {
 		if postgres.IsNotFound(err) {
-			return domain.DecodeAndNormalizeDashboardLayout(1, nil, nil, catalog, permCheck, nil, nil), nil
+			return s.decodeDashboardLayoutWithProfile(ctx, nil, user, propertyID, 1, nil, nil, catalog, permCheck)
 		}
 		return domain.ResolvedDashboardLayout{}, err
 	}
-	return domain.DecodeAndNormalizeDashboardLayout(ver, rawJSON, updatedAt, catalog, permCheck, nil, nil), nil
+	return s.decodeDashboardLayoutWithProfile(ctx, nil, user, propertyID, ver, rawJSON, updatedAt, catalog, permCheck)
 }
 
 // SaveDashboardLayout validates and persists targetUserID's (user_id, property_id) dashboard layout
@@ -305,14 +339,14 @@ func (s *Service) SaveDashboardLayout(
 		if uErr != nil {
 			return uErr
 		}
-		out = domain.DecodeAndNormalizeDashboardLayout(clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck, nil, nil)
-		return nil
+		out, uErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck)
+		return uErr
 	})
 	return out, err
 }
 
 // ResetDashboardLayout clears targetUserID's dashboard layout override for propertyID while
-// preserving PWE-2 workspace preferences and saved views.
+// preserving PWE-2 workspace preferences, saved views, and selected PWE-5 workspace profile.
 func (s *Service) ResetDashboardLayout(ctx context.Context, actor Actor, targetUserID, propertyID uuid.UUID) (domain.ResolvedDashboardLayout, error) {
 	user, err := s.verifyPersonalisationUser(ctx, actor, targetUserID, false)
 	if err != nil {
@@ -331,7 +365,7 @@ func (s *Service) ResetDashboardLayout(ctx context.Context, actor Actor, targetU
 	if err := s.store.ResetPropertyDashboardLayout(ctx, nil, user.ID, propertyID); err != nil {
 		return domain.ResolvedDashboardLayout{}, err
 	}
-	return domain.DecodeAndNormalizeDashboardLayout(1, nil, nil, catalog, actorPermChecker(user.Role), nil, nil), nil
+	return s.decodeDashboardLayoutWithProfile(ctx, nil, user, propertyID, 1, nil, nil, catalog, actorPermChecker(user.Role))
 }
 
 // AddDashboardWidget appends an eligible widget instance to targetUserID's layout.
@@ -404,8 +438,8 @@ func (s *Service) AddDashboardWidget(
 		if uErr != nil {
 			return uErr
 		}
-		out = domain.DecodeAndNormalizeDashboardLayout(clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck, nil, nil)
-		return nil
+		out, uErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck)
+		return uErr
 	})
 	return out, err
 }
@@ -479,8 +513,8 @@ func (s *Service) UpdateDashboardWidget(
 		if uErr != nil {
 			return uErr
 		}
-		out = domain.DecodeAndNormalizeDashboardLayout(clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck, nil, nil)
-		return nil
+		out, uErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck)
+		return uErr
 	})
 	return out, err
 }
@@ -571,8 +605,8 @@ func (s *Service) MoveDashboardWidget(
 		if uErr != nil {
 			return uErr
 		}
-		out = domain.DecodeAndNormalizeDashboardLayout(clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck, nil, nil)
-		return nil
+		out, uErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, clean.SchemaVersion, rawBytes, &updAt, catalog, permCheck)
+		return uErr
 	})
 	return out, err
 }
@@ -629,8 +663,8 @@ func (s *Service) RemoveDashboardWidget(
 		if uErr != nil {
 			return uErr
 		}
-		out = domain.DecodeAndNormalizeDashboardLayout(cur.SchemaVersion, rawBytes, &updAt, catalog, permCheck, nil, nil)
-		return nil
+		out, uErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, cur.SchemaVersion, rawBytes, &updAt, catalog, permCheck)
+		return uErr
 	})
 	return out, err
 }
@@ -648,15 +682,22 @@ func (s *Service) loadMutableDashboardLayoutTx(
 		return domain.DashboardLayout{}, err
 	}
 	var resolved domain.ResolvedDashboardLayout
+	var decErr error
 	if postgres.IsNotFound(err) || len(rawJSON) == 0 {
-		resolved = domain.DecodeAndNormalizeDashboardLayout(1, nil, nil, catalog, permCheck, nil, nil)
+		resolved, decErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, 1, nil, nil, catalog, permCheck)
+		if decErr != nil {
+			return domain.DashboardLayout{}, decErr
+		}
 		// Materialize ONLY the user's permitted default widgets on first customization so editing preserves visible order cleanly.
 		return domain.DashboardLayout{
 			SchemaVersion: domain.CurrentDashboardLayoutSchemaVersion,
 			Widgets:       slices.Clone(resolved.Widgets),
 		}, nil
 	}
-	resolved = domain.DecodeAndNormalizeDashboardLayout(ver, rawJSON, updatedAt, catalog, permCheck, nil, nil)
+	resolved, decErr = s.decodeDashboardLayoutWithProfile(ctx, tx, user, propertyID, ver, rawJSON, updatedAt, catalog, permCheck)
+	if decErr != nil {
+		return domain.DashboardLayout{}, decErr
+	}
 	widgets := slices.Clone(resolved.Widgets)
 	for i := range widgets {
 		widgets[i].Position = i + 1
@@ -807,11 +848,14 @@ func (s *Service) GetWorkspaceDashboard(
 		rendered = append(rendered, rw)
 	}
 
+	profState, _, _ := s.resolveWorkspaceProfileState(ctx, nil, user, propertyID)
 	return WorkspaceDashboardData{
 		Property:          prop,
 		Layout:            resolved,
 		Widgets:           rendered,
 		EligibleCatalogue: eligible,
+		ActiveProfile:     profState.ActiveProfile,
+		EligibleProfiles:  profState.EligibleProfiles,
 		UnitTypes:         unitTypes,
 		Warnings:          resolved.Warnings,
 	}, nil

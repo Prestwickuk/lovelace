@@ -44,9 +44,9 @@ Dark mode (`[data-theme="dark"]` and OS-following `[data-theme="system"]` via `@
 
 ---
 
-## 4. PWE Status & Future Extensions (`PWE-1`–`PWE-4` Implemented; `PWE-5` `PROPOSED / FUTURE`)
+## 4. PWE Status (`PWE-1`–`PWE-5` Implemented)
 
-`PWE-1` (Admin Design System & Theme Engine), `PWE-2` (per-user theme, accessibility, navigation, and property-scoped operational preferences in `0022_pwe2_user_personalisation.sql`), `PWE-3` (customisable permission-filtered `/workspace` dashboard builder in `0023_pwe3_dashboard_builder.sql`), and `PWE-4` (Property Branding with server-validated custom `#RRGGBB` palettes, PNG/JPEG/WebP sanitized `BlobStore` logo management, non-destructive preview, admin-only terminology overrides, and strict public projection in `0024_pwe4_property_branding.sql`) are **Implemented**. Workspace presets (`PWE-5`) remain **`PROPOSED / FUTURE`** and are documented in:
+`PWE-1` (Admin Design System & Theme Engine), `PWE-2` (per-user theme, accessibility, navigation, and property-scoped operational preferences in `0022_pwe2_user_personalisation.sql`), `PWE-3` (customisable permission-filtered `/workspace` dashboard builder in `0023_pwe3_dashboard_builder.sql`), `PWE-4` (Property Branding with server-validated custom `#RRGGBB` palettes, PNG/JPEG/WebP sanitized `BlobStore` logo management, non-destructive preview, admin-only terminology overrides, and strict public projection in `0024_pwe4_property_branding.sql`), and `PWE-5` (role-aligned Owner/Administrator, Reception, Housekeeping, and Maintenance workspace profiles in `0025_pwe5_workspace_profiles.sql`) are **Implemented**. See:
 
-- [Personalisation & Workspace Experience (`PROPOSED / FUTURE`)](personalisation-workspace-experience.md)
+- [Personalisation & Workspace Experience](personalisation-workspace-experience.md)
 - [ADR-0001: Public/Administrative Separation & PWE Boundaries](adr/0001-public-admin-separation-and-pwe-boundaries.md)

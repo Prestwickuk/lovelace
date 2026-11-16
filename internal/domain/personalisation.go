@@ -150,34 +150,40 @@ type UserPreferencePayload struct {
 
 // UserPreferences stores authenticated admin-user global PWE-2 personalisation.
 type UserPreferences struct {
-	UserID         uuid.UUID             `json:"user_id"`
-	SchemaVersion  int                   `json:"schema_version"`
-	ThemeMode      string                `json:"theme_mode"`
-	Accent         string                `json:"accent"`
-	Density        string                `json:"density"`
-	TextScale      string                `json:"text_scale"`
-	HighContrast   bool                  `json:"high_contrast"`
-	ReducedMotion  bool                  `json:"reduced_motion"`
-	DefaultRoute   string                `json:"default_route"`
-	LastPropertyID *uuid.UUID            `json:"last_property_id,omitempty"`
-	Payload        UserPreferencePayload `json:"payload"`
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
+	UserID               uuid.UUID             `json:"user_id"`
+	SchemaVersion        int                   `json:"schema_version"`
+	ThemeMode            string                `json:"theme_mode"`
+	Accent               string                `json:"accent"`
+	Density              string                `json:"density"`
+	TextScale            string                `json:"text_scale"`
+	HighContrast         bool                  `json:"high_contrast"`
+	ReducedMotion        bool                  `json:"reduced_motion"`
+	DefaultRoute         string                `json:"default_route"`
+	ExplicitDensity      bool                  `json:"explicit_density"`
+	ExplicitDefaultRoute bool                  `json:"explicit_default_route"`
+	InheritDensity       bool                  `json:"inherit_density,omitempty"`
+	InheritDefaultRoute  bool                  `json:"inherit_default_route,omitempty"`
+	LastPropertyID       *uuid.UUID            `json:"last_property_id,omitempty"`
+	Payload              UserPreferencePayload `json:"payload"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
 }
 
 // DefaultUserPreferences returns safe platform defaults for global preferences.
 func DefaultUserPreferences(userID uuid.UUID) UserPreferences {
 	def := branding.DefaultTheme()
 	return UserPreferences{
-		UserID:        userID,
-		SchemaVersion: CurrentPreferenceSchemaVersion,
-		ThemeMode:     def.Mode,
-		Accent:        def.Accent,
-		Density:       def.Density,
-		TextScale:     def.TextScale,
-		HighContrast:  false,
-		ReducedMotion: false,
-		DefaultRoute:  "/",
+		UserID:              userID,
+		SchemaVersion:       CurrentPreferenceSchemaVersion,
+		ThemeMode:           def.Mode,
+		Accent:              def.Accent,
+		Density:             def.Density,
+		TextScale:           def.TextScale,
+		HighContrast:        false,
+		ReducedMotion:       false,
+		DefaultRoute:        "/",
+		InheritDensity:      true,
+		InheritDefaultRoute: true,
 		Payload: UserPreferencePayload{
 			CalendarHorizon:  HorizonMonth,
 			CalendarGrouping: GroupingUnit,
@@ -254,20 +260,23 @@ type ResolvedShortcut struct {
 
 // ResolvedWorkspace is the final sanitized PWE-2 layer cascade output for SSR.
 type ResolvedWorkspace struct {
-	Theme             branding.ThemeSelection
-	DefaultRoute      string
-	Shortcuts         []ResolvedShortcut
-	CollapsedSections map[string]bool
-	CalendarHorizon   string
-	CalendarGrouping  string
-	TablePageSize     int
-	ReservationsSort  string
-	GuestsSort        string
-	SavedViews        []SavedOperationalView
-	Global            UserPreferences
-	PropertyWorkspace *UserPropertyWorkspace
-	ActivePropertyID  *uuid.UUID
-	Warnings          []string
+	Theme               branding.ThemeSelection
+	DefaultRoute        string
+	Shortcuts           []ResolvedShortcut
+	CollapsedSections   map[string]bool
+	CalendarHorizon     string
+	CalendarGrouping    string
+	TablePageSize       int
+	ReservationsSort    string
+	GuestsSort          string
+	SavedViews          []SavedOperationalView
+	Global              UserPreferences
+	PropertyWorkspace   *UserPropertyWorkspace
+	ActivePropertyID    *uuid.UUID
+	ActiveProfile       *WorkspaceProfileSummary
+	SelectedProfileCode string
+	EligibleProfiles    []WorkspaceProfileSummary
+	Warnings            []string
 }
 
 // DefaultResolvedWorkspace returns safe platform defaults for anonymous/rotation states.
@@ -393,6 +402,8 @@ func DecodeAndNormalizeUserPreferences(
 	} else if row.Density != "" {
 		warnings = append(warnings, "unrecognised density reset to comfortable")
 	}
+	out.ExplicitDensity = row.ExplicitDensity || out.Density != branding.ThemeDensityComfortable
+	out.InheritDensity = !out.ExplicitDensity
 
 	switch strings.ToLower(strings.TrimSpace(row.TextScale)) {
 	case branding.ThemeTextScaleDefault, "normal":
@@ -413,6 +424,8 @@ func DecodeAndNormalizeUserPreferences(
 	} else if strings.TrimSpace(row.DefaultRoute) != "" {
 		warnings = append(warnings, "invalid default_route reset to /")
 	}
+	out.ExplicitDefaultRoute = row.ExplicitDefaultRoute || out.DefaultRoute != "/"
+	out.InheritDefaultRoute = !out.ExplicitDefaultRoute
 
 	if len(bytesTrimSpace(rawPayload)) > 0 {
 		var rawObj map[string]json.RawMessage
@@ -637,11 +650,17 @@ func ValidateUserPreferencesInput(in UserPreferences, permCheck PermCheckFunc) (
 	}
 
 	density := strings.ToLower(strings.TrimSpace(in.Density))
-	switch density {
-	case branding.ThemeDensityComfortable, branding.ThemeDensityCompact:
+	switch {
+	case density == "inherit" || (in.InheritDensity && !in.ExplicitDensity && (density == "" || density == branding.ThemeDensityComfortable)):
+		out.Density = branding.ThemeDensityComfortable
+		out.ExplicitDensity = false
+		out.InheritDensity = true
+	case density == branding.ThemeDensityComfortable || density == branding.ThemeDensityCompact:
 		out.Density = density
+		out.ExplicitDensity = true
+		out.InheritDensity = false
 	default:
-		errs["density"] = "must be comfortable or compact"
+		errs["density"] = "must be inherit, comfortable, or compact"
 	}
 
 	scale := strings.ToLower(strings.TrimSpace(in.TextScale))
@@ -655,13 +674,22 @@ func ValidateUserPreferencesInput(in UserPreferences, permCheck PermCheckFunc) (
 	out.HighContrast = in.HighContrast
 	out.ReducedMotion = in.ReducedMotion
 
-	routeOpt, ok := LookupAdminRoute(in.DefaultRoute)
-	if !ok {
-		errs["default_route"] = "must be an allowlisted administrative console route"
-	} else if permCheck != nil && routeOpt.PermKey != "" && !permCheck(routeOpt.PermKey) {
-		errs["default_route"] = "cannot select a landing route outside your permitted access"
+	rawRoute := strings.TrimSpace(in.DefaultRoute)
+	if rawRoute == "" || (in.InheritDefaultRoute && !in.ExplicitDefaultRoute && rawRoute == "/") {
+		out.DefaultRoute = "/"
+		out.ExplicitDefaultRoute = false
+		out.InheritDefaultRoute = true
 	} else {
-		out.DefaultRoute = routeOpt.Path
+		routeOpt, ok := LookupAdminRoute(rawRoute)
+		if !ok {
+			errs["default_route"] = "must be an allowlisted administrative console route"
+		} else if permCheck != nil && routeOpt.PermKey != "" && !permCheck(routeOpt.PermKey) {
+			errs["default_route"] = "cannot select a landing route outside your permitted access"
+		} else {
+			out.DefaultRoute = routeOpt.Path
+			out.ExplicitDefaultRoute = true
+			out.InheritDefaultRoute = false
+		}
 	}
 
 	if len(in.Payload.Shortcuts) > MaxPinnedShortcuts {
@@ -849,12 +877,26 @@ func ValidateSavedViewInput(in SavedOperationalView, catalog PropertyResourceCat
 	}, nil
 }
 
-// ResolveLayerCascade merges Platform -> (Property/Profile future) -> User Global -> User Active Property
-// and filters landing routes, shortcuts, and saved views by live actor permissions.
+// ResolveLayerCascade merges Platform -> User Global -> User Active Property
+// without a role-bound PWE-5 profile (preserved for legacy unit callers).
 func ResolveLayerCascade(
 	globalPrefs UserPreferences,
 	propWorkspace *UserPropertyWorkspace,
 	activePropID *uuid.UUID,
+	permCheck PermCheckFunc,
+	initialWarnings []string,
+) ResolvedWorkspace {
+	return ResolveLayerCascadeWithProfile(globalPrefs, propWorkspace, activePropID, "", "", permCheck, initialWarnings)
+}
+
+// ResolveLayerCascadeWithProfile merges Platform -> Workspace Profile -> User Global -> User Active Property
+// and filters profile, landing route, shortcuts, and saved views by live actor role and permissions.
+func ResolveLayerCascadeWithProfile(
+	globalPrefs UserPreferences,
+	propWorkspace *UserPropertyWorkspace,
+	activePropID *uuid.UUID,
+	role Role,
+	storedProfileCode string,
 	permCheck PermCheckFunc,
 	initialWarnings []string,
 ) ResolvedWorkspace {
@@ -866,8 +908,28 @@ func ResolveLayerCascade(
 		res.Warnings = append(res.Warnings, initialWarnings...)
 	}
 
-	// Layer 4: User Global Preferences
-	res.Theme = globalPrefs.ToThemeSelection()
+	// Layer 3: Role-mapped PWE-5 Workspace Profile (strictly presentational)
+	resolvedProfile, activeCode, profWarnings := ResolveProfileForRole(role, storedProfileCode)
+	if len(profWarnings) > 0 {
+		res.Warnings = append(res.Warnings, profWarnings...)
+	}
+	res.SelectedProfileCode = activeCode
+	defaultProfileCode := DefaultProfileCodeForRole(role)
+	for _, ep := range EligibleProfilesForRole(role) {
+		res.EligibleProfiles = append(res.EligibleProfiles, ep.ToSummary(activeCode, defaultProfileCode, permCheck))
+	}
+	if resolvedProfile != nil {
+		summary := resolvedProfile.ToSummary(activeCode, defaultProfileCode, permCheck)
+		res.ActiveProfile = &summary
+	}
+
+	// Layer 4: User Global Preferences (inheriting profile defaults when not explicitly overridden)
+	themePrefs := globalPrefs
+	if !globalPrefs.ExplicitDensity && resolvedProfile != nil && resolvedProfile.DefaultDensity != "" {
+		themePrefs.Density = resolvedProfile.DefaultDensity
+	}
+	res.Theme = themePrefs.ToThemeSelection()
+
 	if globalPrefs.Payload.CalendarHorizon != "" {
 		if norm, ok := IsAllowedHorizon(globalPrefs.Payload.CalendarHorizon, false); ok {
 			res.CalendarHorizon = norm
@@ -887,8 +949,22 @@ func ResolveLayerCascade(
 		}
 	}
 
-	rawDefaultRoute := globalPrefs.DefaultRoute
-	rawShortcuts := globalPrefs.Payload.Shortcuts
+	rawDefaultRoute := "/"
+	var rawShortcuts []string
+	if resolvedProfile != nil {
+		if resolvedProfile.DefaultLandingRoute != "" {
+			rawDefaultRoute = resolvedProfile.DefaultLandingRoute
+		}
+		if len(resolvedProfile.DefaultShortcuts) > 0 {
+			rawShortcuts = resolvedProfile.DefaultShortcuts
+		}
+	}
+	if globalPrefs.ExplicitDefaultRoute {
+		rawDefaultRoute = globalPrefs.DefaultRoute
+	}
+	if len(globalPrefs.Payload.Shortcuts) > 0 {
+		rawShortcuts = globalPrefs.Payload.Shortcuts
+	}
 
 	// Layer 5: User + Active Authorized Property Workspace Overrides
 	if propWorkspace != nil && activePropID != nil && propWorkspace.PropertyID == *activePropID {

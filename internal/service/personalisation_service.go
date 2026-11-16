@@ -381,6 +381,7 @@ func (s *Service) ResolveWorkspace(ctx context.Context, actor Actor, activePrope
 
 	var validatedPropID *uuid.UUID
 	var propWS *domain.UserPropertyWorkspace
+	var storedProfileCode string
 	if activePropertyID != nil && *activePropertyID != uuid.Nil {
 		if user.PropertyID != nil && *user.PropertyID != *activePropertyID {
 			warnings = append(warnings, "discarded active property presentation state due to lost property scope")
@@ -393,16 +394,21 @@ func (s *Service) ResolveWorkspace(ctx context.Context, actor Actor, activePrope
 					propWS = &ws
 					warnings = append(warnings, propWarnings...)
 				}
+				if code, cerr := s.store.GetWorkspaceProfileCode(ctx, nil, user.ID, pid); cerr == nil {
+					storedProfileCode = code
+				}
 			} else {
 				warnings = append(warnings, "active property not found; property workspace state discarded")
 			}
 		}
 	}
 
-	return domain.ResolveLayerCascade(
+	return domain.ResolveLayerCascadeWithProfile(
 		globalPrefs,
 		propWS,
 		validatedPropID,
+		user.Role,
+		storedProfileCode,
 		actorPermChecker(user.Role),
 		warnings,
 	), nil

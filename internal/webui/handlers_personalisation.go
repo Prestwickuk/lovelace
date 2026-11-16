@@ -60,15 +60,24 @@ func (h *Handler) handleAccountGlobalPreferencesPost(w http.ResponseWriter, r *h
 	if !ok {
 		return
 	}
+	rawDensity := strings.TrimSpace(r.FormValue("density"))
+	explicitDensity := rawDensity != "" && !strings.EqualFold(rawDensity, "inherit")
+	rawRoute := strings.TrimSpace(r.FormValue("default_route"))
+	explicitRoute := rawRoute != ""
+
 	in := domain.UserPreferences{
-		UserID:        targetUserID,
-		ThemeMode:     r.FormValue("theme_mode"),
-		Accent:        r.FormValue("accent"),
-		Density:       r.FormValue("density"),
-		TextScale:     r.FormValue("text_scale"),
-		HighContrast:  r.FormValue("high_contrast") == "1" || r.FormValue("high_contrast") == "true",
-		ReducedMotion: r.FormValue("reduced_motion") == "1" || r.FormValue("reduced_motion") == "true",
-		DefaultRoute:  r.FormValue("default_route"),
+		UserID:               targetUserID,
+		ThemeMode:            r.FormValue("theme_mode"),
+		Accent:               r.FormValue("accent"),
+		Density:              rawDensity,
+		TextScale:            r.FormValue("text_scale"),
+		HighContrast:         r.FormValue("high_contrast") == "1" || r.FormValue("high_contrast") == "true",
+		ReducedMotion:        r.FormValue("reduced_motion") == "1" || r.FormValue("reduced_motion") == "true",
+		DefaultRoute:         rawRoute,
+		ExplicitDensity:      explicitDensity,
+		ExplicitDefaultRoute: explicitRoute,
+		InheritDensity:       !explicitDensity,
+		InheritDefaultRoute:  !explicitRoute,
 		Payload: domain.UserPreferencePayload{
 			Shortcuts:         r.Form["shortcuts"],
 			CollapsedSections: r.Form["collapsed_sections"],
