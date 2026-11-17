@@ -143,6 +143,10 @@
         <input id="stripe_enabled" name="stripe_enabled" type="checkbox" value="true" {{if .Policy.StripeEnabled}}checked{{end}} {{if not .CanWriteProperty}}disabled{{end}}>
         <label for="stripe_enabled" class="m-0">Enable Public Online Checkout (Stripe)</label>
       </div>
+      <div class="checkbox-row">
+        <input id="guest_portal_enabled" name="guest_portal_enabled" type="checkbox" value="true" {{if and .GlobalPortalEnabled .Policy.GuestPortalEnabled}}checked{{end}} {{if or (not .CanWriteProperty) (not .GlobalPortalEnabled)}}disabled{{end}}>
+        <label for="guest_portal_enabled" class="m-0">Enable Self-Service Guest Portal (Staging / Pilot Policy Gate){{if not .GlobalPortalEnabled}} — <em>locked off while TIRBACH_GUEST_PORTAL_ENABLED=false</em>{{end}}</label>
+      </div>
       <div class="field field-full">
         <label for="cancellation_policy">Cancellation Policy</label>
         <textarea id="cancellation_policy" name="cancellation_policy" {{if not .CanWriteProperty}}disabled{{end}}>{{.Policy.CancellationPolicy}}</textarea>

@@ -149,7 +149,7 @@ func (s *Store) ListReservations(ctx context.Context, propertyID uuid.UUID, f Re
 		       channel_code, lower(stay_range), upper(stay_range),
 		       adults, children, infants, status,
 		       payment_status, total_pence, deposit_pence, amount_paid_pence, balance_due_pence, currency,
-		       occupant_details, internal_notes, cancellation_reason, cancelled_at,
+		       occupant_details, estimated_arrival_time, guest_arrival_notes, internal_notes, cancellation_reason, cancelled_at,
 		       cancellation_requested_at, cancellation_request_note,
 		       created_by, updated_by, version, created_at, updated_at
 		FROM reservations
@@ -201,7 +201,7 @@ func (s *Store) GetReservation(ctx context.Context, db DBTX, propertyID, id uuid
 		       channel_code, lower(stay_range), upper(stay_range),
 		       adults, children, infants, status,
 		       payment_status, total_pence, deposit_pence, amount_paid_pence, balance_due_pence, currency,
-		       occupant_details, internal_notes, cancellation_reason, cancelled_at,
+		       occupant_details, estimated_arrival_time, guest_arrival_notes, internal_notes, cancellation_reason, cancelled_at,
 		       cancellation_requested_at, cancellation_request_note,
 		       created_by, updated_by, version, created_at, updated_at
 		FROM reservations
@@ -842,7 +842,7 @@ func scanReservation(r scannable) (domain.Reservation, error) {
 		&res.ChannelCode, &res.ArrivalDate, &res.DepartureDate,
 		&res.Adults, &res.Children, &res.Infants, &status,
 		&res.PaymentStatus, &res.TotalPence, &res.DepositPence, &res.AmountPaidPence, &res.BalanceDuePence, &res.Currency,
-		&res.OccupantDetails, &res.InternalNotes, &res.CancellationReason, &res.CancelledAt,
+		&res.OccupantDetails, &res.EstimatedArrivalTime, &res.GuestArrivalNotes, &res.InternalNotes, &res.CancellationReason, &res.CancelledAt,
 		&res.CancellationRequestedAt, &res.CancellationRequestNote,
 		&res.CreatedBy, &res.UpdatedBy, &res.Version, &res.CreatedAt, &res.UpdatedAt,
 	)

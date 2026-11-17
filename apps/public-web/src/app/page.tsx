@@ -36,6 +36,7 @@ export default async function HomePage() {
         region={prop?.region || "Pembrokeshire, Wales"}
         branding={prop?.branding}
         propertySlug={prop?.slug}
+        portalEnabled={Boolean(prop?.policy?.guest_portal_enabled)}
       />
 
       <main>

@@ -7,11 +7,13 @@ export function SiteHeader({
   region = "Pembrokeshire, Wales",
   branding,
   propertySlug = "tir-bach",
+  portalEnabled = false,
 }: {
   propertyName?: string;
   region?: string;
   branding?: PublicPropertyBranding;
   propertySlug?: string;
+  portalEnabled?: boolean;
 }) {
   const title = branding?.display_name || propertyName;
   const sub = branding?.region_label || region;
@@ -40,6 +42,7 @@ export function SiteHeader({
           <Link href="/#facilities">Policies &amp; Stay Info</Link>
           <Link href="/#location">Location</Link>
           <Link href="/lookup">Manage Booking</Link>
+          {portalEnabled ? <Link href="/portal">Guest Portal</Link> : null}
           <Link href="/stays" className="btn btn-primary" style={{ padding: "0.52rem 1rem" }}>
             Book Direct
           </Link>
@@ -94,6 +97,11 @@ export function SiteFooter({ property }: { property?: PublicPropertyView }) {
               <li>
                 <Link href="/lookup">Find My Booking</Link>
               </li>
+              {property?.policy?.guest_portal_enabled ? (
+                <li>
+                  <Link href="/portal">Guest Portal</Link>
+                </li>
+              ) : null}
               <li>
                 <Link href="/terms">Booking Terms &amp; Cancellations</Link>
               </li>

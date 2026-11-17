@@ -568,6 +568,7 @@ type baseView struct {
 	CanManageTemplates    bool
 	CanReadReports        bool
 	CanExportReports      bool
+	GlobalPortalEnabled   bool
 }
 
 func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor service.Actor, title, nav string) (baseView, error) {
@@ -710,6 +711,7 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		CanManageTemplates:    auth.HasPermission(actor.Role, auth.PermCommsTemplates),
 		CanReadReports:        auth.HasPermission(actor.Role, auth.PermReportsRead),
 		CanExportReports:      auth.HasPermission(actor.Role, auth.PermReportsExport),
+		GlobalPortalEnabled:   h.cfg.GuestPortalEnabled,
 	}, nil
 }
 

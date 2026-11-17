@@ -32,6 +32,8 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/consent", h.requireAuth(true, h.handleRecordGuestConsent))
 	mux.HandleFunc("GET /api/v1/properties/{propertyID}/guests/{guestID}/export", h.requireAuth(false, h.handleExportGuestData))
 	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/anonymize", h.requireAuth(true, h.handleAnonymizeGuest))
+	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/portal/send-verification", h.requireAuth(true, h.handleSendGuestPortalVerification))
+	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/portal/revoke-sessions", h.requireAuth(true, h.handleRevokeGuestPortalSessions))
 
 	// Guest enquiries, special requests & complaints.
 	mux.HandleFunc("GET /api/v1/properties/{propertyID}/enquiries", h.requireAuth(false, h.handleListGuestEnquiries))
@@ -781,4 +783,41 @@ func (h *Handler) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) handleSendGuestPortalVerification(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, ok := parseUUIDParam(w, r, "propertyID")
+	if !ok {
+		return
+	}
+	guestID, ok := parseUUIDParam(w, r, "guestID")
+	if !ok {
+		return
+	}
+	if err := h.svc.SendGuestPortalVerification(r.Context(), actor, propID, guestID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status": "queued",
+	})
+}
+
+func (h *Handler) handleRevokeGuestPortalSessions(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, ok := parseUUIDParam(w, r, "propertyID")
+	if !ok {
+		return
+	}
+	guestID, ok := parseUUIDParam(w, r, "guestID")
+	if !ok {
+		return
+	}
+	revoked, err := h.svc.RevokeGuestPortalSessions(r.Context(), actor, propID, guestID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"revoked_count": revoked,
+	})
 }

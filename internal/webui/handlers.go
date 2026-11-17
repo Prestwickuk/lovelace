@@ -119,6 +119,11 @@ func (h *Handler) handleBookingPolicyPost(w http.ResponseWriter, r *http.Request
 		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
 		return
 	}
+	existingPolicy, _ := h.svc.GetBookingPolicy(r.Context(), actor, base.Property.ID)
+	guestPortalEnabled := existingPolicy.GuestPortalEnabled
+	if h.cfg.GuestPortalEnabled {
+		guestPortalEnabled = r.FormValue("guest_portal_enabled") == "true"
+	}
 	policy := domain.PropertyBookingPolicy{
 		PropertyID:                  base.Property.ID,
 		HoldDurationMinutes:         parseIntDefault(r.FormValue("hold_duration_minutes"), 15),
@@ -138,6 +143,7 @@ func (h *Handler) handleBookingPolicyPost(w http.ResponseWriter, r *http.Request
 		PetPolicy:                   r.FormValue("pet_policy"),
 		PrivacyNotice:               r.FormValue("privacy_notice"),
 		StripeEnabled:               r.FormValue("stripe_enabled") == "true",
+		GuestPortalEnabled:          guestPortalEnabled,
 		Version:                     parseIntDefault(r.FormValue("version"), 1),
 	}
 	if _, err := h.svc.UpdateBookingPolicy(r.Context(), actor, policy); err != nil {

@@ -62,6 +62,7 @@ type PropertyBookingPolicy struct {
 	PetPolicy                   string    `json:"pet_policy"`
 	PrivacyNotice               string    `json:"privacy_notice"`
 	StripeEnabled               bool      `json:"stripe_enabled"`
+	GuestPortalEnabled          bool      `json:"guest_portal_enabled"`
 	Version                     int       `json:"version"`
 	UpdatedAt                   time.Time `json:"updated_at"`
 }

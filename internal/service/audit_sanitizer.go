@@ -137,7 +137,7 @@ var auditEnumSets = map[string]map[string]bool{
 	"reservation_changed_field": {
 		"guest_name": true, "guest_email": true, "guest_phone": true, "occupant_details": true,
 		"stay_dates": true, "party_size": true, "channel_code": true, "status": true,
-		"financials": true, "internal_notes": true,
+		"financials": true, "internal_notes": true, "arrival_details": true,
 	},
 	"dismissal_reason_category": {
 		"DIFFERENT_PEOPLE": true, "FAMILY_SAME_ADDRESS": true, "CORPORATE_SHARED": true,
@@ -167,7 +167,16 @@ var auditEnumSets = map[string]map[string]bool{
 		"LOW": true, "NORMAL": true, "HIGH": true, "URGENT": true,
 	},
 	"enquiry_source": {
-		"PHONE": true, "IN_PERSON": true, "EMAIL": true, "WEB": true, "ADMIN": true,
+		"PHONE": true, "IN_PERSON": true, "EMAIL": true, "WEB": true, "ADMIN": true, "PORTAL": true,
+	},
+	"portal_identity_status": {
+		"ACTIVE": true, "SUSPENDED": true,
+	},
+	"portal_challenge_purpose": {
+		"LOGIN": true, "VERIFY_EMAIL": true, "STEP_UP": true,
+	},
+	"portal_session_scope": {
+		"BOOKING": true, "ACCOUNT": true,
 	},
 	"note_category": {
 		"GENERAL": true, "BOOKING": true, "PREFERENCE": true, "CUSTOMER_SERVICE": true, "OPERATIONAL": true,
@@ -468,7 +477,19 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"moved_counts": {kind: ruleObjMovedCounts}, "consent_record_id": rUUID,
 		"consent_type": rCodeOpt, "method": rCodeOpt, "source": rCodeOpt,
 		"policy_version": rCodeOpt, "occurred_at": rTS, "pending_dispatches": rCount,
-		"requested_guest_id": rUUID,
+		"requested_guest_id": rUUID, "enquiry_id": rUUIDNull,
+	},
+	"guest_portal_identity": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "guest_id": rUUID,
+		"status": rEnum("portal_identity_status"), "purpose": rEnum("portal_challenge_purpose"),
+		"challenge_id": rUUIDNull, "sessions_revoked": rCount, "version": rVersion,
+		"email_verified_at": rTSNull, "created_at": rTS, "updated_at": rTS,
+	},
+	"guest_portal_session": {
+		"redacted": rRedacted, "id": rUUID, "session_id": rUUID, "property_id": rUUID,
+		"portal_identity_id": rUUIDNull, "scoped_reservation_id": rUUIDNull,
+		"scope_type": rEnum("portal_session_scope"), "revoked_count": rCount,
+		"idle_expires_at": rTS, "absolute_expires_at": rTS, "revoked_at": rTSNull, "created_at": rTS,
 	},
 	"guest_communication": {
 		"redacted": rRedacted, "id": rUUID, "communication_id": rUUID, "property_id": rUUID,
@@ -591,7 +612,7 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"deposit_fixed_pence": rPence, "balance_due_days_before_arrival": rDays365,
 		"extra_adult_nightly_pence": rPence, "child_nightly_pence": rPence,
 		"infant_nightly_pence": rPence, "booking_terms_version": rCodeOpt,
-		"stripe_enabled": rBool, "version": rVersion, "updated_at": rTS,
+		"stripe_enabled": rBool, "guest_portal_enabled": rBool, "version": rVersion, "updated_at": rTS,
 	},
 	"property_retention_policy": {
 		"redacted": rRedacted, "property_id": rUUID, "enquiry_retention_days": rRetDays,

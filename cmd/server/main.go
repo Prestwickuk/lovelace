@@ -141,6 +141,9 @@ func main() {
 				} else if synced > 0 {
 					slog.Info("processed channel sync jobs", "count", synced)
 				}
+				if err := svc.PruneExpiredPortalState(workerCtx); err != nil {
+					slog.Warn("guest portal credential cleanup error", "error", err)
+				}
 				cancel()
 			}
 		}
