@@ -1,9 +1,9 @@
-# LOVELACE Phase 3 Milestone 4 — Self-Service Public Guest Portal (`PROPOSED / OWNER DECISIONS RECORDED`)
+# LOVELACE Phase 3 Milestone 4 — Self-Service Public Guest Portal (`OWNER D1–D10 IMPLEMENTED · SECTION 7.2 GATED`)
 
-> - **Document Status:** **`PROPOSED / OWNER DECISIONS RECORDED`** — D1–D10 confirmed by the owner on 2026-11-17; remaining privacy/legal and telemetry questions are listed in Section 7.2.
-> - **Implementation Status:** **Phase 3 Milestone 4 remains DEFERRED / NOT IMPLEMENTED.**
-> - **Current Codebase Baseline:** Phases 1–5 + **PWE-1 through PWE-5 Implemented** (PWE-5 commit `8da9f0c1b787915b444d2dc4a02a4b6601f48ea8` and initial discovery baseline `2c59a236285dbba34882a9a1d0a420e42e578674` on `codex/phase5-reporting-accuracy-fixes`, all three GitHub Actions CI workflows green).
-> - **Implementation Guardrail:** Owner approval resolves product decisions D1–D10, but does not approve legal interpretations or unlisted implementation details. The implementation handoff must honor the confirmed choices and keep the remaining privacy/legal and telemetry items in Section 7.2 out of scope until resolved.
+> - **Document Status:** **`APPROVED D1–D10 IMPLEMENTED · SECTION 7.2 GATES ACTIVE`** — D1–D10 confirmed by the owner on 2026-11-17 and implemented in `0026_phase3_m4_guest_portal.sql`, Go `/api/public/v1/properties/{slug}/portal/*`, and `apps/public-web/src/app/portal/*`; remaining privacy/legal and telemetry questions in Section 7.2 remain unresolved and enforced as hard limits.
+> - **Implementation Status:** **Implemented (Disabled by Default: `TIRBACH_GUEST_PORTAL_ENABLED=false` and `property_booking_policies.guest_portal_enabled=false`; Tir Bach pilot ready behind staging/operator enablement).**
+> - **Current Codebase Baseline:** Phases 1–5 + **PWE-1 through PWE-5** + **Phase 3 Milestone 4** (`0026_phase3_m4_guest_portal.sql`; `SupportedAuditResourceTypes()` extended `43 -> 45` with `guest_portal_identity` and `guest_portal_session` + `'PORTAL'` in `enquiry_source`).
+> - **Implementation Guardrail:** Owner approval resolves product decisions D1–D10, but does not approve legal interpretations or unlisted implementation details. The implementation honors D1–D10 and keeps the remaining privacy/legal and telemetry items in Section 7.2 out of scope until resolved (no automated SAR disclosure/erasure, no rights-request status/detail disclosure in the portal, no legal-compliance claims, and no IP/user-agent hashes collected for portal telemetry).
 
 ---
 

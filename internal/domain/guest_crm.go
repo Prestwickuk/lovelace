@@ -102,6 +102,7 @@ const (
 	EnqSourceEmail    EnquirySource = "EMAIL"
 	EnqSourceWeb      EnquirySource = "WEB"
 	EnqSourceAdmin    EnquirySource = "ADMIN"
+	EnqSourcePortal   EnquirySource = "PORTAL"
 )
 
 type InteractionType string

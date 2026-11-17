@@ -48,6 +48,7 @@ type Config struct {
 	EncryptionKey        []byte
 	PublicOrigin         string
 	PublicAPISecret      string
+	GuestPortalEnabled   bool
 	StripeSecretKey      string
 	StripeWebhookSecret  string
 	StripeAPIBaseURL     string
@@ -126,6 +127,7 @@ func Load() (Config, error) {
 		AutoSeed:             envBool("TIRBACH_AUTO_SEED", false),
 		PublicOrigin:         strings.TrimRight(publicOrigin, "/"),
 		PublicAPISecret:      strings.TrimSpace(os.Getenv("TIRBACH_PUBLIC_API_SECRET")),
+		GuestPortalEnabled:   envBool("TIRBACH_GUEST_PORTAL_ENABLED", false),
 		StripeSecretKey:      strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_SECRET_KEY")),
 		StripeWebhookSecret:  strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_WEBHOOK_SECRET")),
 		StripeAPIBaseURL:     strings.TrimRight(envOrDefault("TIRBACH_STRIPE_API_BASE_URL", "https://api.stripe.com"), "/"),

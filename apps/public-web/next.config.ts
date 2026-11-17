@@ -1,5 +1,12 @@
 import type { NextConfig } from "next";
 
+const privateNoStoreHeaders = [
+  { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, private" },
+  { key: "Pragma", value: "no-cache" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "X-Robots-Tag", value: "noindex, nofollow" },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
@@ -22,21 +29,23 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/booking/confirmation",
-        headers: [
-          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, private" },
-          { key: "Pragma", value: "no-cache" },
-          { key: "Referrer-Policy", value: "no-referrer" },
-          { key: "X-Robots-Tag", value: "noindex, nofollow" },
-        ],
+        headers: privateNoStoreHeaders,
       },
       {
         source: "/lookup",
-        headers: [
-          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, private" },
-          { key: "Pragma", value: "no-cache" },
-          { key: "Referrer-Policy", value: "no-referrer" },
-          { key: "X-Robots-Tag", value: "noindex, nofollow" },
-        ],
+        headers: privateNoStoreHeaders,
+      },
+      {
+        source: "/portal",
+        headers: privateNoStoreHeaders,
+      },
+      {
+        source: "/portal/:path*",
+        headers: privateNoStoreHeaders,
+      },
+      {
+        source: "/api/public/portal/:path*",
+        headers: privateNoStoreHeaders,
       },
     ];
   },

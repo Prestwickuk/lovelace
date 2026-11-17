@@ -528,7 +528,7 @@ func (s *Store) ListGuestReservationsByCluster(ctx context.Context, db DBTX, pro
 		       channel_code, lower(stay_range), upper(stay_range),
 		       adults, children, infants, status,
 		       payment_status, total_pence, deposit_pence, amount_paid_pence, balance_due_pence, currency,
-		       occupant_details, internal_notes, cancellation_reason, cancelled_at,
+		       occupant_details, estimated_arrival_time, guest_arrival_notes, internal_notes, cancellation_reason, cancelled_at,
 		       cancellation_requested_at, cancellation_request_note,
 		       created_by, updated_by, version, created_at, updated_at
 		FROM reservations
@@ -847,11 +847,18 @@ func (s *Store) MergeGuests(ctx context.Context, tx pgx.Tx, propertyID, sourceID
 	if _, err := tx.Exec(ctx, `UPDATE guests SET merged_into_guest_id = $2 WHERE property_id = $1 AND merged_into_guest_id = $3`, propertyID, targetID, sourceID); err != nil {
 		return domain.Guest{}, domain.GuestMergeEvent{}, MapErr(err)
 	}
+	if _, err := tx.Exec(ctx, `UPDATE guest_portal_challenges SET guest_id = $2 WHERE property_id = $1 AND guest_id = $3`, propertyID, targetID, sourceID); err != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, MapErr(err)
+	}
 
 	// Enrich missing contact metadata onto canonical target without overwriting target values.
 	mergedEmail := target.Email
 	if mergedEmail == "" {
 		mergedEmail = source.Email
+	}
+	mergedNormEmail := domain.NormalizeEmail(mergedEmail)
+	if err := s.reconcileMergedPortalIdentitiesTx(ctx, tx, propertyID, sourceID, targetID, mergedNormEmail); err != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, err
 	}
 	mergedPhone := target.Phone
 	if mergedPhone == "" {
@@ -2802,6 +2809,9 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 				}
 			}
 		}
+		if err := s.purgeGuestPortalAndConfirmationAccessTx(ctx, tx, propertyID, clusterIDs, false, nowUTC); err != nil {
+			return domain.Guest{}, 0, err
+		}
 		curGuest, gErr := s.GetGuest(ctx, tx, propertyID, canonicalID)
 		if gErr != nil {
 			return domain.Guest{}, 0, gErr
@@ -2810,6 +2820,9 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 	}
 
 	anonLabel := fmt.Sprintf("Anonymised Guest (%s)", g.ID.String()[:8])
+	if err := s.purgeGuestPortalAndConfirmationAccessTx(ctx, tx, propertyID, clusterIDs, true, nowUTC); err != nil {
+		return domain.Guest{}, 0, err
+	}
 
 	// 1. Scrub canonical guest AND all merged alias rows (merged aliases keep status='MERGED' + link for audit provenance, with anonymized_at set and all PII scrubbed).
 	if _, err := tx.Exec(ctx, `
@@ -2842,6 +2855,8 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 		    guest_email = '',
 		    guest_phone = '',
 		    occupant_details = '',
+		    estimated_arrival_time = '',
+		    guest_arrival_notes = '',
 		    internal_notes = CASE WHEN internal_notes <> '' THEN '[Anonymised]' ELSE '' END,
 		    cancellation_reason = CASE WHEN cancellation_reason <> '' THEN '[Anonymised]' ELSE '' END,
 		    cancellation_request_note = CASE WHEN cancellation_request_note <> '' THEN '[Anonymised]' ELSE '' END,

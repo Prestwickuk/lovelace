@@ -130,7 +130,8 @@ func setupPhase2TestServer(t *testing.T, publicSecret string) (*httptest.Server,
 			return txErr
 		}
 		_, txErr := tx.Exec(ctx, `
-			TRUNCATE TABLE email_outbox, confirmation_access_tokens, payment_exceptions,
+			TRUNCATE TABLE guest_portal_sessions, guest_portal_challenges, guest_portal_identities,
+			               email_outbox, confirmation_access_tokens, payment_exceptions,
 			               payment_webhook_events, refunds, payments, payment_attempts,
 			               booking_quotes, booking_holds, property_booking_policies,
 			               audit_logs, login_attempts, admin_sessions,

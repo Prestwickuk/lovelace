@@ -67,7 +67,7 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 		       pol.extra_adult_nightly_pence, pol.child_nightly_pence, pol.infant_nightly_pence,
 		       pol.booking_terms_version, pol.booking_terms_url, pol.privacy_policy_url,
 		       pol.cancellation_policy, pol.quiet_hours, pol.fire_policy, pol.pet_policy, pol.privacy_notice,
-		       pol.stripe_enabled, pol.version, pol.updated_at
+		       pol.stripe_enabled, pol.guest_portal_enabled, pol.version, pol.updated_at
 		FROM properties prop
 		LEFT JOIN property_booking_policies pol ON pol.property_id = prop.id
 		LEFT JOIN property_branding_settings pbs ON pbs.property_id = prop.id
@@ -84,7 +84,7 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 		&p.ExtraAdultNightlyPence, &p.ChildNightlyPence, &p.InfantNightlyPence,
 		&p.BookingTermsVersion, &p.BookingTermsURL, &p.PrivacyPolicyURL,
 		&p.CancellationPolicy, &p.QuietHours, &p.FirePolicy, &p.PetPolicy, &p.PrivacyNotice,
-		&p.StripeEnabled, &p.Version, &p.UpdatedAt,
+		&p.StripeEnabled, &p.GuestPortalEnabled, &p.Version, &p.UpdatedAt,
 	)
 	if err != nil {
 		return domain.PublicPropertyView{}, MapErr(err)
@@ -116,7 +116,7 @@ func (s *Store) GetBookingPolicy(ctx context.Context, db DBTX, propertyID uuid.U
 		       extra_adult_nightly_pence, child_nightly_pence, infant_nightly_pence,
 		       booking_terms_version, booking_terms_url, privacy_policy_url,
 		       cancellation_policy, quiet_hours, fire_policy, pet_policy, privacy_notice,
-		       stripe_enabled, version, updated_at
+		       stripe_enabled, guest_portal_enabled, version, updated_at
 		FROM property_booking_policies
 		WHERE property_id = $1
 	`, propertyID).Scan(
@@ -125,7 +125,7 @@ func (s *Store) GetBookingPolicy(ctx context.Context, db DBTX, propertyID uuid.U
 		&p.ExtraAdultNightlyPence, &p.ChildNightlyPence, &p.InfantNightlyPence,
 		&p.BookingTermsVersion, &p.BookingTermsURL, &p.PrivacyPolicyURL,
 		&p.CancellationPolicy, &p.QuietHours, &p.FirePolicy, &p.PetPolicy, &p.PrivacyNotice,
-		&p.StripeEnabled, &p.Version, &p.UpdatedAt,
+		&p.StripeEnabled, &p.GuestPortalEnabled, &p.Version, &p.UpdatedAt,
 	)
 	return p, MapErr(err)
 }
@@ -151,29 +151,30 @@ func (s *Store) UpdateBookingPolicy(ctx context.Context, tx pgx.Tx, p domain.Pro
 		    pet_policy = $16,
 		    privacy_notice = $17,
 		    stripe_enabled = $18,
+		    guest_portal_enabled = $19,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE property_id = $1 AND version = $19
+		WHERE property_id = $1 AND version = $20
 		RETURNING property_id, hold_duration_minutes, deposit_mode,
 		          deposit_percentage, deposit_fixed_pence, balance_due_days_before_arrival,
 		          extra_adult_nightly_pence, child_nightly_pence, infant_nightly_pence,
 		          booking_terms_version, booking_terms_url, privacy_policy_url,
 		          cancellation_policy, quiet_hours, fire_policy, pet_policy, privacy_notice,
-		          stripe_enabled, version, updated_at
+		          stripe_enabled, guest_portal_enabled, version, updated_at
 	`,
 		p.PropertyID, p.HoldDurationMinutes, p.DepositMode,
 		p.DepositPercentage, p.DepositFixedPence, p.BalanceDueDaysBeforeArrival,
 		p.ExtraAdultNightlyPence, p.ChildNightlyPence, p.InfantNightlyPence,
 		p.BookingTermsVersion, p.BookingTermsURL, p.PrivacyPolicyURL,
 		p.CancellationPolicy, p.QuietHours, p.FirePolicy, p.PetPolicy, p.PrivacyNotice,
-		p.StripeEnabled, p.Version,
+		p.StripeEnabled, p.GuestPortalEnabled, p.Version,
 	).Scan(
 		&out.PropertyID, &out.HoldDurationMinutes, &out.DepositMode,
 		&out.DepositPercentage, &out.DepositFixedPence, &out.BalanceDueDaysBeforeArrival,
 		&out.ExtraAdultNightlyPence, &out.ChildNightlyPence, &out.InfantNightlyPence,
 		&out.BookingTermsVersion, &out.BookingTermsURL, &out.PrivacyPolicyURL,
 		&out.CancellationPolicy, &out.QuietHours, &out.FirePolicy, &out.PetPolicy, &out.PrivacyNotice,
-		&out.StripeEnabled, &out.Version, &out.UpdatedAt,
+		&out.StripeEnabled, &out.GuestPortalEnabled, &out.Version, &out.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return domain.PropertyBookingPolicy{}, domain.ErrConflict
@@ -2525,6 +2526,7 @@ func (s *Store) MarkOutboxEmailSentWithLeaseAt(ctx context.Context, id uuid.UUID
 		bodyText := snap.BodyText
 		bodyHTML := snap.BodyHTML
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(tpl)
 		concurrentAnon := snap.Status == domain.OutboxStatusCancelRequested || snap.GuestBlocked
 		if concurrentAnon {
 			if _, err := tx.Exec(ctx, `
@@ -2540,6 +2542,26 @@ func (s *Store) MarkOutboxEmailSentWithLeaseAt(ctx context.Context, id uuid.UUID
 				    recipient_email = '[redacted]',
 				    subject = '[Anonymised Email]',
 				    body_text = '[redacted by GDPR erasure]',
+				    body_html = '',
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, effectiveSentAt); err != nil {
+				return MapErr(err)
+			}
+		} else if isPortalChallenge {
+			if _, err := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'SENT',
+				    attempts = attempts + 1,
+				    sent_at = $2,
+				    dispatch_outcome = 'PROVIDER_ACCEPTED',
+				    dispatch_fenced_at = $2,
+				    dispatch_fence_epoch = dispatch_fence_epoch + 1,
+				    dispatch_lease_expires_at = NULL,
+				    last_error = '',
+				    body_text = '[redacted security challenge]',
 				    body_html = '',
 				    locked_at = NULL,
 				    worker_token = NULL,
@@ -2566,6 +2588,12 @@ func (s *Store) MarkOutboxEmailSentWithLeaseAt(ctx context.Context, id uuid.UUID
 			`, id, effectiveSentAt); err != nil {
 				return MapErr(err)
 			}
+		}
+
+		// Security challenge emails never enter guest_communications so staff with comms:read
+		// cannot view single-use portal verification codes or magic-link tokens.
+		if isPortalChallenge && commID == nil {
+			return nil
 		}
 
 		// Ensure Phase 2 booking confirmations / direct outbox emails appear on the guest timeline cleanly.
@@ -3173,6 +3201,9 @@ func (s *Store) ReconcileUnknownOutboxDispatch(ctx context.Context, tx pgx.Tx, p
 			res.Subject = "[Anonymised Email]"
 			res.BodyText = "[redacted by GDPR erasure]"
 			res.BodyHTML = ""
+		} else if domain.IsPortalSecurityChallengeTemplate(res.Template) {
+			res.BodyText = "[redacted security challenge]"
+			res.BodyHTML = ""
 		}
 		res.LastError = lastErr
 		if err := tx.QueryRow(ctx, `
@@ -3315,6 +3346,17 @@ func (s *Store) CountActiveStripeEnabledProperties(ctx context.Context) (int, er
 		FROM properties prop
 		JOIN property_booking_policies pol ON pol.property_id = prop.id
 		WHERE prop.public_enabled = TRUE AND pol.stripe_enabled = TRUE
+	`).Scan(&count)
+	return count, MapErr(err)
+}
+
+func (s *Store) CountActivePortalEnabledProperties(ctx context.Context) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM properties prop
+		JOIN property_booking_policies pol ON pol.property_id = prop.id
+		WHERE prop.public_enabled = TRUE AND pol.guest_portal_enabled = TRUE
 	`).Scan(&count)
 	return count, MapErr(err)
 }

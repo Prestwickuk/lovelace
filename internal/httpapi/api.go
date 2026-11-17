@@ -20,24 +20,30 @@ import (
 
 // Handler serves /healthz, /readyz, and /api/v1/*.
 type Handler struct {
-	svc                 *service.Service
-	store               *postgres.Store
-	cfg                 config.Config
-	publicGlobalLimiter *httpx.PublicRateLimiter
-	publicReadLimiter   *httpx.PublicRateLimiter
-	publicWriteLimiter  *httpx.PublicRateLimiter
-	publicLookupLimiter *httpx.PublicRateLimiter
+	svc                   *service.Service
+	store                 *postgres.Store
+	cfg                   config.Config
+	publicGlobalLimiter   *httpx.PublicRateLimiter
+	publicReadLimiter     *httpx.PublicRateLimiter
+	publicWriteLimiter    *httpx.PublicRateLimiter
+	publicLookupLimiter   *httpx.PublicRateLimiter
+	portalAuthLimiter     *httpx.PublicRateLimiter
+	portalMutationLimiter *httpx.PublicRateLimiter
+	portalEnquiryLimiter  *httpx.PublicRateLimiter
 }
 
 func New(svc *service.Service, store *postgres.Store, cfg config.Config) *Handler {
 	return &Handler{
-		svc:                 svc,
-		store:               store,
-		cfg:                 cfg,
-		publicGlobalLimiter: httpx.NewPublicRateLimiter(600, time.Minute),
-		publicReadLimiter:   httpx.NewPublicRateLimiter(180, time.Minute),
-		publicWriteLimiter:  httpx.NewPublicRateLimiter(30, time.Minute),
-		publicLookupLimiter: httpx.NewPublicRateLimiter(20, time.Minute),
+		svc:                   svc,
+		store:                 store,
+		cfg:                   cfg,
+		publicGlobalLimiter:   httpx.NewPublicRateLimiter(600, time.Minute),
+		publicReadLimiter:     httpx.NewPublicRateLimiter(180, time.Minute),
+		publicWriteLimiter:    httpx.NewPublicRateLimiter(30, time.Minute),
+		publicLookupLimiter:   httpx.NewPublicRateLimiter(20, time.Minute),
+		portalAuthLimiter:     httpx.NewPublicRateLimiter(10, time.Minute),
+		portalMutationLimiter: httpx.NewPublicRateLimiter(20, time.Minute),
+		portalEnquiryLimiter:  httpx.NewPublicRateLimiter(10, time.Hour),
 	}
 }
 
@@ -101,6 +107,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerWorkspaceRoutes(mux)
 	h.registerPropertyBrandingRoutes(mux)
 	h.registerPublicRoutes(mux)
+	h.registerPublicPortalRoutes(mux)
 }
 
 type authedHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -393,6 +400,18 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, service.ErrPortalDisabled):
+		writeError(w, http.StatusNotFound, "not_found", "requested resource was not found")
+	case errors.Is(err, service.ErrPortalCSRFInvalid):
+		writeError(w, http.StatusForbidden, "csrf_invalid", "missing or invalid portal CSRF token")
+	case errors.Is(err, service.ErrPortalStepUpRequired):
+		writeError(w, http.StatusForbidden, "step_up_required", "recent email verification (within 15 minutes) is required for this security or privacy action")
+	case errors.Is(err, service.ErrPortalDoNotContactRestricted):
+		writeError(w, http.StatusForbidden, "do_not_contact_restricted", "this action is restricted while do-not-contact status is active on your profile")
+	case errors.Is(err, service.ErrPortalDuplicateDisambiguation):
+		writeError(w, http.StatusConflict, "duplicate_guest_verification_required", "please provide a booking reference to corroborate which booking profile belongs to you")
+	case errors.Is(err, service.ErrPortalOTAManaged):
+		writeError(w, http.StatusConflict, "ota_managed_booking", "this booking is managed through its original external booking platform")
 	case errors.Is(err, domain.ErrUnauthorized):
 		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required or invalid credentials")
 	case errors.Is(err, domain.ErrPasswordRotationRequired):

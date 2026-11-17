@@ -87,8 +87,17 @@ type ReservationFinancials struct {
 	Payments    []domain.PaymentRecord `json:"payments"`
 }
 
+func (s *Service) maskPublicPropertyPortalFlag(prop *domain.PublicPropertyView) {
+	prop.Policy.GuestPortalEnabled = s.cfg.GuestPortalEnabled && prop.Policy.GuestPortalEnabled
+}
+
 func (s *Service) GetPublicProperty(ctx context.Context, slug string) (domain.PublicPropertyView, error) {
-	return s.store.GetPublicPropertyBySlug(ctx, nil, slug)
+	prop, err := s.store.GetPublicPropertyBySlug(ctx, nil, slug)
+	if err != nil {
+		return domain.PublicPropertyView{}, err
+	}
+	s.maskPublicPropertyPortalFlag(&prop)
+	return prop, nil
 }
 
 func (s *Service) ListPublicAccommodation(ctx context.Context, slug string) (PublicAccommodationCatalog, error) {
@@ -96,6 +105,7 @@ func (s *Service) ListPublicAccommodation(ctx context.Context, slug string) (Pub
 	if err != nil {
 		return PublicAccommodationCatalog{}, err
 	}
+	s.maskPublicPropertyPortalFlag(&prop)
 	uts, err := s.store.ListPublicUnitTypes(ctx, nil, prop.ID)
 	if err != nil {
 		return PublicAccommodationCatalog{}, err
@@ -116,6 +126,7 @@ func (s *Service) GetPublicAccommodationDetail(ctx context.Context, slug, code s
 	if err != nil {
 		return PublicAccommodationDetail{}, err
 	}
+	s.maskPublicPropertyPortalFlag(&prop)
 	ut, err := s.store.GetPublicUnitTypeByCode(ctx, nil, prop.ID, code)
 	if err != nil {
 		return PublicAccommodationDetail{}, err
@@ -169,6 +180,7 @@ func (s *Service) SearchPublicAvailability(ctx context.Context, in domain.Availa
 	if err != nil {
 		return PublicAvailabilityResponse{}, err
 	}
+	s.maskPublicPropertyPortalFlag(&prop)
 	if in.Adults < 1 || in.Children < 0 || in.Infants < 0 {
 		return PublicAvailabilityResponse{}, domain.NewValidationError(map[string]string{
 			"party": "at least 1 adult is required and children/infants cannot be negative",

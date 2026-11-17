@@ -56,8 +56,8 @@ func (h *Handler) applyPublicCORS(w http.ResponseWriter, r *http.Request) {
 	allowed := h.allowedPublicOrigins()
 	if allowed[origin] {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Lovelace-Public-Key")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Lovelace-Public-Key, X-Lovelace-Property, X-Guest-Session, X-Guest-CSRF")
 		w.Header().Set("Access-Control-Max-Age", "300")
 	}
 }

@@ -101,6 +101,7 @@ export default async function StaysPage({
         region={prop?.region || "Pembrokeshire, Wales"}
         branding={prop?.branding}
         propertySlug={prop?.slug}
+        portalEnabled={Boolean(prop?.policy?.guest_portal_enabled)}
       />
 
       <main className="container section">

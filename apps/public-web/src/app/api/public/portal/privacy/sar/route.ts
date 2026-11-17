@@ -1,0 +1,39 @@
+import { NextRequest, NextResponse } from "next/server";
+import { handlePortalBffError, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
+import { getPropertySlug } from "@/lib/lovelace-api";
+import {
+  assertNoQuerySecrets,
+  assertSameOriginMutation,
+  callLovelacePortal,
+  enforcePortalBffRateLimit,
+} from "@/lib/portal-bff";
+import type { PortalPrivacyRequestReceipt } from "@/lib/types";
+
+export async function POST(req: NextRequest) {
+  const limited = enforcePortalBffRateLimit(req, "portal-privacy-sar", 5);
+  if (limited) return limited;
+
+  try {
+    assertNoQuerySecrets(req);
+    assertSameOriginMutation(req);
+    const body = (await req.json()) as { notes?: string };
+    const res = await callLovelacePortal<PortalPrivacyRequestReceipt>(
+      req,
+      "/privacy/sar",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          property_slug: getPropertySlug(),
+          notes: body.notes || "",
+        }),
+      },
+      { requireSession: true, requireCsrf: true },
+    );
+    return NextResponse.json(res, {
+      status: 202,
+      headers: PRIVATE_NO_STORE_HEADERS,
+    });
+  } catch (err) {
+    return handlePortalBffError(err);
+  }
+}

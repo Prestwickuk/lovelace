@@ -370,6 +370,15 @@ func (s *Service) ValidateProductionStartup(ctx context.Context) error {
 	if (activeStripeProps > 0 || s.cfg.RequireEmail) && !s.HasEmailProvider() {
 		return errors.New("confirmation email delivery (TIRBACH_SMTP_ADDR) is required in production whenever direct public payments are enabled or TIRBACH_REQUIRE_EMAIL=true")
 	}
+	if s.cfg.GuestPortalEnabled {
+		activePortalProps, pErr := s.store.CountActivePortalEnabledProperties(ctx)
+		if pErr != nil {
+			return fmt.Errorf("check portal-enabled properties: %w", pErr)
+		}
+		if activePortalProps > 0 && !s.HasEmailProvider() {
+			return errors.New("email delivery (TIRBACH_SMTP_ADDR) is required in production whenever the public guest portal is enabled on any property")
+		}
+	}
 	if att := s.attachmentReadiness(); att.Status != "ok" {
 		return fmt.Errorf("attachment storage (%s) is unavailable or not writable: %s", s.attachmentDir, att.Detail)
 	}
