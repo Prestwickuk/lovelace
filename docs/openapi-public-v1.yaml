@@ -461,8 +461,8 @@ paths:
     get:
       summary: List guest-visible support enquiries and non-INTERNAL messages
       description: >
-        Excludes INTERNAL staff messages, masks staff names as "Reservations Team", and excludes tracked
-        SAR/erasure privacy-rights requests while Section 7.2 identity-assurance gates remain open.
+        Excludes INTERNAL staff messages, masks staff names as "Reservations Team", and permanently excludes tracked
+        SAR/erasure privacy-rights requests per owner-confirmed Section 7.2.2 identity-assurance policy.
       parameters:
         - $ref: "#/components/parameters/PropertySlug"
       security:

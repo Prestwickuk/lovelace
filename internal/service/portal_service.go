@@ -75,7 +75,7 @@ func (s *Service) portalOTPHMACKey() ([]byte, error) {
 }
 
 // portalActor constructs the pseudonymous public guest audit actor without recording
-// IP or user-agent telemetry hashes while Section 7.2 #3 retention remains open.
+// IP or user-agent telemetry hashes per owner-approved Section 7.2.3 retention policy.
 func portalActor(meta Actor) Actor {
 	return Actor{
 		UserID:    uuid.Nil,
