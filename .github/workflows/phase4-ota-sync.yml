@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: phase4-ota-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   phase4:
     runs-on: ubuntu-latest
@@ -53,9 +60,9 @@ jobs:
 
       - name: Verify formatting, build, and vet
         run: |
-          test -z "$(gofmt -l .)"
-          go build ./...
-          go vet ./...
+          test -z "$(gofmt -l cmd internal migrations)"
+          go build ./cmd/... ./internal/... ./migrations/...
+          go vet ./cmd/... ./internal/... ./migrations/...
 
       - name: Apply fresh migrations through 0019 as lovelace_migrator
         env:
@@ -75,7 +82,7 @@ jobs:
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0019_phase4_live_ota_sync.sql'"
 
       - name: Run full unit and PostgreSQL integration test suite (no skips)
-        run: go test -count=1 ./...
+        run: go test -count=1 ./cmd/... ./internal/... ./migrations/...
 
       - name: Run race detector across full unit and PostgreSQL integration suite
-        run: go test -count=1 -race ./...
+        run: go test -count=1 -race ./cmd/... ./internal/... ./migrations/...

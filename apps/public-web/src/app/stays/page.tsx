@@ -35,9 +35,9 @@ export default async function StaysPage({
     typeof sp.departure === "string" && sp.departure
       ? sp.departure
       : defaults.departure;
-  const adults = Math.max(1, Number(sp.adults || 2) || 2);
-  const children = Math.max(0, Number(sp.children || 0) || 0);
-  const infants = Math.max(0, Number(sp.infants || 0) || 0);
+  const adults = Math.min(30, Math.max(1, Math.trunc(Number(sp.adults || 2) || 2)));
+  const children = Math.min(30, Math.max(0, Math.trunc(Number(sp.children || 0) || 0)));
+  const infants = Math.min(30, Math.max(0, Math.trunc(Number(sp.infants || 0) || 0)));
   const category = typeof sp.category === "string" ? sp.category : "";
 
   const hasExplicitDates = Boolean(sp.arrival && sp.departure);

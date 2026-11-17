@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,7 +50,7 @@ func (s *Service) resolveReportWindow(prop domain.Property, startRaw, endRaw str
 		if err != nil {
 			loc = time.UTC
 		}
-		nowLocal := time.Now().In(loc)
+		nowLocal := s.nowUTC().In(loc)
 		endDt := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 		startDt := endDt.AddDate(0, 0, -30)
 		return startDt, endDt, nil
@@ -149,7 +150,7 @@ func (s *Service) GetForecastReport(ctx context.Context, actor Actor, propertyID
 		if err != nil {
 			loc = time.UTC
 		}
-		nowLocal := time.Now().In(loc)
+		nowLocal := s.nowUTC().In(loc)
 		asOf = time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, time.UTC)
 	} else {
 		asOf, err = domain.ParseDate(q.AsOfDate)
@@ -228,7 +229,7 @@ func (s *Service) GetSeasonalComparisonReport(ctx context.Context, actor Actor, 
 			if lerr != nil {
 				loc = time.UTC
 			}
-			yr := time.Now().In(loc).Year()
+			yr := s.nowUTC().In(loc).Year()
 			switch preset {
 			case domain.SeasonPresetPeak:
 				curStart = time.Date(yr, 7, 1, 0, 0, 0, 0, time.UTC)
@@ -296,8 +297,13 @@ func (s *Service) GetSeasonalComparisonReport(ctx context.Context, actor Actor, 
 		compCurMap[r.Currency] = r
 		curKeys[r.Currency] = true
 	}
-	var deltas []domain.CurrencyDeltaSummary
+	sortedCurs := make([]string, 0, len(curKeys))
 	for cur := range curKeys {
+		sortedCurs = append(sortedCurs, cur)
+	}
+	sort.Strings(sortedCurs)
+	var deltas []domain.CurrencyDeltaSummary
+	for _, cur := range sortedCurs {
 		cr := curCurMap[cur]
 		pr := compCurMap[cur]
 		bookedDelta := cr.GrossBookedTotalPence - pr.GrossBookedTotalPence
@@ -454,7 +460,7 @@ func (s *Service) ExportAccountingReport(ctx context.Context, actor Actor, prope
 	if err != nil {
 		return domain.AccountingExportResult{}, nil, err
 	}
-	nowUTC := time.Now().UTC()
+	nowUTC := s.nowUTC()
 
 	if err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		return s.recordAudit(ctx, tx, actor, &propertyID, "report.exported", "report_export", exportID.String(), nil, map[string]any{

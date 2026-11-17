@@ -5,7 +5,9 @@ import { PRIVATE_NO_STORE_HEADERS } from "./bff-response";
 import { callLovelacePublic, getPropertySlug, LovelaceApiError } from "./lovelace-api";
 import {
   checkBffRateLimit,
+  rateLimitBucketKeyForIp,
   rateLimitResponse,
+  resolveRequestClientIp,
   SlidingFixedWindowLimiter,
 } from "./rate-limit";
 import type { PortalSessionScope } from "./types";
@@ -111,7 +113,17 @@ function isLoopbackHost(host: string): boolean {
 }
 
 export function assertSameOriginMutation(req: NextRequest): void {
-  const reqOrigin = normalizeOrigin(req.headers.get("origin"));
+  const rawOriginHeader = req.headers.get("origin");
+  if (rawOriginHeader !== null && rawOriginHeader.trim() !== "") {
+    if (!normalizeOrigin(rawOriginHeader)) {
+      throw new LovelaceApiError(
+        403,
+        "origin_not_allowed",
+        "Cross-site portal mutation rejected.",
+      );
+    }
+  }
+  const reqOrigin = normalizeOrigin(rawOriginHeader);
   const refererOrigin = normalizeOrigin(req.headers.get("referer"));
   const sourceOrigin = reqOrigin || refererOrigin;
   if (!sourceOrigin) {
@@ -229,7 +241,7 @@ export function enforcePortalBffRateLimit(
     }
     return res;
   }
-  const ipKey = baseCheck.clientIp || "direct";
+  const ipKey = rateLimitBucketKeyForIp(baseCheck.clientIp || "direct");
   const bucketCheck = getPortalBucketLimiter(bucket, limitPerMinute).allow(ipKey);
   if (!bucketCheck.allowed) {
     const res = rateLimitResponse(bucketCheck.retryAfterSeconds);
@@ -349,9 +361,9 @@ export async function callLovelacePortal<T>(
     headers.set("X-Guest-CSRF", csrfToken);
   }
 
-  const rl = checkBffRateLimit(req, "read");
+  const clientIp = resolveRequestClientIp(req);
   const upstreamPath = portalSubpath.startsWith("/api/public/v1/")
     ? portalSubpath
     : buildPropertyPortalPath(portalSubpath);
-  return callLovelacePublic<T>(upstreamPath, { ...init, headers }, rl.clientIp);
+  return callLovelacePublic<T>(upstreamPath, { ...init, headers }, clientIp);
 }

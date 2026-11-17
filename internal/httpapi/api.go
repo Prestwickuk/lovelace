@@ -144,30 +144,33 @@ func (h *Handler) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	report := h.svc.Readiness(r.Context())
-	if !report.Ready {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"status":      "not_ready",
-			"ready":       false,
-			"database":    report.Database,
-			"payments":    report.Payments,
-			"email":       report.Email,
-			"public_api":  report.Public,
-			"attachments": report.Attachments,
-		})
-		return
+	att := report.Attachments
+	if att.Status != "ok" && att.Detail != "" {
+		// Avoid disclosing internal host filesystem paths on unauthenticated /readyz responses.
+		att.Detail = "attachment storage unavailable"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ready",
-		"ready":       true,
+	statusStr := "ready"
+	httpCode := http.StatusOK
+	if !report.Ready {
+		statusStr = "not_ready"
+		httpCode = http.StatusServiceUnavailable
+	}
+	writeJSON(w, httpCode, map[string]any{
+		"status":      statusStr,
+		"ready":       report.Ready,
 		"database":    report.Database,
 		"payments":    report.Payments,
 		"email":       report.Email,
 		"public_api":  report.Public,
-		"attachments": report.Attachments,
+		"attachments": att,
 	})
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !httpx.IsSameOriginBrowserMutation(r, h.cfg) {
+		writeError(w, http.StatusForbidden, "origin_invalid", "cross-origin login requests are not permitted")
+		return
+	}
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -276,7 +279,7 @@ func (h *Handler) handleUpdateUser(w http.ResponseWriter, r *http.Request, actor
 		FullName           string      `json:"full_name"`
 		Role               domain.Role `json:"role"`
 		IsActive           bool        `json:"is_active"`
-		MustRotatePassword bool        `json:"must_rotate_password"`
+		MustRotatePassword *bool       `json:"must_rotate_password"`
 		Version            int         `json:"version"`
 	}
 	if !decodeJSON(w, r, &body) {
@@ -352,6 +355,27 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "malformed or invalid JSON request body")
+		return false
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must contain a single JSON object")
+		return false
+	}
+	return true
+}
+
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if r.Body == nil || r.Body == http.NoBody {
+		return true
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, httpx.MaxJSONBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		if errors.Is(err, io.EOF) {
+			return true
+		}
 		writeError(w, http.StatusBadRequest, "invalid_json", "malformed or invalid JSON request body")
 		return false
 	}

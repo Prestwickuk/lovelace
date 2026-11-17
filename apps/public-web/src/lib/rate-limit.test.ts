@@ -37,10 +37,32 @@ describe("BFF rate limiting & trusted proxy extraction", () => {
     expect(ip).toBe("203.0.113.42");
   });
 
-  it("matches IPv4 and IPv6 CIDRs accurately", () => {
+  it("matches IPv4, IPv4-mapped IPv6, and IPv6 CIDRs accurately", () => {
     expect(isIpInCidr("172.19.0.4", "172.16.0.0/12")).toBe(true);
+    expect(isIpInCidr("::ffff:172.19.0.4", "172.16.0.0/12")).toBe(true);
     expect(isIpInCidr("172.32.0.4", "172.16.0.0/12")).toBe(false);
     expect(isIpInCidr("2001:db8::5", "2001:db8::/32")).toBe(true);
+  });
+
+  it("fails closed to trusted peer IP when X-Forwarded-For contains malformed tokens or all-trusted hops", () => {
+    expect(
+      resolveTrustedClientIp({
+        xForwardedFor: "198.51.100.99, bogus-token, 10.1.2.3",
+        xRealIp: "198.51.100.88",
+        remoteAddr: "::ffff:172.18.0.2",
+        trustProxy: true,
+        trustedProxies: ["10.0.0.0/8", "172.16.0.0/12"],
+      }),
+    ).toBe("172.18.0.2");
+
+    expect(
+      resolveTrustedClientIp({
+        xForwardedFor: "10.0.0.5, 10.1.2.3",
+        remoteAddr: "172.18.0.2",
+        trustProxy: true,
+        trustedProxies: ["10.0.0.0/8", "172.16.0.0/12"],
+      }),
+    ).toBe("172.18.0.2");
   });
 
   it("enforces fixed window limits and isolates distinct clients", () => {

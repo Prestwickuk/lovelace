@@ -6,11 +6,11 @@
 
 ---
 
-## 1. Roadmap Placement & Dependencies (`PROPOSED / FUTURE`)
+## 1. Roadmap Context & Dependencies
 
 **Workstream Title:** **LOVELACE Personalisation & Workspace Experience (`PWE`)**
 
-**Proposed Timing:** Planned as an optional, modular product workstream positioned **after** Phase 3 guest-management and operations foundations (**Phase 3 Milestone 1 Operations Centre**, **Milestone 2 + 3.2.x Maintenance**, and **Milestone 3 + 3.3.x Guest CRM & Privacy**) are operationally mature. It runs independently of **Phases 4–5** and **Phase 3 Milestone 4** without delaying or renumbering any committed milestone (`Phases 1–5` and `Phase 3 M1–M4` remain untouched).
+**Delivery context:** PWE was delivered as an optional, modular workstream after the Phase 3 guest-management and operations foundations. It runs independently of **Phases 4–5** and **Phase 3 Milestone 4**; it does not renumber the committed milestones (`Phases 1–5` and `Phase 3 M1–M4`).
 
 ### Rationale & Non-Blocking Positioning
 - **Not a launch prerequisite:** Neither Phase 3.2 acceptance, direct public bookings (`Phase 2`), live OTA channel sync (`Phase 4`), nor historical BI reporting (`Phase 5`) depends on `PWE`. Existing `internal/branding`, `internal/webui`, and `properties.branding_config` continue operating safely without `PWE`.
@@ -23,9 +23,9 @@
 
 ---
 
-## 2. Design System Architecture & Administrative Design Standard (`PROPOSED / FUTURE`)
+## 2. Design System Architecture & Administrative Design Standard
 
-This section defines the permanent design governance for **PWE-1** and all future administrative console views (`internal/webui`).
+This section records the design governance implemented for **PWE-1** and used by administrative console views (`internal/webui`).
 
 ### 2.1 Technical Architecture (Go SSR + Static CSS Tokens)
 - **Server-Rendered Go Templates Only:** Must operate strictly inside LOVELACE's existing Go `html/template` + static asset server architecture (`internal/webui/templates/`, `internal/webui/static/`). **No** JavaScript SPA framework (React/Vue/etc.), CSS-in-JS runtime, Tailwind build chain, or client runtime dependency is introduced into the admin console.
@@ -35,7 +35,7 @@ This section defines the permanent design governance for **PWE-1** and all futur
 ### 2.2 Product Aesthetic & Design Direction
 LOVELACE Admin is **refined, restrained, information-dense hospitality operations software** built for daily reception, reservations, housekeeping, maintenance, and finance work — never a consumer marketing page or generic template dashboard.
 
-| Element | Administrative Design Standard (`PROPOSED / FUTURE`) |
+| Element | Administrative design standard |
 |---|---|
 | **Typography** | Clean system sans stack (`system-ui`, `Inter`, `-apple-system`, sans-serif) paired with tabular/monospace numerals (`--font-mono`, `font-variant-numeric: tabular-nums`) for rates, money, dates, stay nights, booking refs (`TB-*`, `MNT-*`, `ENQ-*`), and audit timestamps. Clear modular heading hierarchy (`h1` <= 22–24px, crisp section labels) without oversized hero typography. |
 | **Spacing & Density** | Compact spacing scale (`4px` base grid) supporting explicit `compact` and `comfortable` density tokens without breaking row alignment or touch/keyboard hit targets (`>= 32px` compact controls, `>= 40px` comfortable). |
@@ -51,7 +51,7 @@ LOVELACE Admin is **refined, restrained, information-dense hospitality operation
 | **Dashboard Widgets** | Flat/lightly bordered operational containers with tight header + single primary action link + tabular/list/metric payload — zero multi-layer card nesting. |
 
 ### 2.3 Explicit Anti-Patterns (Prohibited in Admin UI)
-To prevent visual drift and usability degradation, future `PWE` implementations MUST reject:
+To prevent visual drift and usability degradation, current and future `PWE` changes must reject:
 - Decorative hero cards, marketing-style dashboard copy, or filler onboarding banners inside operational pages.
 - Excessive rounded corners (`pill` panels) or nested cards-inside-cards.
 - Unnecessary gradients or purple/blue gradient-heavy SaaS styling.
@@ -75,7 +75,7 @@ No theme, accent colour, compact density mode, or workspace profile may degrade 
 
 ---
 
-## 3. Workstream Milestones (`PWE-1`–`PWE-3` Implemented; `PWE-4`–`PWE-5` `PROPOSED / FUTURE`)
+## 3. Workstream Milestones (`PWE-1`–`PWE-5` Implemented)
 
 ### PWE-1 — Design System and Theme Engine (**Implemented**)
 - **Implemented Files & Contract:**
@@ -87,7 +87,7 @@ No theme, accent colour, compact density mode, or workspace profile may degrade 
 ### PWE-2 — User Personalisation (**Implemented**)
 - **Implemented Files & Scope:**
   - **Migration (`0022_pwe2_user_personalisation.sql`):** Adds `public.admin_user_preferences` (`user_id PK ON DELETE CASCADE`, typed PWE-1 theme/accessibility columns, `default_route`, `last_property_id ON DELETE SET NULL`, `preferences JSONB`, `schema_version >= 1`) and `public.admin_user_property_workspaces` (`PK (user_id, property_id) ON DELETE CASCADE`, `preferences JSONB`, `saved_views JSONB`, `schema_version >= 1`), with DML grants for `lovelace_app` and zero PII/secrets stored or audited.
-  - **Domain & Validation ([`internal/domain/personalisation.go`](../internal/domain/personalisation.go)):** Strict allowlisted global admin routes (`AdminRoutes`), navigation sections (`NavSections`), validated theme/accessibility/layout fields, property-scoped `SavedOperationalView` presets (`calendar`, `reservations`, `guests` referencing only verified property `unit_type_id` / `channel_code` resources), `ResolveLayerCascade` (`Platform -> [Property/Profile future] -> User Global -> User Active Property`), and field-by-field `DecodeAndNormalize*` upcasting/recovery so malformed JSONB degrades safely without blocking SSR.
+  - **Domain & Validation ([`internal/domain/personalisation.go`](../internal/domain/personalisation.go)):** Strict allowlisted global admin routes (`AdminRoutes`), navigation sections (`NavSections`), validated theme/accessibility/layout fields, property-scoped `SavedOperationalView` presets (`calendar`, `reservations`, `guests` referencing only verified property `unit_type_id` / `channel_code` resources), and field-by-field `DecodeAndNormalize*` upcasting/recovery so malformed JSONB degrades safely without blocking SSR. Workspace profile defaults and explicit overrides are resolved by the PWE-5 profile service.
   - **Persistence & Service ([`internal/store/postgres/personalisation_repo.go`](../internal/store/postgres/personalisation_repo.go), [`internal/service/personalisation_service.go`](../internal/service/personalisation_service.go)):** Self-ownership (`ErrForbidden` cross-user), live DB `GetAdminUserByID` role/property re-verification, `MustRotatePassword` gate blocking preference mutations and omitting personalisation overrides during mandatory rotation, cross-property `unit_type_id`/`channel_code` rejection, and dynamic filtering of landing routes, pinned shortcuts, and saved views against current server-side permissions.
   - **Admin Console SSR (`internal/webui/handlers_personalisation.go`, `templates/account.html`, `layout.html`, `calendar.html`, `reservations.html`, `guests_list.html`):** Separate Personalisation settings and Reset controls on `/account` (distinct from Change Password), CSRF-protected `/account/preferences/*` POST handlers, post-login allowed `DefaultRoute` redirect (`handleLoginPost`), sidebar collapsed-section persistence & pinned shortcuts, and per-property calendar/reservations/guests defaults and saved views (`?saved_view=`).
 - **Dependencies:** `PWE-1` CSS tokens/attributes; authenticated `admin_users` identity (`internal/auth`).
@@ -95,7 +95,7 @@ No theme, accent colour, compact density mode, or workspace profile may degrade 
 ### PWE-3 — Customisable Dashboard Builder (**Implemented**)
 - **Implemented Files & Scope:**
   - **Dedicated Route & Preserved Operations Centre (`/`):** Adds `/workspace` (`GET /workspace`, `/workspace?edit=1`, `POST /workspace/widgets/*`, `POST /workspace/reset`) and `/api/v1/properties/{propertyID}/workspace/dashboard` (`GET`, `PUT`, `POST /reset`), plus `/workspace` in the PWE-2 allowlisted route catalogue while preserving `/` Operations Centre intact.
-  - **Additive Persistence (`0023_pwe3_dashboard_builder.sql`):** Adds `dashboard_schema_version` and nullable `dashboard_layout JSONB` onto `public.admin_user_property_workspaces` without altering PWE-2 `preferences`, `saved_views`, or retention rules (`NULL` resolves to Layer 1 Platform default layout, leaving `PWE-4` property and `PWE-5` profile hooks explicitly deferred).
+  - **Additive Persistence (`0023_pwe3_dashboard_builder.sql`):** Adds `dashboard_schema_version` and nullable `dashboard_layout JSONB` onto `public.admin_user_property_workspaces` without altering PWE-2 `preferences`, `saved_views`, or retention rules. A `NULL` layout resolves through the current workspace profile defaults, then the platform default; PWE-4 branding and PWE-5 profile support were added in migrations `0024` and `0025`.
   - **Typed Registry & Service ([`internal/domain/dashboard.go`](../internal/domain/dashboard.go), [`internal/service/dashboard_service.go`](../internal/service/dashboard_service.go), [`internal/store/postgres/dashboard_repo.go`](../internal/store/postgres/dashboard_repo.go)):** Implements all 11 typed widgets (`ops.arrivals_summary`, `ops.changeover_board`, `ops.alerts_attention`, `maint.open_queue`, `maint.preventative_due`, `res.pending_inquiries`, `res.mini_calendar`, `crm.open_enquiries`, `channels.sync_health`, `reports.kpi_snapshot`, `workspace.quick_shortcuts`), `422` validation (`ValidateDashboardLayoutInput`), per-widget & per-subsection permission checks before querying data, CRM PII/note exclusion, per-currency KPI + incomplete inventory history warnings, and field-by-field/item-by-item recovery on malformed DB rows.
   - **Zero-JS Accessible Editor & Presentation ([`internal/webui/handlers_workspace.go`](../internal/webui/handlers_workspace.go), [`workspace.html`](../internal/webui/templates/workspace.html), [`app.css`](../internal/webui/static/app.css)):** Supports add/remove, keyboard-accessible Up/Down/Position reordering, supported-size selection (`compact`/`standard`/`wide`), typed config forms, and non-JS `<details>` reset confirmation under strict `style-src 'self'; script-src 'self'` CSP.
 
@@ -116,7 +116,7 @@ Every canonical widget below is registered in [`internal/domain/dashboard.go`](.
 | `reports.kpi_snapshot` | **7/30-Day Performance Snapshot:** Occupancy, ADR, RevPAR (per currency) | `compact`, `standard` | `reports:read`; Phase 5 read-only reporting queries | Required (`property_id`) | `{ window_days: 7\|30, show_prior_period: bool }` | Tabular KPI summary noting incomplete history if applicable |
 | `workspace.quick_shortcuts` | **Personal Quick Links:** Pinned routes & saved operational views | `compact` | Authenticated user; dynamically filtered by active user's permissions | Property + User | `{ max_items: 4..12, show_saved_filters: bool }` | Keyboard-accessible concise link list |
 
-### PWE-4 — Property Branding (`PROPOSED / FUTURE`)
+### PWE-4 — Property Branding (**Implemented**)
 - **Scope:**
   - Extend administrative configuration (`PermPropertyWrite`, property-scoped) for authorized operators to configure approved property branding:
     - **Property Logo:** Uploaded image asset validated identically to LOVELACE's attachment security rules (magic-byte sniffing `image/png`, `image/jpeg`, `image/webp` — **strictly rejecting `.svg`**, executables, or arbitrary external hotlinks — sized within bounds and stored securely outside the web root or served via `/api/...` with `X-Content-Type-Options: nosniff`).
@@ -128,7 +128,7 @@ Every canonical widget below is registered in [`internal/domain/dashboard.go`](.
     1. **LOVELACE Platform Identity** remains permanent in login chrome, system error screens, attribution (`Powered by LOVELACE Booking System`), and system headers.
     2. **Property Identity** differentiates the active managed property in the workspace header/badge and feeds the public storefront's approved projection.
     3. **User Personalisation** (`PWE-2`) never overwrites property logos, property display names, or property terminology.
-  - **Relationship to Public Booking-Page Branding:** Builds cleanly on the existing `properties.branding_config` JSONB column (`0003_phase1_5.sql`, `internal/branding.ParsePropertyBranding`). `PWE-4` may project approved *public-safe* fields (public display name, tagline, validated logo URL, approved public primary/accent colours) to `/api/public/v1/properties/{slug}` for `apps/public-web/` without sharing components, admin tokens, terminology-only internal notes, or deployments (see [ADR-0001](adr/0001-public-admin-separation-and-pwe-boundaries.md)).
+  - **Relationship to Public Booking-Page Branding:** Builds on the existing `properties.branding_config` JSONB column (`0003_phase1_5.sql`, `internal/branding.ParsePropertyBranding`). PWE-4 projects approved *public-safe* fields (public display name, tagline, region label, validated logo, and approved public colours) to `/api/public/v1/properties/{slug}` for `apps/public-web/` without sharing components, admin tokens, or terminology-only internal notes (see [ADR-0001](adr/0001-public-admin-separation-and-pwe-boundaries.md)).
 - **Dependencies:** `PWE-1` token separation (specifically separating `--property-brand` badge/header accents from user interactive `--accent` and semantic status tokens `--ok-*`/`--err-*`), attachment storage hardening (`TIRBACH_ATTACHMENT_DIR` model).
 
 ### PWE-5 — Workspace Profiles (**Implemented in `0025_pwe5_workspace_profiles.sql`, `internal/domain/workspace_profiles.go`, `internal/service/workspace_profile_service.go`, `/workspace/profile`, `/api/v1/properties/{propertyID}/workspace/profile`**)
@@ -144,20 +144,19 @@ Every canonical widget below is registered in [`internal/domain/dashboard.go`](.
 
 ---
 
-## 4. Configuration Resolution, Tenancy & Persistence Architecture (`PROPOSED / FUTURE`)
+## 4. Configuration Resolution, Tenancy & Persistence Architecture (**Implemented**)
 
-### 4.1 Deterministic Four-Layer Resolution Model
-When rendering any LOVELACE Admin view for authenticated user `U` operating inside authorized property `P`, presentation settings MUST resolve deterministically top-to-bottom across four layers:
+### 4.1 Presentation and Branding Scope
+The implementation keeps property branding, role profiles, and user preferences in separate scopes. Where a setting supports inheritance, the applicable defaults resolve in this order for authenticated user `U` and authorized property `P`:
 
 ```text
-Layer 1: Platform Defaults        (Code/platform-owned, immutable at runtime; guaranteed valid fallback)
-   │  overridden by permitted fields in ▼
-Layer 2: Property Configuration   (Owner/manager-configured per property_id: branding + property workspace defaults)
-   │  seeded for workspace by permitted fields in ▼
-Layer 3: Workspace Profile        (Role-aligned presentation preset: layout, shortcuts, default landing & density)
-   │  overridden ONLY for user-personalizable allowlisted fields by ▼
-Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Property scoped overrides)
+Platform defaults
+   └─ role-aligned workspace profile (when the role has one)
+       └─ user global preferences
+           └─ user + active-property preferences
 ```
+
+Property branding is resolved separately from preference defaults: saved property identity, public-facing branding fields, logo, palette, and bounded admin terminology apply to that property. The current property branding controls do not define property-level theme, density, dashboard, or shared saved-view defaults. The order above applies only to settings that support those preference/profile layers; not every setting has a value at every layer.
 
 #### Layer Ownership & Override Rules
 
@@ -166,13 +165,14 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
 | **LOVELACE Brand & Attribution** | Authoritative | Cannot alter | Cannot alter | Cannot alter | Cannot alter |
 | **Property Logo, Display Name, Brand Palette, Terminology** | Platform fallback only | **Authoritative** (`PermPropertyWrite`) | Cannot alter | Cannot alter | Cannot alter |
 | **Semantic Status Palette (`ok`/`warn`/`err`) & Focus Rings** | **Authoritative** | Cannot alter | Cannot alter | High-contrast enhancement only | Cannot alter |
-| **Accessibility (`high_contrast`, `reduced_motion`, `text_scale`)** | Safe defaults | Optional property default suggestion | Cannot weaken | **User Authoritative** | Optional override |
-| **Theme (`system`/`light`/`dark`), Curated Accent, Density** | Safe defaults | Property suggested default | Profile suggested density | **User Override** | Optional per-property override |
-| **Dashboard Layout & Typed Widgets** | Platform default layout | Property default layout override (optional) | Profile preset layout | Global fallback prefs | **User + Property Layout** |
-| **Saved Filters / Views & Pinned Property Context** | Empty | Optional property shared presets (read-only template) | Profile default shortcuts | Global shortcuts (safe routes) | **User + Property Filters/Shortcuts** |
+| **Accessibility (`high_contrast`, `reduced_motion`, `text_scale`)** | Safe defaults | Not configured here | Cannot weaken | User preference | No separate property override for these fields |
+| **Theme (`system`/`light`/`dark`) & Curated Accent** | Safe defaults | Not configured here | Cannot override user choice | User preference | No separate property override for these fields |
+| **Density & Default Landing Route** | Safe defaults | Not configured here | Role profile default | User override when explicit | Per-property override when configured |
+| **Dashboard Layout & Typed Widgets** | Platform default layout | Not configured here | Role profile preset | — | User + active-property layout |
+| **Saved Operational Views & Shortcuts** | Empty/safe routes | Not configured here | Profile shortcuts | Global shortcuts (safe routes) | User + active-property saved views and shortcut overrides |
 
 #### Graceful Fallback & Error Handling Rules
-- **Missing Value:** Fall through immediately to the next higher layer (`4b -> 4a -> 3 -> 2 -> 1`).
+- **Missing Value:** For fields with inheritance, fall through to the next applicable layer (active-property override -> explicit global preference -> workspace profile -> platform default). Property branding uses its own property-scoped values and platform fallback.
 - **Invalid / Corrupted / Out-of-Schema Value:** Server-side decoder logs a sanitized warning (no PII/secrets), ignores solely the invalid field/widget rather than failing the page request (`200 OK` maintained), and resolves from the fallback layer.
 - **Obsolete / Removed Widget Type:** Unknown `widget_id` entries stored in saved `PWE-3` layouts are silently omitted during SSR rendering while preserving the remaining valid widgets (with a gentle notice/repair option).
 - **Revoked Permission / Changed Role:** Widgets, shortcuts, or landing pages requiring a permission no longer held by `U` are filtered out server-side before rendering; if `U`'s saved landing route returns unauthorized, landing safely falls back to `/` (or first permitted route).
@@ -183,15 +183,15 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
     - Historical `4b` user-property rows for `P1` remain unreachable unless access is later restored (or cleaned up on user deletion/revocation).
 
 ### 4.2 Multi-Property & Multi-Tenancy Isolation Rules
-- `admin_users.property_id` may be property-scoped (`UUID`) or platform-wide (`NULL`, e.g., global `owner_admin`). Future multi-property workflows MUST distinguish:
-  - **Global user preferences** (travel with `U` across all properties: dark mode, text scale, reduced motion, high contrast).
-  - **Property-scoped workspace data** (`last_visited` defaults per property, per-property dashboard layouts, saved calendar filters mentioning `unit_type_id`s or `channel`s, and property branding).
-- **Zero Cross-Property Leakage:** Every future PWE read/write API MUST run through existing authentication + `must_rotate_password = FALSE` verification + `HasPermission` + `requirePropertyScope`. Saved filter presets, widget configs referencing UUIDs (such as `unit_type_id`), and property logos MUST validate same-property ownership in service & PostgreSQL constraints before save and on read. Preference APIs must never disclose existence, names, or configs of properties the caller is not authorized to access.
+- `admin_users.property_id` may be property-scoped (`UUID`) or platform-wide (`NULL`, e.g., global `owner_admin`). Current multi-property workflows distinguish:
+  - **Global user preferences** (travel with `U` across authorized properties: theme, accent, text scale, reduced motion, high contrast, and navigation defaults).
+  - **Property-scoped workspace data** (`last_property_id` as a revalidated hint, per-property dashboard layouts and settings, saved operational filters, and property branding).
+- **Property Isolation:** PWE read/write routes run through authentication, password-rotation gating where required, permission checks, and property scope. Saved filter presets, widget configs referencing UUIDs (such as `unit_type_id`), and property branding are validated against the selected property. Preference routes do not disclose properties the caller cannot access.
 
 ### 4.3 Persistence Design (`PWE-2`–`PWE-5` Implemented)
 `PWE-2` (`migrations/0022_pwe2_user_personalisation.sql`), `PWE-3` (`migrations/0023_pwe3_dashboard_builder.sql`), `PWE-4` (`migrations/0024_pwe4_property_branding.sql`), and `PWE-5` (`migrations/0025_pwe5_workspace_profiles.sql`) implement the hybrid relational + schema-versioned JSONB design under `lovelace_migrator` DDL and `lovelace_app` DML-only grants:
 
-1. **Property Branding & Workspace Defaults (`PWE-4` — Implemented in `0024`):**
+1. **Property Branding (`PWE-4` — Implemented in `0024`):**
    - `public.property_branding_settings` (`property_id UUID PRIMARY KEY REFERENCES properties(id) ON DELETE CASCADE`, `schema_version`, structurally separated `public_branding JSONB` and `admin_branding JSONB`, validated `BlobStore` logo metadata `logo_storage_key`/`logo_content_type`/`logo_size_bytes`/`logo_sha256`/`logo_width`/`logo_height`/`logo_version`, optimistic-lock `version`, `updated_by`, `updated_at`) plus public-safe projection into `PublicPropertyBranding` (and `properties.branding_config`), keeping `admin_branding`, bounded admin terminology, and storage keys strictly off `/api/public/v1/*`.
 2. **Global User Preferences (`PWE-1`, `PWE-2` in `0022`; `PWE-5` inherit flags in `0025`):**
    - `public.admin_user_preferences` (`user_id UUID PRIMARY KEY REFERENCES admin_users(id) ON DELETE CASCADE`, `schema_version INTEGER NOT NULL`, typed columns `theme_mode`, `accent`, `density`, `text_scale`, `high_contrast`, `reduced_motion`, `default_route`, `explicit_density BOOLEAN NOT NULL DEFAULT FALSE`, `explicit_default_route BOOLEAN NOT NULL DEFAULT FALSE`, optional re-validated `last_property_id UUID NULL REFERENCES properties(id) ON DELETE SET NULL`, validated `preferences JSONB`, `created_at`, `updated_at`).
@@ -202,7 +202,7 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
 5. **Validation, Schema Versioning & Recovery:**
    - Every JSONB payload carries `schema_version` (`int`) and is unmarshaled through `DisallowUnknownFields()` / strict typed validators in Go (bounded array sizes, enum checks, valid UUID formats, zero raw HTML/CSS).
    - **Forward Migration:** Read-time deterministic upcaster converts v1 -> vN safely in memory (with lazy write-back or explicit `cmd/migrate` backfill for breaking shape changes).
-   - **Corrupt-State Recovery:** Both API (`POST .../workspace/reset`) and DB-safe SSR loader fall back to Profile -> Property -> Platform defaults if validation fails, ensuring a bad preference payload can never lock an operator out of LOVELACE Admin.
+   - **Corrupt-State Recovery:** Workspace API reset and SSR loading fall back through applicable profile and platform preference defaults if validation fails, ensuring a bad preference payload cannot lock an operator out of LOVELACE Admin. Property branding uses its own validated property values and platform fallback.
    - **Auditing:** Property branding changes (`PWE-4`) and profile defaults record sanitized structural diffs into `audit_logs` via `audit_sanitizer.go` and an allowlist rule matching `0018`, with zero guest PII or image blobs stored in `audit_logs`.
 
 ---
@@ -244,7 +244,7 @@ Layer 4: User Preferences         (4a: User global defaults ─► 4b: User + Pr
 
 ## 6. Owner-Confirmed Product Decisions
 
-The owner has confirmed the following current PWE-2 and PWE-4 behaviors. Treat them as product decisions for future milestones; changing them requires a new owner decision.
+The owner has confirmed the following current PWE-2 and PWE-4 behaviors. Treat them as product decisions; changing them requires a new owner decision.
 
 1. **Custom Brand Palette Scope (`PWE-4`):** Property branding accepts normalized six-digit `#RRGGBB` hex inputs validated server-side against every text, control, hover, light/dark, and high-contrast foreground/background pairing (`>= 4.5:1` normal text, `>= 3.0:1` UI boundaries, `>= 7.0:1` high contrast), deriving legible on-brand ink and applying tokens strictly through bounded `--property-brand-*` CSS custom properties over same-origin `/branding/property.css`.
 2. **Global Multi-Property Operator UX (`PWE-2`):** Keep `last_property_id` as an optional server-revalidated hint only; it never grants access or promotes a property switcher. Keep all saved operational views scoped to one `(user_id, property_id)`; do not support cross-property saved views.

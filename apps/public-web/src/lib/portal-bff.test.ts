@@ -10,15 +10,18 @@ import {
   assertSameOriginMutation,
   buildPropertyPortalPath,
   callLovelacePortal,
+  enforcePortalBffRateLimit,
   GUEST_SESSION_COOKIE,
   PORTAL_NONCE_COOKIE,
   setPortalNonceCookie,
   setPortalSessionCookie,
 } from "./portal-bff";
+import { parseJsonObject } from "./bff-response";
 import { portalFetch, statusBadgeClass } from "./portal-client";
 
 describe("Guest Portal BFF security & boundary helpers", () => {
   const originalTrustProxy = process.env.LOVELACE_TRUST_PROXY;
+  const originalTrustedProxies = process.env.LOVELACE_TRUSTED_PROXIES;
   const originalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
   afterEach(() => {
@@ -26,6 +29,11 @@ describe("Guest Portal BFF security & boundary helpers", () => {
       delete process.env.LOVELACE_TRUST_PROXY;
     } else {
       process.env.LOVELACE_TRUST_PROXY = originalTrustProxy;
+    }
+    if (originalTrustedProxies === undefined) {
+      delete process.env.LOVELACE_TRUSTED_PROXIES;
+    } else {
+      process.env.LOVELACE_TRUSTED_PROXIES = originalTrustedProxies;
     }
     if (originalSiteUrl === undefined) {
       delete process.env.NEXT_PUBLIC_SITE_URL;
@@ -152,6 +160,46 @@ describe("Guest Portal BFF security & boundary helpers", () => {
       { method: "POST" },
     );
     expect(() => assertSameOriginMutation(missingOriginReq)).toThrow();
+
+    // Origin: null must fail closed even if a valid same-origin Referer header is present.
+    const nullOriginWithRefererReq = new NextRequest(
+      "http://localhost:3000/api/public/portal/consent",
+      {
+        method: "POST",
+        headers: {
+          origin: "null",
+          referer: "http://localhost:3000/portal/profile",
+        },
+      },
+    );
+    expect(() => assertSameOriginMutation(nullOriginWithRefererReq)).toThrow();
+  });
+
+  it("buckets IPv6 /64 prefixes in portal BFF rate limiting and rejects non-object JSON bodies", async () => {
+    process.env.LOVELACE_TRUST_PROXY = "true";
+    process.env.LOVELACE_TRUSTED_PROXIES = "127.0.0.1/32";
+
+    const req1 = new NextRequest("http://localhost:3000/api/public/portal/privacy/sar", {
+      method: "POST",
+      headers: { "x-forwarded-for": "2001:db8:abcd:1234::1" },
+    });
+    const req2 = new NextRequest("http://localhost:3000/api/public/portal/privacy/sar", {
+      method: "POST",
+      headers: { "x-forwarded-for": "2001:db8:abcd:1234::ffff" },
+    });
+    expect(enforcePortalBffRateLimit(req1, "test-ipv6-bucket-cap", 1)).toBeNull();
+    const blocked = enforcePortalBffRateLimit(req2, "test-ipv6-bucket-cap", 1);
+    expect(blocked?.status).toBe(429);
+
+    const nullJsonReq = new Request("http://localhost:3000/api/public/portal/consent", {
+      method: "POST",
+      body: "null",
+      headers: { "Content-Type": "application/json" },
+    });
+    await expect(parseJsonObject(nullJsonReq)).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_json",
+    });
   });
 
   it("never accepts admin tirbach_session cookie and requires CSRF token on mutations", async () => {

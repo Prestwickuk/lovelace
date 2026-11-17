@@ -751,7 +751,7 @@ func (s *Service) GetWorkspaceDashboard(
 	if tzErr != nil {
 		loc = time.UTC
 	}
-	nowLocal := time.Now().In(loc)
+	nowLocal := s.nowUTC().In(loc)
 	todayDate := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, time.UTC)
 
 	eligible := domain.EligibleDashboardWidgets(permCheck)

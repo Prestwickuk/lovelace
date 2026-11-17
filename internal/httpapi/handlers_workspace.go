@@ -104,10 +104,8 @@ func (h *Handler) handleResetWorkspaceProfile(w http.ResponseWriter, r *http.Req
 	var body struct {
 		ClearNamedOverrides bool `json:"clear_named_overrides"`
 	}
-	if r.ContentLength > 0 {
-		if !decodeJSON(w, r, &body) {
-			return
-		}
+	if !decodeOptionalJSON(w, r, &body) {
+		return
 	}
 	res, err := h.svc.ResetWorkspaceProfile(r.Context(), actor, actor.UserID, propID, body.ClearNamedOverrides)
 	if err != nil {

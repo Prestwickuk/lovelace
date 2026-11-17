@@ -15,7 +15,13 @@ export default async function TermsPage() {
 
   return (
     <>
-      <SiteHeader propertyName={prop?.name} region={prop?.region} branding={prop?.branding} propertySlug={prop?.slug} />
+      <SiteHeader
+        propertyName={prop?.name}
+        region={prop?.region}
+        branding={prop?.branding}
+        propertySlug={prop?.slug}
+        portalEnabled={Boolean(prop?.policy?.guest_portal_enabled)}
+      />
       <main className="container section" style={{ maxWidth: "780px" }}>
         <div className="card-panel">
           <h1 className="section-title">Booking Terms &amp; Cancellation Policy</h1>

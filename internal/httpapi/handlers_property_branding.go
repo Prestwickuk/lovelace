@@ -90,6 +90,9 @@ func (h *Handler) handleUploadPropertyBrandingLogo(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "invalid_upload", "logo multipart upload exceeded limit or was malformed")
 		return
 	}
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
+	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "logo file is required")

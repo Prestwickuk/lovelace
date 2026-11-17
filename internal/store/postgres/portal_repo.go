@@ -1091,12 +1091,18 @@ func (s *Store) UpdateReservationArrivalDetailsTx(
 		    guest_arrival_notes = $4,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE property_id = $1 AND id = $2
+		WHERE property_id = $1
+		  AND id = $2
+		  AND status IN ('PENDING', 'CONFIRMED', 'CHECKED_IN')
+		  AND UPPER(channel_code) = 'DIRECT'
 	`, propertyID, reservationID, eta, arrivalNotes)
 	if err != nil {
 		return domain.Reservation{}, MapErr(err)
 	}
 	if tag.RowsAffected() == 0 {
+		if _, gErr := s.GetReservation(ctx, tx, propertyID, reservationID); gErr == nil {
+			return domain.Reservation{}, fmt.Errorf("%w: arrival details can only be updated on active direct stays", domain.ErrConflict)
+		}
 		return domain.Reservation{}, domain.ErrNotFound
 	}
 	return s.GetReservation(ctx, tx, propertyID, reservationID)
@@ -1143,10 +1149,10 @@ func (s *Store) HasOpenPrivacyRightsEnquiryTx(
 			WHERE property_id = $1
 			  AND guest_id = ANY($2)
 			  AND source = 'PORTAL'
-			  AND subject LIKE $3 || '%'
+			  AND subject LIKE $3 || '%' ESCAPE '\'
 			  AND status NOT IN ('RESOLVED', 'CLOSED')
 		)
-	`, propertyID, clusterIDs, subjectPrefix).Scan(&exists)
+	`, propertyID, clusterIDs, escapeLikeTerm(subjectPrefix)).Scan(&exists)
 	return exists, MapErr(err)
 }
 
@@ -1271,6 +1277,23 @@ func (s *Store) ConfirmPortalEmailChangeTx(
 ) (domain.GuestPortalIdentity, domain.Guest, error) {
 	clean := strings.TrimSpace(strings.ToLower(newEmail))
 	norm := domain.NormalizeEmail(newEmail)
+	var conflictExists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM guests
+			WHERE property_id = $1
+			  AND id <> $2
+			  AND merged_into_guest_id IS NULL
+			  AND anonymized_at IS NULL
+			  AND normalized_email = $3
+		)
+	`, propertyID, canonicalGuestID, norm).Scan(&conflictExists); err != nil {
+		return domain.GuestPortalIdentity{}, domain.Guest{}, MapErr(err)
+	}
+	if conflictExists {
+		return domain.GuestPortalIdentity{}, domain.Guest{}, fmt.Errorf("%w: email address cannot be linked automatically", domain.ErrConflict)
+	}
 	ident, err := scanPortalIdentity(tx.QueryRow(ctx, `
 		UPDATE guest_portal_identities
 		SET verified_email = $3,

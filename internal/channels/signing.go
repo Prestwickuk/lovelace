@@ -22,7 +22,7 @@ const MaxWebhookTimestampSkew = 5 * time.Minute
 func GenerateNonceUUID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%d", time.Now().UTC().UnixNano())
+		panic("crypto/rand failed while generating channel nonce: " + err.Error())
 	}
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80

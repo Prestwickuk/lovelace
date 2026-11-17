@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1063,11 +1062,26 @@ func (s *Service) buildRatePushRequest(
 // ProcessPendingChannelSyncJobs claims due jobs with PostgreSQL FOR UPDATE SKIP LOCKED + leases + fencing
 // and executes them outside DB transactions with periodic lease renewal.
 func (s *Service) ProcessPendingChannelSyncJobs(ctx context.Context, limit int) (int, error) {
+	return s.processChannelSyncJobs(ctx, nil, limit)
+}
+
+// ProcessPropertyChannelSyncJobs claims and executes due channel sync jobs strictly scoped to propertyID.
+func (s *Service) ProcessPropertyChannelSyncJobs(ctx context.Context, actor Actor, propertyID uuid.UUID, limit int) (int, error) {
+	if err := s.requirePerm(actor, auth.PermChannelsWrite); err != nil {
+		return 0, err
+	}
+	if err := s.requirePropertyScope(actor, propertyID); err != nil {
+		return 0, err
+	}
+	return s.processChannelSyncJobs(ctx, &propertyID, limit)
+}
+
+func (s *Service) processChannelSyncJobs(ctx context.Context, propertyID *uuid.UUID, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	workerID := s.effectiveChannelWorkerID()
-	jobs, err := s.store.ClaimDueChannelSyncJobs(ctx, workerID, limit, defaultJobLeaseTTL)
+	jobs, err := s.store.ClaimDueChannelSyncJobsForProperty(ctx, workerID, propertyID, limit, defaultJobLeaseTTL)
 	if err != nil {
 		return 0, err
 	}
@@ -1454,17 +1468,37 @@ func (s *Service) applyExternalReservation(ctx context.Context, rec postgres.Cha
 	// Cancellation handling
 	if er.Status == "CANCELLED" {
 		return s.store.WithTx(ctx, func(tx pgx.Tx) error {
+			lockKey := propID.String() + ":" + rec.Connection.ProviderCode + ":" + er.ExternalReservationID
+			if _, lErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); lErr != nil {
+				return lErr
+			}
+			curExt, extErr := s.store.GetExternalReservationByExtID(ctx, tx, propID, rec.Connection.ProviderCode, er.ExternalReservationID)
+			hasExtNow := extErr == nil
 			var resIDPtr *uuid.UUID
-			if hasExisting && existing.ReservationID != nil {
-				resIDPtr = existing.ReservationID
-				curRes, gErr := s.store.GetReservation(ctx, tx, propID, *existing.ReservationID)
+			if hasExtNow && curExt.ReservationID != nil {
+				resIDPtr = curExt.ReservationID
+				curRes, gErr := s.store.GetReservation(ctx, tx, propID, *curExt.ReservationID)
 				if gErr == nil && curRes.Status != domain.ResStatusCancelled {
-					if _, tErr := s.store.TransitionReservationStatus(
-						ctx, tx, propID, curRes.ID, domain.ResStatusCancelled,
-						fmt.Sprintf("Cancelled remotely via %s", rec.Connection.ProviderCode),
-						uuid.Nil, curRes.Version,
-					); tErr != nil {
-						return tErr
+					isAnon := false
+					if curRes.GuestID != uuid.Nil {
+						if curGuest, cgErr := s.store.GetGuest(ctx, tx, propID, curRes.GuestID); cgErr == nil {
+							isAnon = curGuest.Status == domain.GuestStatusAnonymized || curGuest.AnonymizedAt != nil || curGuest.ErasureRequestedAt != nil
+						}
+					}
+					if !isAnon && curRes.Status.CanTransitionTo(domain.ResStatusCancelled) {
+						cancelledRes, tErr := s.store.TransitionReservationStatus(
+							ctx, tx, propID, curRes.ID, domain.ResStatusCancelled,
+							fmt.Sprintf("Cancelled remotely via %s", rec.Connection.ProviderCode),
+							uuid.Nil, curRes.Version,
+						)
+						if tErr != nil {
+							return tErr
+						}
+						if prop, pErr := s.store.GetPropertyByID(ctx, tx, propID); pErr == nil {
+							if jErr := s.store.SyncReservationAutomationJobs(ctx, tx, prop, cancelledRes, s.nowUTC()); jErr != nil {
+								return jErr
+							}
+						}
 					}
 				}
 			}
@@ -1505,6 +1539,23 @@ func (s *Service) applyExternalReservation(ctx context.Context, rec postgres.Cha
 	var resOut domain.Reservation
 	var importStat domain.ChannelImportStatus
 	txErr := s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		lockKey := propID.String() + ":" + rec.Connection.ProviderCode + ":" + er.ExternalReservationID
+		if _, lErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); lErr != nil {
+			return lErr
+		}
+		if curExt, extErr := s.store.GetExternalReservationByExtID(ctx, tx, propID, rec.Connection.ProviderCode, er.ExternalReservationID); extErr == nil {
+			existing = curExt
+			hasExisting = true
+			if existing.PayloadDigest != "" && existing.PayloadDigest == er.PayloadHash && existing.ImportStatus != domain.ChannelImportUnmapped {
+				return nil
+			}
+			if existing.ExternalUpdatedAt != nil && er.ProviderUpdatedAt != nil && er.ProviderUpdatedAt.Before(*existing.ExternalUpdatedAt) {
+				return nil
+			}
+		} else if !errors.Is(extErr, domain.ErrNotFound) {
+			return extErr
+		}
+
 		guest, gErr := s.store.FindOrCreateGuestForChannelImport(ctx, tx, propID, er.GuestName, er.GuestEmail, er.GuestPhone)
 		if gErr != nil {
 			return gErr
@@ -1517,6 +1568,19 @@ func (s *Service) applyExternalReservation(ctx context.Context, rec postgres.Cha
 		if hasExisting && existing.ReservationID != nil {
 			curRes, gErr := s.store.GetReservation(ctx, tx, propID, *existing.ReservationID)
 			if gErr == nil {
+				// Never overwrite terminal or GDPR-anonymised local reservations on historical OTA re-syncs.
+				isAnon := false
+				if curRes.GuestID != uuid.Nil {
+					if curGuest, cgErr := s.store.GetGuest(ctx, tx, propID, curRes.GuestID); cgErr == nil {
+						isAnon = curGuest.Status == domain.GuestStatusAnonymized || curGuest.AnonymizedAt != nil || curGuest.ErasureRequestedAt != nil
+					}
+				}
+				if isAnon || curRes.Status == domain.ResStatusCheckedOut || curRes.Status == domain.ResStatusCancelled || curRes.Status == domain.ResStatusNoShow {
+					resOut = curRes
+					importStat = domain.ChannelImportUpdated
+					return nil
+				}
+				curRes.GuestID = guest.ID
 				curRes.GuestName = guest.FullName
 				curRes.GuestEmail = guest.Email
 				curRes.GuestPhone = guest.Phone
@@ -1579,6 +1643,10 @@ func (s *Service) applyExternalReservation(ctx context.Context, rec postgres.Cha
 			}
 			resOut = created
 			importStat = domain.ChannelImportImported
+		}
+
+		if err := s.store.SyncReservationAutomationJobs(ctx, tx, prop, resOut, s.nowUTC()); err != nil {
+			return err
 		}
 
 		savedLedger, lErr := s.store.UpsertExternalReservation(ctx, tx, domain.ChannelExternalReservation{
@@ -1721,8 +1789,9 @@ func (s *Service) ProcessChannelWebhook(
 	if rec.Connection.ProviderCode != def.Code || rec.Connection.Status == channels.StatusDisabled || !rec.Connection.HasCredentials {
 		return WebhookProcessResult{}, domain.ErrChannelWebhookUnauthorized
 	}
-	if rec.Connection.WebhookEndpointToken != "" && strings.TrimSpace(endpointToken) != "" {
-		if subtle.ConstantTimeCompare([]byte(rec.Connection.WebhookEndpointToken), []byte(strings.TrimSpace(endpointToken))) != 1 {
+	requireEndpointToken := strings.EqualFold(strings.TrimSpace(rec.Connection.PublicConfig["require_endpoint_token"]), "true")
+	if rec.Connection.WebhookEndpointToken != "" && (requireEndpointToken || strings.TrimSpace(endpointToken) != "") {
+		if !auth.ConstantTimeEqual(strings.TrimSpace(endpointToken), rec.Connection.WebhookEndpointToken) {
 			return WebhookProcessResult{}, domain.ErrChannelWebhookUnauthorized
 		}
 	}

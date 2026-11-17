@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
@@ -523,7 +524,13 @@ func ComputePublicQuote(
 
 	var taxTotal int64
 	var taxLines []TaxLine
-	for bps, taxable := range taxByRate {
+	sortedRates := make([]int, 0, len(taxByRate))
+	for bps := range taxByRate {
+		sortedRates = append(sortedRates, bps)
+	}
+	sort.Ints(sortedRates)
+	for _, bps := range sortedRates {
+		taxable := taxByRate[bps]
 		taxAmt := (taxable*int64(bps) + 5000) / 10000
 		taxTotal += taxAmt
 		taxLines = append(taxLines, TaxLine{
@@ -540,8 +547,14 @@ func ComputePublicQuote(
 	var balanceDueDateStr string
 	if balanceDue > 0 {
 		dueDate := startDate.AddDate(0, 0, -policy.BalanceDueDaysBeforeArrival)
-		if dueDate.Before(nowUTC) {
-			// Arrival is inside balance window: collect full payment at checkout.
+		loc, tzErr := time.LoadLocation(strings.TrimSpace(prop.Timezone))
+		if tzErr != nil {
+			loc = time.UTC
+		}
+		nowLocal := nowUTC.In(loc)
+		todayDate := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, time.UTC)
+		if !dueDate.After(todayDate) {
+			// Arrival is on or inside balance window: collect full payment at checkout.
 			depositDue = grandTotal
 			balanceDue = 0
 		} else {
@@ -549,9 +562,13 @@ func ComputePublicQuote(
 		}
 	}
 
-	rawHashInput := fmt.Sprintf("%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%d",
-		prop.ID, ut.ID, preview.StartDate, preview.EndDate,
-		adults, children, infants, grandTotal, depositDue, policy.Version, len(extraLines),
+	var extraHashBuf strings.Builder
+	for _, el := range extraLines {
+		fmt.Fprintf(&extraHashBuf, ",%s:%d:%d:%d", el.ExtraID, el.Quantity, el.UnitPence, el.TotalPence)
+	}
+	rawHashInput := fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s",
+		prop.ID, ut.ID, plan.ID, preview.StartDate, preview.EndDate,
+		adults, children, infants, grandTotal, depositDue, policy.Version, extraHashBuf.String(),
 	)
 	sum := sha256.Sum256([]byte(rawHashInput))
 

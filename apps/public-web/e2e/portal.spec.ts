@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
-const PSQL_BIN = process.env.PSQL_BIN || "/opt/homebrew/bin/psql";
+const PSQL_BIN =
+  process.env.PSQL_BIN ||
+  (existsSync("/opt/homebrew/bin/psql") ? "/opt/homebrew/bin/psql" : "psql");
 const PUBLIC_ORIGIN = (process.env.E2E_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const E2E_DB_URL =
   process.env.E2E_DATABASE_URL ||

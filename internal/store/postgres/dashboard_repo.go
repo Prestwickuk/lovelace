@@ -56,11 +56,15 @@ func (s *Store) GetPropertyDashboardLayoutRaw(
 		db = s.pool
 	}
 	var upd time.Time
-	err = db.QueryRow(ctx, `
+	query := `
 		SELECT dashboard_schema_version, dashboard_layout, updated_at
 		FROM admin_user_property_workspaces
 		WHERE user_id = $1 AND property_id = $2
-	`, userID, propertyID).Scan(&schemaVersion, &rawLayout, &upd)
+	`
+	if _, isTx := db.(pgx.Tx); isTx {
+		query += " FOR UPDATE"
+	}
+	err = db.QueryRow(ctx, query, userID, propertyID).Scan(&schemaVersion, &rawLayout, &upd)
 	if err != nil {
 		return 0, nil, nil, MapErr(err)
 	}

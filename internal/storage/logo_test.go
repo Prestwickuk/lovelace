@@ -137,6 +137,13 @@ func TestValidateAndSanitizePropertyLogo(t *testing.T) {
 	if bytes.Contains(webpRes.Data, []byte("SECRET_EXIF_DEVICE_ID")) || bytes.Contains(webpRes.Data, []byte("EXIF")) {
 		t.Fatalf("expected WebP EXIF chunk to be stripped")
 	}
+
+	// Verify 512x256 VP8X dimension carry (0x01ff + 1 = 512, 0x00ff + 1 = 256).
+	webp512 := buildTestWebPWithEXIF(512, 256, "")
+	webp512Res, err := ValidateAndSanitizePropertyLogo("wide.webp", webp512, MaxPropertyLogoBytes)
+	if err != nil || webp512Res.Width != 512 || webp512Res.Height != 256 {
+		t.Fatalf("expected 512x256 WebP to decode accurately, got res=%+v err=%v", webp512Res, err)
+	}
 }
 
 func TestValidatePropertyLogoSecurityRejections(t *testing.T) {

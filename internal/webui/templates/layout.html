@@ -68,19 +68,29 @@
       {{end}}
       <details class="nav-group" {{if navSectionOpen .ActiveNav "inventory" .Workspace}}open{{end}}>
         <summary class="nav-section">Inventory &amp; Holds</summary>
+        {{if .CanReadBlocks}}
         <a href="/blocks" class="{{if eq .ActiveNav "blocks"}}active{{end}}" {{if eq .ActiveNav "blocks"}}aria-current="page"{{end}}>Bulk Blockouts</a>
+        {{end}}
+        {{if .CanReadReleases}}
         <a href="/releases" class="{{if eq .ActiveNav "releases"}}active{{end}}" {{if eq .ActiveNav "releases"}}aria-current="page"{{end}}>Scheduled Releases</a>
+        {{end}}
+        {{if .CanReadInventory}}
         <a href="/unit-types" class="{{if eq .ActiveNav "unit-types"}}active{{end}}" {{if eq .ActiveNav "unit-types"}}aria-current="page"{{end}}>Unit Types</a>
         <a href="/units" class="{{if eq .ActiveNav "units"}}active{{end}}" {{if eq .ActiveNav "units"}}aria-current="page"{{end}}>{{if eq .PropertyTerms.UnitPlural "Units"}}Units &amp; Pitches{{else}}{{.PropertyTerms.UnitPlural}}{{end}}</a>
         <a href="/extras" class="{{if eq .ActiveNav "extras"}}active{{end}}" {{if eq .ActiveNav "extras"}}aria-current="page"{{end}}>Extras &amp; Add-ons</a>
+        {{end}}
+        {{if .CanReadRates}}
         <a href="/rates" class="{{if eq .ActiveNav "rates"}}active{{end}}" {{if eq .ActiveNav "rates"}}aria-current="page"{{end}}>Rates &amp; Preview</a>
+        {{end}}
         {{if .CanReadReports}}
         <a href="/reports" class="{{if eq .ActiveNav "reports"}}active{{end}}" {{if eq .ActiveNav "reports"}}aria-current="page"{{end}}>Reports &amp; BI</a>
         {{end}}
       </details>
       <details class="nav-group" {{if navSectionOpen .ActiveNav "settings" .Workspace}}open{{end}}>
         <summary class="nav-section">Settings</summary>
+        {{if .CanReadProperty}}
         <a href="/property" class="{{if eq .ActiveNav "property"}}active{{end}}" {{if eq .ActiveNav "property"}}aria-current="page"{{end}}>Site Settings</a>
+        {{end}}
         {{if .CanReadChannels}}
         <a href="/settings/integrations/channel-manager" class="{{if eq .ActiveNav "channel-manager"}}active{{end}}" {{if eq .ActiveNav "channel-manager"}}aria-current="page"{{end}}>Channel Manager</a>
         {{end}}

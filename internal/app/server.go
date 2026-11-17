@@ -28,6 +28,6 @@ func NewRouter(cfg config.Config, store *postgres.Store, svc *service.Service) (
 	var h http.Handler = mux
 	h = httpx.WithSessionAuth(svc, h)
 	h = httpx.RequestContext(cfg, h)
-	h = httpx.SecurityHeaders(h)
+	h = httpx.SecurityHeadersWithConfig(cfg, h)
 	return h, nil
 }

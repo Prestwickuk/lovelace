@@ -31,9 +31,13 @@ func (s *Service) ListChannelProviders(ctx context.Context, actor Actor, propert
 	if err != nil {
 		return nil, err
 	}
+	canWrite := auth.HasPermission(actor.Role, auth.PermChannelsWrite)
 	byCode := make(map[string]channels.ChannelConnection, len(records))
 	for _, rec := range records {
 		conn := rec.Connection
+		if !canWrite {
+			conn.WebhookEndpointToken = ""
+		}
 		if def, ok := channels.GetProvider(conn.ProviderCode); ok {
 			conn.ProviderName = def.Name
 			conn.HasLiveAdapter = def.HasLiveAdapter

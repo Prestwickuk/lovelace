@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -64,7 +63,8 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 }
 
 func (h *Handler) handleEmailDeliveryWebhook(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 256*1024))
+	r.Body = http.MaxBytesReader(w, r.Body, 256*1024)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "failed to read webhook payload")
 		return
@@ -353,7 +353,9 @@ func (h *Handler) handleAnonymizeGuest(w http.ResponseWriter, r *http.Request, a
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if !decodeOptionalJSON(w, r, &body) {
+		return
+	}
 	out, err := h.svc.AnonymizeGuest(r.Context(), actor, propID, guestID, body.Reason)
 	if err != nil {
 		writeDomainError(w, err)
@@ -674,7 +676,9 @@ func (h *Handler) handlePreviewTemplate(w http.ResponseWriter, r *http.Request, 
 		ReservationID *uuid.UUID `json:"reservation_id"`
 		EnquiryID     *uuid.UUID `json:"enquiry_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if !decodeOptionalJSON(w, r, &body) {
+		return
+	}
 	subj, txt, htm, err := h.svc.PreviewCommunicationTemplateWithEnquiry(r.Context(), actor, propID, templateID, body.GuestID, body.ReservationID, body.EnquiryID)
 	if err != nil {
 		writeDomainError(w, err)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handlePortalBffError, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
+import { handlePortalBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
 import { getPropertySlug } from "@/lib/lovelace-api";
 import {
   assertNoQuerySecrets,
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   try {
     assertNoQuerySecrets(req);
     assertSameOriginMutation(req);
-    const body = (await req.json()) as { reason?: string };
+    const body = await parseJsonObject<{ reason?: string }>(req);
     const res = await callLovelacePortal<PortalPrivacyRequestReceipt>(
       req,
       "/privacy/erasure",

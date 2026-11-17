@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handlePortalBffError, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
+import { handlePortalBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
 import { getPropertySlug } from "@/lib/lovelace-api";
 import {
   assertNoQuerySecrets,
@@ -22,7 +22,7 @@ export async function POST(
     assertSameOriginMutation(req);
     const { ref } = await context.params;
     const cleanRef = assertSafeBookingRef(ref);
-    const body = (await req.json()) as { note?: string };
+    const body = await parseJsonObject<{ note?: string }>(req);
     const res = await callLovelacePortal<{ booking: PortalBookingDetail }>(
       req,
       `/bookings/${encodeURIComponent(cleanRef)}/cancel-request`,

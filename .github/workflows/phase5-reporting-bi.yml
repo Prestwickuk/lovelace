@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: phase5-bi-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   phase5:
     runs-on: ubuntu-latest
@@ -53,11 +60,11 @@ jobs:
 
       - name: Verify formatting, build, and vet
         run: |
-          test -z "$(gofmt -l .)"
-          go build ./...
-          go vet ./...
+          test -z "$(gofmt -l cmd internal migrations)"
+          go build ./cmd/... ./internal/... ./migrations/...
+          go vet ./cmd/... ./internal/... ./migrations/...
 
-      - name: Apply fresh migrations through 0028 as lovelace_migrator
+      - name: Apply fresh migrations through 0029 and verify ensure-roles.sh idempotence
         env:
           MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_phase5_fresh_test?sslmode=disable
         run: |
@@ -71,13 +78,16 @@ jobs:
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0026_phase3_m4_guest_portal.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0027_phase3_m4_keyed_otp_hmac.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0028_phase3_m4_challenge_outbox_fencing.sql'"
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0029_security_and_integrity_hardening.sql'"
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT COUNT(*) FROM schema_migrations" | grep -qx '29'
+          PGHOST=127.0.0.1 PGPORT=5432 POSTGRES_DB=lovelace_phase5_fresh_test POSTGRES_BOOTSTRAP_USER=postgres LOVELACE_MIGRATOR_PASSWORD=ci-only-migrator-password LOVELACE_APP_PASSWORD=ci-only-app-password ./scripts/postgres/ensure-roles.sh
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT audit_is_allowed_enum('report_export', 'resource_type')" | grep -qx 't'
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT audit_is_allowed_enum('property_branding', 'resource_type')" | grep -qx 't'
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT audit_is_allowed_enum('guest_portal_identity', 'resource_type') AND audit_is_allowed_enum('guest_portal_session', 'resource_type')" | grep -qx 't'
-          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT has_table_privilege('lovelace_app', 'public.unit_status_history', 'SELECT,INSERT') AND NOT has_table_privilege('lovelace_app', 'public.unit_status_history', 'UPDATE') AND NOT has_table_privilege('lovelace_app', 'public.audit_log_redactions', 'INSERT')" | grep -qx 't'
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT has_table_privilege('lovelace_app', 'public.unit_status_history', 'SELECT,INSERT') AND NOT has_table_privilege('lovelace_app', 'public.unit_status_history', 'UPDATE') AND NOT has_table_privilege('lovelace_app', 'public.inventory_history_gaps', 'INSERT') AND NOT has_table_privilege('lovelace_app', 'public.schema_migrations', 'INSERT') AND NOT has_table_privilege('lovelace_app', 'public.audit_log_redactions', 'INSERT')" | grep -qx 't'
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT has_table_privilege('lovelace_app', 'public.admin_user_preferences', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('lovelace_app', 'public.admin_user_property_workspaces', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('lovelace_app', 'public.property_branding_settings', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('lovelace_app', 'public.guest_portal_identities', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('lovelace_app', 'public.guest_portal_challenges', 'SELECT,INSERT,UPDATE,DELETE') AND has_table_privilege('lovelace_app', 'public.guest_portal_sessions', 'SELECT,INSERT,UPDATE,DELETE')" | grep -qx 't'
 
-      - name: Verify populated upgrade migration path through 0028
+      - name: Verify populated upgrade migration path through 0029
         env:
           MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_phase5_upgrade_test?sslmode=disable
         run: |
@@ -91,8 +101,114 @@ jobs:
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0026_phase3_m4_guest_portal.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0027_phase3_m4_keyed_otp_hmac.sql'"
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0028_phase3_m4_challenge_outbox_fencing.sql'"
+          psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM schema_migrations WHERE filename = '0029_security_and_integrity_hardening.sql'"
 
       - name: Run full unit and PostgreSQL integration test suite with race detector
         run: |
-          go test -count=1 ./...
-          go test -count=1 -race ./...
+          go test -count=1 ./cmd/... ./internal/... ./migrations/...
+          go test -count=1 -race ./cmd/... ./internal/... ./migrations/...
+
+  public-web:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-postgres-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PGPASSWORD: ci-only-postgres-password
+      GOTOOLCHAIN: go1.24.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.x
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/public-web/package-lock.json
+
+      - name: Install dependencies, lint, unit test, and build standalone Next.js BFF
+        working-directory: apps/public-web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm test
+          npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: apps/public-web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E suite (Direct Booking + Guest Portal) against live Go + Next.js
+        env:
+          MIGRATION_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_e2e_test?sslmode=disable
+          E2E_DATABASE_URL: postgres://lovelace_migrator:ci-only-migrator-password@127.0.0.1:5432/lovelace_e2e_test?sslmode=disable
+          E2E_BASE_URL: http://127.0.0.1:3000
+        run: |
+          psql -X -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE lovelace_migrator LOGIN PASSWORD 'ci-only-migrator-password' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          CREATE ROLE lovelace_app LOGIN PASSWORD 'ci-only-app-password' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE lovelace_e2e_test OWNER lovelace_migrator;
+          SQL
+          PGHOST=127.0.0.1 PGPORT=5432 POSTGRES_DB=lovelace_e2e_test POSTGRES_BOOTSTRAP_USER=postgres LOVELACE_MIGRATOR_PASSWORD=ci-only-migrator-password LOVELACE_APP_PASSWORD=ci-only-app-password ./scripts/postgres/ensure-roles.sh
+          go run ./cmd/migrate
+          go build -o /tmp/tirbach-server ./cmd/server
+          TIRBACH_ENV=development \
+          TIRBACH_LISTEN_ADDR=127.0.0.1:8080 \
+          TIRBACH_COOKIE_SECURE=false \
+          TIRBACH_TRUST_PROXY=false \
+          DATABASE_URL="postgres://lovelace_app:ci-only-app-password@127.0.0.1:5432/lovelace_e2e_test?sslmode=disable" \
+          TIRBACH_ENCRYPTION_KEY="9f8e7d6c5b4a39281706f5e4d3c2b1a00f1e2d3c4b5a69788796a5b4c3d2e1f0" \
+          TIRBACH_AUTO_SEED=true \
+          TIRBACH_ADMIN_EMAIL="owner@tirbach.wales" \
+          TIRBACH_ADMIN_NAME="Tir Bach Owner" \
+          TIRBACH_ADMIN_PASSWORD="ci-e2e-owner-password-2026" \
+          TIRBACH_PUBLIC_ORIGIN="http://127.0.0.1:3000" \
+          TIRBACH_PUBLIC_API_SECRET="ci-e2e-public-api-secret" \
+          TIRBACH_GUEST_PORTAL_ENABLED=true \
+          TIRBACH_STRIPE_SANDBOX=true \
+          TIRBACH_STRIPE_WEBHOOK_SECRET="whsec_ci_e2e_sandbox" \
+          TIRBACH_EMAIL_FROM="bookings@tirbach.wales" \
+          TIRBACH_ATTACHMENT_DIR="/tmp/lovelace-e2e-attachments" \
+          /tmp/tirbach-server >/tmp/tirbach-server.log 2>&1 &
+          GO_PID=$!
+          trap 'kill $GO_PID ${NEXT_PID:-} 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:8080/healthz
+          (
+            cd apps/public-web
+            cp -R public .next/standalone/public
+            cp -R .next/static .next/standalone/.next/static
+            PORT=3000 \
+            HOSTNAME=127.0.0.1 \
+            LOVELACE_ENV=development \
+            LOVELACE_API_BASE_URL=http://127.0.0.1:8080 \
+            LOVELACE_PROPERTY_SLUG=tir-bach \
+            LOVELACE_PUBLIC_API_SECRET=ci-e2e-public-api-secret \
+            LOVELACE_TRUST_PROXY=false \
+            LOVELACE_STRIPE_SANDBOX=true \
+            NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000 \
+            node .next/standalone/server.js
+          ) >/tmp/public-web.log 2>&1 &
+          NEXT_PID=$!
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:3000 >/dev/null
+          (cd apps/public-web && npx playwright test e2e/booking.spec.ts e2e/portal.spec.ts)

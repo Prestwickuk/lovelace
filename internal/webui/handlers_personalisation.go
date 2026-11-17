@@ -112,7 +112,7 @@ func (h *Handler) handleAccountWorkspacePreferencesPost(w http.ResponseWriter, r
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	propID := base.Property.ID
@@ -142,7 +142,7 @@ func (h *Handler) handleAccountWorkspacePreferencesResetPost(w http.ResponseWrit
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	propID := base.Property.ID
@@ -163,7 +163,7 @@ func (h *Handler) handleAccountSavedViewCreatePost(w http.ResponseWriter, r *htt
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	propID := base.Property.ID
@@ -196,7 +196,7 @@ func (h *Handler) handleAccountSavedViewDeletePost(w http.ResponseWriter, r *htt
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	propID := base.Property.ID

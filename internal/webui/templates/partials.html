@@ -28,7 +28,7 @@
 {{define "empty_state"}}
 <div class="empty-state" role="status">
   <p class="empty-state-title">{{index . "Title"}}</p>
-  {{if index . "Body"}}<p class="empty-state-body">{{index . "Body"}}</p>{{end}}
+  {{if index . "Body"}}<p class="empty-state-body">{{index . "Body"}}</p>{{else if index . "Message"}}<p class="empty-state-body">{{index . "Message"}}</p>{{end}}
   {{if index . "ActionURL"}}
   <div class="mt-2">
     <a href="{{index . "ActionURL"}}" class="btn btn-secondary btn-sm">{{index . "ActionLabel"}}</a>

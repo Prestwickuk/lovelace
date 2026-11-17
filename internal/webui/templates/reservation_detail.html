@@ -23,7 +23,7 @@
   <div class="card">
     <div class="ops-section-head">
       <h2>Guest &amp; Stay Summary</h2>
-      {{if .CanReadGuests}}
+      {{if and .CanReadGuests (isNonZeroUUID .Reservation.GuestID)}}
       <a href="/guests/{{.Reservation.GuestID}}" class="btn btn-secondary btn-sm">Open Guest CRM Profile →</a>
       {{end}}
     </div>

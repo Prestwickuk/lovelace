@@ -44,7 +44,7 @@ func verifySafeTestDatabase(dbURL, currentDB, currentUser string, isSuperuser bo
 		return fmt.Errorf("refusing destructive test reset on non-test database (url_db=%q, current_database=%q)", urlDB, currentDB)
 	}
 	lowUser := strings.ToLower(strings.TrimSpace(currentUser))
-	if isSuperuser || lowUser == "" || lowUser == "postgres" || strings.Contains(lowUser, "prod") {
+	if isSuperuser || lowUser == "" || lowUser == "postgres" || lowUser == "tir_bach" || strings.Contains(lowUser, "prod") {
 		return fmt.Errorf("refusing destructive test reset as privileged or non-test role (user=%q, superuser=%v); run scripts/setup-test-db.sh and use tir_bach_test_runner", currentUser, isSuperuser)
 	}
 	return nil

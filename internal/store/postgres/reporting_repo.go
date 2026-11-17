@@ -1081,7 +1081,7 @@ func (s *Store) GetGuestRetentionReport(ctx context.Context, prop domain.Propert
 	err := s.pool.QueryRow(ctx, `
 		WITH RECURSIVE guest_lineage AS (
 			-- Base: root canonical guests (not merged into anyone else)
-			SELECT id AS guest_id, id AS canonical_id, ARRAY[id] AS path, (status = 'ANONYMIZED') AS canonical_anonymized
+			SELECT id AS guest_id, id AS canonical_id, ARRAY[id] AS path, (status = 'ANONYMIZED' OR anonymized_at IS NOT NULL) AS canonical_anonymized
 			FROM guests
 			WHERE property_id = $1 AND merged_into_guest_id IS NULL
 			UNION ALL

@@ -255,8 +255,8 @@ func (s *Service) UpdateGuest(ctx context.Context, actor Actor, g domain.Guest) 
 		if err != nil {
 			return err
 		}
-		if before.Status == domain.GuestStatusMerged || before.Status == domain.GuestStatusAnonymized {
-			return fmt.Errorf("%w: %s guest profile cannot be updated via generic edit", domain.ErrConflict, before.Status)
+		if before.Status == domain.GuestStatusMerged || before.Status == domain.GuestStatusAnonymized || before.AnonymizedAt != nil || before.ErasureRequestedAt != nil {
+			return fmt.Errorf("%w: merged, anonymized, or erasure-pending guest profile cannot be updated via generic edit", domain.ErrConflict)
 		}
 		if g.Status == "" {
 			g.Status = before.Status
@@ -297,6 +297,18 @@ func (s *Service) DismissGuestDuplicateWithCategory(ctx context.Context, actor A
 		return err
 	}
 	return s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		ga, err := s.store.GetGuest(ctx, tx, propertyID, guestA)
+		if err != nil {
+			return err
+		}
+		gb, err := s.store.GetGuest(ctx, tx, propertyID, guestB)
+		if err != nil {
+			return err
+		}
+		if ga.Status == domain.GuestStatusMerged || ga.Status == domain.GuestStatusAnonymized || ga.AnonymizedAt != nil || ga.ErasureRequestedAt != nil ||
+			gb.Status == domain.GuestStatusMerged || gb.Status == domain.GuestStatusAnonymized || gb.AnonymizedAt != nil || gb.ErasureRequestedAt != nil {
+			return fmt.Errorf("%w: cannot dismiss duplicates involving merged, anonymized, or erasure-pending guests", domain.ErrConflict)
+		}
 		if err := s.store.DismissGuestDuplicateWithCategory(ctx, tx, propertyID, guestA, guestB, category, reason, actor.UserID); err != nil {
 			return err
 		}
@@ -536,6 +548,11 @@ func (s *Service) CreateGuestEnquiry(ctx context.Context, actor Actor, e domain.
 		if err := s.store.ValidateGuestReservationLinkTx(ctx, tx, e.PropertyID, e.GuestID, e.ReservationID); err != nil {
 			return err
 		}
+		if e.MaintenanceRequestID != nil {
+			if _, mErr := s.store.GetMaintenanceRequest(ctx, tx, e.PropertyID, *e.MaintenanceRequestID, s.nowUTC()); mErr != nil {
+				return mErr
+			}
+		}
 		var txErr error
 		created, txErr = s.store.CreateGuestEnquiry(ctx, tx, e)
 		if txErr != nil {
@@ -616,6 +633,11 @@ func (s *Service) UpdateGuestEnquiry(ctx context.Context, actor Actor, e domain.
 		}
 		if err := s.store.ValidateGuestReservationLinkTx(ctx, tx, e.PropertyID, e.GuestID, e.ReservationID); err != nil {
 			return err
+		}
+		if e.MaintenanceRequestID != nil {
+			if _, mErr := s.store.GetMaintenanceRequest(ctx, tx, e.PropertyID, *e.MaintenanceRequestID, s.nowUTC()); mErr != nil {
+				return mErr
+			}
 		}
 		if e.Status == domain.EnqStatusResolved && before.ResolvedAt == nil {
 			now := s.nowUTC()
@@ -716,6 +738,7 @@ func (s *Service) LogGuestInteraction(ctx context.Context, actor Actor, c domain
 	}
 	var created domain.GuestCommunication
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		var canonicalGuest uuid.UUID
 		if c.GuestID != nil {
 			canonID, _, anonOrPending, gErr := s.store.LockCanonicalGuestClusterTx(ctx, tx, c.PropertyID, *c.GuestID)
 			if gErr != nil {
@@ -725,25 +748,45 @@ func (s *Service) LogGuestInteraction(ctx context.Context, actor Actor, c domain
 				return fmt.Errorf("%w: cannot log interaction for an anonymized or erasure-pending guest", domain.ErrConflict)
 			}
 			c.GuestID = &canonID
-		} else if c.ReservationID != nil {
+			canonicalGuest = canonID
+		}
+		if c.ReservationID != nil {
 			resGuestID, rErr := s.store.ResolveGuestForReservationTx(ctx, tx, c.PropertyID, *c.ReservationID)
 			if rErr != nil {
 				return rErr
 			}
-			_, _, anonOrPending, gErr := s.store.LockCanonicalGuestClusterTx(ctx, tx, c.PropertyID, resGuestID)
+			resCanon, _, anonOrPending, gErr := s.store.LockCanonicalGuestClusterTx(ctx, tx, c.PropertyID, resGuestID)
 			if gErr != nil {
 				return gErr
 			}
 			if anonOrPending {
 				return fmt.Errorf("%w: cannot log interaction for an anonymized or erasure-pending guest reservation", domain.ErrConflict)
 			}
-		} else if c.EnquiryID != nil {
+			if canonicalGuest != uuid.Nil && resCanon != canonicalGuest {
+				return fmt.Errorf("%w: reservation does not belong to the specified guest", domain.ErrValidation)
+			}
+			canonicalGuest = resCanon
+		}
+		if c.EnquiryID != nil {
 			anonOrPending, eErr := s.store.LockGuestByEnquiryTx(ctx, tx, c.PropertyID, *c.EnquiryID)
 			if eErr != nil {
 				return eErr
 			}
 			if anonOrPending {
 				return fmt.Errorf("%w: cannot log interaction for an anonymized or erasure-pending guest enquiry", domain.ErrConflict)
+			}
+			enq, qErr := s.store.GetGuestEnquiry(ctx, tx, c.PropertyID, *c.EnquiryID)
+			if qErr != nil {
+				return qErr
+			}
+			if enq.GuestID != nil && canonicalGuest != uuid.Nil {
+				enqCanon, _, _, gErr := s.store.LockCanonicalGuestClusterTx(ctx, tx, c.PropertyID, *enq.GuestID)
+				if gErr != nil {
+					return gErr
+				}
+				if enqCanon != canonicalGuest {
+					return fmt.Errorf("%w: enquiry does not belong to the specified guest", domain.ErrValidation)
+				}
 			}
 		}
 		if err := s.store.ValidateGuestReservationLinkTx(ctx, tx, c.PropertyID, c.GuestID, c.ReservationID); err != nil {
@@ -1375,6 +1418,9 @@ func (s *Service) CreateCommunicationAutomationRule(ctx context.Context, actor A
 	r.UpdatedBy = &uid
 	var out domain.CommunicationAutomationRule
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, tErr := s.store.GetCommunicationTemplate(ctx, tx, r.PropertyID, r.TemplateID); tErr != nil {
+			return tErr
+		}
 		var txErr error
 		out, txErr = s.store.CreateCommunicationAutomationRule(ctx, tx, r)
 		if txErr != nil {
@@ -1396,6 +1442,9 @@ func (s *Service) UpdateCommunicationAutomationRule(ctx context.Context, actor A
 	r.UpdatedBy = &uid
 	var out domain.CommunicationAutomationRule
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, tErr := s.store.GetCommunicationTemplate(ctx, tx, r.PropertyID, r.TemplateID); tErr != nil {
+			return tErr
+		}
 		var txErr error
 		out, txErr = s.store.UpdateCommunicationAutomationRule(ctx, tx, r)
 		if txErr != nil {
@@ -1570,9 +1619,11 @@ func (s *Service) ExportGuestData(ctx context.Context, actor Actor, propertyID, 
 		dismissals[i].DismissedBy = nil
 	}
 
-	_ = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+	if err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		return s.recordAudit(ctx, tx, actor, &propertyID, "guest.data_exported", "guest", canonicalID.String(), nil, nil)
-	})
+	}); err != nil {
+		return domain.GuestDataExport{}, err
+	}
 
 	return domain.GuestDataExport{
 		ExportedAt:          s.nowUTC(),

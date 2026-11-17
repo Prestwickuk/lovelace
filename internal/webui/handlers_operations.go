@@ -25,7 +25,7 @@ func (h *Handler) registerOperationsRoutes(mux *http.ServeMux) {
 func (h *Handler) handleOperationsCentre(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Operations Centre", "dashboard")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *Handler) handleOperationsCentre(w http.ResponseWriter, r *http.Request,
 func (h *Handler) handleOpsCreateTaskPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Operations Centre", "dashboard")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *Handler) handleOpsTransitionTaskPost(w http.ResponseWriter, r *http.Req
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Operations Centre", "dashboard")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *Handler) handleOpsAssignTaskPost(w http.ResponseWriter, r *http.Request
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Operations Centre", "dashboard")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
@@ -182,7 +182,7 @@ func (h *Handler) handleOpsAssignTaskPost(w http.ResponseWriter, r *http.Request
 func (h *Handler) handlePaymentExceptionsGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Payment Exceptions", "payment-exceptions")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	exceptions, err := h.svc.ListPaymentExceptions(r.Context(), actor, base.Property.ID)
@@ -219,7 +219,7 @@ func (h *Handler) handlePaymentExceptionResolvePost(w http.ResponseWriter, r *ht
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Payment Exceptions", "payment-exceptions")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	retPath := safeAdminReturnPath(r.FormValue("return_to"), "/payment-exceptions")
@@ -254,17 +254,25 @@ func buildOpsReturnURL(dateStr, focus, anchor string) string {
 
 func safeAdminReturnPath(raw, fallback string) string {
 	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" || !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") {
+	if trimmed == "" || !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") || strings.ContainsRune(trimmed, '\\') {
 		return fallback
 	}
+	for _, r := range trimmed {
+		if r < 0x20 || r == 0x7f {
+			return fallback
+		}
+	}
 	u, err := url.Parse(trimmed)
-	if err != nil || u.IsAbs() || u.Host != "" {
+	if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
 		return fallback
 	}
 	return trimmed
 }
 
 func redirectAdminWithQuery(w http.ResponseWriter, r *http.Request, targetPath, key, val string) {
+	if key == "err" {
+		val = sanitizeAdminFlashMessage(val)
+	}
 	basePart, frag, hasFrag := strings.Cut(targetPath, "#")
 	u, err := url.Parse(basePart)
 	if err != nil {

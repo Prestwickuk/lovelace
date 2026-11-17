@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -141,6 +142,18 @@ func (s *Service) UpdateRateRule(ctx context.Context, actor Actor, rr domain.Rat
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		before, err := s.store.GetRateRule(ctx, tx, rr.PropertyID, rr.ID)
 		if err != nil {
+			return err
+		}
+		if _, err := s.store.GetRatePlan(ctx, tx, rr.PropertyID, rr.RatePlanID); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return domain.NewValidationError(map[string]string{"rate_plan_id": "must belong to this property"})
+			}
+			return err
+		}
+		if _, err := s.store.GetUnitType(ctx, tx, rr.PropertyID, rr.UnitTypeID); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return domain.NewValidationError(map[string]string{"unit_type_id": "must belong to this property"})
+			}
 			return err
 		}
 		updated, err = s.store.UpdateRateRule(ctx, tx, rr)

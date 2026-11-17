@@ -37,11 +37,15 @@ func validatePortalMasterKey(seed []byte) error {
 	if len(seed) != sha256.Size {
 		return ErrPortalKeyUnavailable
 	}
-	var nonZero byte
+	var seen [256]bool
+	distinct := 0
 	for _, b := range seed {
-		nonZero |= b
+		if !seen[b] {
+			seen[b] = true
+			distinct++
+		}
 	}
-	if nonZero == 0 {
+	if distinct < 8 {
 		return ErrPortalKeyUnavailable
 	}
 	if subtle.ConstantTimeCompare(seed, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
@@ -2483,9 +2487,12 @@ func (s *Service) RequestPortalErasure(
 			return domain.ErrUnauthorized
 		}
 		// Always withdraw marketing consent if currently granted (D7/D9).
-		consents, _ := s.store.ListGuestConsentRecords(ctx, tx, authCtx.Property.ID, canonID)
+		consents, err := s.store.ListGuestConsentRecords(ctx, tx, authCtx.Property.ID, canonID)
+		if err != nil {
+			return err
+		}
 		if len(consents) > 0 && consents[0].Status == domain.ConsentGranted {
-			_, _ = s.store.RecordGuestConsent(ctx, tx, domain.GuestConsentRecord{
+			rec, err := s.store.RecordGuestConsent(ctx, tx, domain.GuestConsentRecord{
 				PropertyID:    authCtx.Property.ID,
 				GuestID:       canonID,
 				ConsentType:   "MARKETING_EMAIL",
@@ -2495,6 +2502,12 @@ func (s *Service) RequestPortalErasure(
 				PolicyVersion: authCtx.Property.Policy.BookingTermsVersion,
 				OccurredAt:    nowUTC,
 			})
+			if err != nil {
+				return err
+			}
+			if err := s.recordAudit(ctx, tx, portalActor(meta), &authCtx.Property.ID, "guest_consent.recorded", "guest", canonID.String(), nil, auditConsentSnapshot(rec)); err != nil {
+				return err
+			}
 		}
 
 		alreadyOpen, err := s.store.HasOpenPrivacyRightsEnquiryTx(ctx, tx, authCtx.Property.ID, clusterIDs, domain.PortalErasureSubjectPrefix)
@@ -2657,7 +2670,7 @@ func (s *Service) SendGuestPortalVerification(
 			Summary:         "Portal verification sent by " + actor.FullName,
 			RecipientEmail:  cleanEmail,
 			SenderEmail:     s.cfg.EmailFrom,
-			DeliveryStatus:  domain.DeliveryQueued,
+			DeliveryStatus:  domain.DeliveryLogged,
 			StaffUserID:     &uid,
 			OccurredAt:      nowUTC,
 		}); err != nil {

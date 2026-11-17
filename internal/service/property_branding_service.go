@@ -55,7 +55,6 @@ func buildPropertyBrandingAuditPayload(rec domain.PropertyBrandingRecord, action
 	}
 	hasLogo := strings.TrimSpace(rec.LogoStorageKey) != "" && rec.LogoVersion > 0
 	payload := map[string]any{
-		"redacted":                  true,
 		"property_id":               rec.PropertyID.String(),
 		"action":                    action,
 		"schema_version":            rec.SchemaVersion,

@@ -72,7 +72,7 @@ paths:
         - $ref: "#/components/parameters/PropertyID"
       responses:
         "200":
-          description: `OpsMaintenanceSummary` counts and alerts
+          description: "`OpsMaintenanceSummary` counts and alerts"
 
   /api/v1/properties/{propertyID}/maintenance:
     get:
@@ -181,7 +181,7 @@ paths:
 
   /api/v1/properties/{propertyID}/maintenance/attachments/{attachmentID}:
     get:
-      summary: Authenticated attachment download with `X-Content-Type-Options: nosniff`
+      summary: "Authenticated attachment download with `X-Content-Type-Options: nosniff`"
       parameters:
         - $ref: "#/components/parameters/PropertyID"
         - name: attachmentID
@@ -354,7 +354,7 @@ paths:
     get:
       summary: List heuristic duplicate guest candidates with scan completeness metadata (`guests:read`)
       parameters: [{ $ref: "#/components/parameters/PropertyID" }]
-      responses: { "200": { description: Candidate duplicate pairs plus scanned_guests, total_active_guests, and is_complete flags } }
+      responses: { "200": { description: "Candidate duplicate pairs plus scanned_guests, total_active_guests, and is_complete flags" } }
 
   /api/v1/properties/{propertyID}/guests/duplicates/dismiss:
     post:
@@ -501,10 +501,10 @@ paths:
         - $ref: "#/components/parameters/PropertyID"
         - $ref: "#/components/parameters/OutboxID"
       responses:
-        "200": { description: Reconciled outbox item with persisted actor, timestamp, decision, reason_code, and evidence }
-        "403": { description: Forbidden (`comms:reconcile` restricted to owner_admin and manager, active account, property scope) }
-        "409": { description: Outbox item is actively DISPATCHING or not in DISPATCH_UNKNOWN state }
-        "422": { description: Invalid resolution, missing failure evidence, or PII detected in reason/evidence fields }
+        "200": { description: "Reconciled outbox item with persisted actor, timestamp, decision, reason_code, and evidence" }
+        "403": { description: "Forbidden (`comms:reconcile` restricted to owner_admin and manager, active account, property scope)" }
+        "409": { description: "Outbox item is actively DISPATCHING or not in DISPATCH_UNKNOWN state" }
+        "422": { description: "Invalid resolution, missing failure evidence, or PII detected in reason/evidence fields" }
 
   /api/v1/properties/{propertyID}/enquiries:
     get:
@@ -667,18 +667,18 @@ paths:
         - $ref: "#/components/parameters/PropertyID"
         - $ref: "#/components/parameters/ProviderCode"
       responses:
-        "200": { description: Sync scope preview (`requires_confirmation`, item counts, blocked capability notes) }
-        "422": { description: Blocked capability (e.g. Lodgify availability) or invalid date range }
+        "200": { description: "Sync scope preview (`requires_confirmation`, item counts, blocked capability notes)" }
+        "422": { description: "Blocked capability (e.g. Lodgify availability) or invalid date range" }
 
   /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/sync:
     post:
-      summary: Enqueue idempotent durable channel sync jobs (`channels:write`; requires `confirm_scope=true` for multi-listing or >14d pushes)
+      summary: "Enqueue idempotent durable channel sync jobs (`channels:write`; requires `confirm_scope=true` for multi-listing or >14d pushes)"
       parameters:
         - $ref: "#/components/parameters/PropertyID"
         - $ref: "#/components/parameters/ProviderCode"
       responses:
-        "202": { description: Queued sync jobs }
-        "422": { description: Confirmation required, unverified connection, or capability blocked }
+        "202": { description: "Queued sync jobs" }
+        "422": { description: "Confirmation required, unverified connection, or capability blocked" }
 
   /api/v1/properties/{propertyID}/integrations/channel-manager/jobs/process:
     post:
@@ -694,9 +694,9 @@ paths:
         - $ref: "#/components/parameters/ProviderCode"
         - $ref: "#/components/parameters/ConnectionID"
       responses:
-        "202": { description: Verified and queued for asynchronous hydration }
-        "200": { description: Deduplicated replay }
-        "401": { description: Missing/invalid signature, expired timestamp, or replayed HMAC nonce }
+        "202": { description: "Verified and queued for asynchronous hydration" }
+        "200": { description: "Deduplicated replay" }
+        "401": { description: "Missing/invalid signature, expired timestamp, or replayed HMAC nonce" }
 
   /api/v1/properties/{propertyID}/reports/overview:
     get:
@@ -707,7 +707,7 @@ paths:
         - { name: end_date, in: query, schema: { type: string, format: date } }
         - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
         - { name: horizon_days, in: query, schema: { type: integer, minimum: 1, maximum: 180 } }
-      responses: { "200": { description: Combined occupancy, revenue, channels, forecast, and retention snapshot } }
+      responses: { "200": { description: "Combined occupancy, revenue, channels, forecast, and retention snapshot" } }
 
   /api/v1/properties/{propertyID}/reports/occupancy:
     get:
@@ -716,7 +716,7 @@ paths:
         - $ref: "#/components/parameters/PropertyID"
         - { name: start_date, in: query, schema: { type: string, format: date } }
         - { name: end_date, in: query, schema: { type: string, format: date } }
-      responses: { "200": { description: Daily, monthly, and unit-type occupancy report } }
+      responses: { "200": { description: "Daily, monthly, and unit-type occupancy report" } }
 
   /api/v1/properties/{propertyID}/reports/revenue:
     get:
@@ -779,8 +779,8 @@ paths:
         - { name: end_date, in: query, schema: { type: string, format: date } }
         - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
       responses:
-        "200": { description: CSV attachment or JSON accounting export payload }
-        "403": { description: Requires reports:export (owner_admin or manager) and same-property scope }
+        "200": { description: "CSV attachment or JSON accounting export payload" }
+        "403": { description: "Requires reports:export (owner_admin or manager) and same-property scope" }
 
 components:
   securitySchemes:

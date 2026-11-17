@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requestBookingCancellation } from "@/lib/lovelace-api";
-import { handleBffError } from "@/lib/bff-response";
+import { handleBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
 import { checkBffRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -8,15 +8,21 @@ export async function POST(request: Request) {
   if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
   try {
-    const body = await request.json();
-    const res = await requestBookingCancellation(body, rl.clientIp);
-    return NextResponse.json(res, {
-      headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, private",
-        "Referrer-Policy": "no-referrer",
+    const body = await parseJsonObject<{
+      booking_reference?: string;
+      token?: string;
+      note?: string;
+    }>(request);
+    const res = await requestBookingCancellation(
+      {
+        booking_reference: (body.booking_reference || "").trim(),
+        token: (body.token || "").trim(),
+        note: body.note || "",
       },
-    });
+      rl.clientIp,
+    );
+    return NextResponse.json(res, { headers: PRIVATE_NO_STORE_HEADERS });
   } catch (err) {
-    return handleBffError(err);
+    return handleBffError(err, PRIVATE_NO_STORE_HEADERS);
   }
 }

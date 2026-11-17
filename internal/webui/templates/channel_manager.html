@@ -118,7 +118,7 @@
   <div class="mt-3">
     <p class="subtitle"><strong>Webhook Callback Path:</strong> <code>/api/v1/webhooks/channels/{{$def.Code}}/{{$conn.ID}}</code></p>
     {{if $conn.LastSyncErrorCode}}
-    <p class="subtitle"><strong>Last Error Code:</strong> <span class="badge badge-danger">{{$conn.LastSyncErrorCode}}</span></p>
+    <p class="subtitle"><strong>Last Error Code:</strong> <span class="badge badge-err">{{$conn.LastSyncErrorCode}}</span></p>
     {{end}}
     {{if .Health.Capabilities}}
     <details class="mt-2">
@@ -129,7 +129,7 @@
           {{range .Health.Capabilities}}
           <tr>
             <td><code>{{.Name}}</code></td>
-            <td><span class="badge {{if eq (printf "%s" .Status) "SUPPORTED"}}badge-success{{else if eq (printf "%s" .Status) "BLOCKED"}}badge-danger{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+            <td><span class="badge {{if eq (printf "%s" .Status) "SUPPORTED"}}badge-ok{{else if eq (printf "%s" .Status) "BLOCKED"}}badge-err{{else}}badge-muted{{end}}">{{.Status}}</span></td>
             <td>{{.Detail}}</td>
           </tr>
           {{end}}
@@ -226,7 +226,7 @@
         {{range .Health.ExternalReservations}}
         <tr>
           <td><code>{{.ExternalReservationID}}</code></td>
-          <td><span class="badge {{if eq (printf "%s" .ImportStatus) "CONFLICT_OVERBOOKED"}}badge-danger{{else if eq (printf "%s" .ImportStatus) "UNMAPPED"}}badge-warn{{else}}badge-success{{end}}">{{.ImportStatus}}</span></td>
+          <td><span class="badge {{if eq (printf "%s" .ImportStatus) "CONFLICT_OVERBOOKED"}}badge-err{{else if eq (printf "%s" .ImportStatus) "UNMAPPED"}}badge-warn{{else}}badge-ok{{end}}">{{.ImportStatus}}</span></td>
           <td>{{.ConflictReason}}</td>
           <td>{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
         </tr>

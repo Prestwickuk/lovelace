@@ -1637,7 +1637,7 @@ progress.report-progress { width: 100%; height: 0.625rem; accent-color: var(--ac
 }
 .nav-group > summary.nav-section:hover {
   color: var(--sidebar-ink);
-  background: var(--sidebar-hover);
+  background: var(--sidebar-hover-bg);
 }
 .nav-group > a {
   display: block;
@@ -1817,7 +1817,7 @@ progress.report-progress { width: 100%; height: 0.625rem; accent-color: var(--ac
   margin-top: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: var(--border-width) solid var(--err-border);
-  background: var(--err-soft);
+  background: var(--err-bg);
   border-radius: var(--radius);
   display: flex;
   flex-wrap: wrap;

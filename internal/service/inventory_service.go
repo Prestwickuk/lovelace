@@ -21,12 +21,13 @@ func (s *Service) ListProperties(ctx context.Context, actor Actor) ([]domain.Pro
 	if err != nil {
 		return nil, err
 	}
-	if actor.PropertyID == nil {
+	scopePropID := s.effectiveActorPropertyScope(ctx, nil, actor)
+	if scopePropID == nil {
 		return props, nil
 	}
 	var filtered []domain.Property
 	for _, p := range props {
-		if p.ID == *actor.PropertyID {
+		if p.ID == *scopePropID {
 			filtered = append(filtered, p)
 		}
 	}

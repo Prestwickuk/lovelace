@@ -26,7 +26,7 @@ func (h *Handler) registerWorkspaceRoutes(mux *http.ServeMux) {
 func (h *Handler) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Workspace", "workspace")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if base.Property.ID == uuid.Nil {
@@ -73,7 +73,7 @@ func (h *Handler) resolveWorkspacePostScope(w http.ResponseWriter, r *http.Reque
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Workspace", "workspace")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return uuid.Nil, false
 	}
 	propID := base.Property.ID

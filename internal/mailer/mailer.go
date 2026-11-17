@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"net"
+	netmail "net/mail"
 	"net/smtp"
 	"net/textproto"
 	"os"
@@ -33,6 +35,10 @@ func ValidateMessage(msg Message) (Message, error) {
 	fromClean, err := domain.SanitizeEmailHeaderValue(msg.From)
 	if err != nil || fromClean == "" {
 		return msg, Permanent(fmt.Errorf("invalid sender address: %w", domain.ErrValidation))
+	}
+	parsedFrom, err := netmail.ParseAddress(fromClean)
+	if err != nil || strings.TrimSpace(parsedFrom.Address) == "" || strings.ContainsAny(parsedFrom.Address, " \t\r\n<>") {
+		return msg, Permanent(fmt.Errorf("invalid sender email address: %w", domain.ErrValidation))
 	}
 	toClean, err := domain.ValidateEmailRecipient(msg.To)
 	if err != nil {
@@ -61,11 +67,12 @@ type Sender interface {
 // SMTPSender dispatches email via net/smtp when TIRBACH_SMTP_ADDR is configured.
 // Send honors ctx cancellation/deadlines and bounds blocking network I/O via Timeout.
 type SMTPSender struct {
-	Addr      string
-	Username  string
-	Password  string
-	Timeout   time.Duration
-	TLSConfig *tls.Config
+	Addr       string
+	Username   string
+	Password   string
+	Timeout    time.Duration
+	TLSConfig  *tls.Config
+	RequireTLS bool
 }
 
 func wrapPreSubmitErr(ctx context.Context, err error) error {
@@ -118,10 +125,17 @@ func (s *SMTPSender) Send(ctx context.Context, msg Message) error {
 	if s.Username != "" {
 		auth = smtp.PlainAuth("", s.Username, s.Password, host)
 	}
+	encodedSubject := clean.Subject
+	for i := 0; i < len(encodedSubject); i++ {
+		if encodedSubject[i] >= 0x80 {
+			encodedSubject = mime.QEncoding.Encode("utf-8", clean.Subject)
+			break
+		}
+	}
 	var bodyBuilder strings.Builder
 	bodyBuilder.WriteString("From: " + clean.From + "\r\n")
 	bodyBuilder.WriteString("To: " + clean.To + "\r\n")
-	bodyBuilder.WriteString("Subject: " + clean.Subject + "\r\n")
+	bodyBuilder.WriteString("Subject: " + encodedSubject + "\r\n")
 	bodyBuilder.WriteString("MIME-Version: 1.0\r\n")
 	if strings.TrimSpace(clean.BodyHTML) != "" {
 		mw := multipart.NewWriter(&bodyBuilder)
@@ -180,11 +194,17 @@ func (s *SMTPSender) Send(ctx context.Context, msg Message) error {
 	if ext, _ := client.Extension("STARTTLS"); ext {
 		tlsCfg := s.TLSConfig
 		if tlsCfg == nil {
-			tlsCfg = &tls.Config{ServerName: host}
+			tlsCfg = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+		} else if tlsCfg.MinVersion == 0 {
+			cloned := tlsCfg.Clone()
+			cloned.MinVersion = tls.VersionTLS12
+			tlsCfg = cloned
 		}
 		if err := client.StartTLS(tlsCfg); err != nil {
 			return wrapPreSubmitErr(sendCtx, err)
 		}
+	} else if s.RequireTLS {
+		return wrapPreSubmitErr(sendCtx, errors.New("SMTP server does not advertise required STARTTLS transport encryption"))
 	}
 	if auth != nil {
 		if ok, _ := client.Extension("AUTH"); ok {
@@ -193,7 +213,11 @@ func (s *SMTPSender) Send(ctx context.Context, msg Message) error {
 			}
 		}
 	}
-	if err := client.Mail(clean.From); err != nil {
+	envelopeFrom := clean.From
+	if parsedFrom, pErr := netmail.ParseAddress(clean.From); pErr == nil && parsedFrom.Address != "" {
+		envelopeFrom = parsedFrom.Address
+	}
+	if err := client.Mail(envelopeFrom); err != nil {
 		return wrapPreSubmitErr(sendCtx, err)
 	}
 	if err := client.Rcpt(clean.To); err != nil {

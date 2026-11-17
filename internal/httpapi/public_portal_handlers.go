@@ -100,23 +100,38 @@ func rejectPortalQuerySecrets(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func normalizePortalOriginHeader(raw string) string {
+func parseStrictPortalOriginHeader(raw string) (string, bool) {
 	clean := strings.TrimSpace(raw)
 	if clean == "" {
-		return ""
+		return "", false
+	}
+	if strings.EqualFold(clean, "null") {
+		return "", true
 	}
 	u, err := url.Parse(clean)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", true
 	}
-	return strings.ToLower(u.Scheme + "://" + u.Host)
+	return strings.ToLower(u.Scheme + "://" + u.Host), true
+}
+
+func extractPortalRefererOrigin(raw string) (string, bool) {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return "", false
+	}
+	u, err := url.Parse(clean)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User != nil {
+		return "", true
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host), true
 }
 
 func (h *Handler) checkPortalMutationOrigin(w http.ResponseWriter, r *http.Request) bool {
 	allowedMap := make(map[string]bool)
 	allowedHosts := make(map[string]bool)
 	for k := range h.allowedPublicOrigins() {
-		norm := normalizePortalOriginHeader(k)
+		norm, _ := parseStrictPortalOriginHeader(k)
 		if norm != "" {
 			allowedMap[norm] = true
 			if u, err := url.Parse(norm); err == nil && u.Host != "" {
@@ -124,24 +139,31 @@ func (h *Handler) checkPortalMutationOrigin(w http.ResponseWriter, r *http.Reque
 			}
 		}
 	}
-	if xfh := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0])); xfh != "" {
-		if len(allowedHosts) > 0 && !allowedHosts[xfh] {
+	bffAuth := h.cfg.PublicAPISecret != "" && auth.ConstantTimeEqual(r.Header.Get("X-Lovelace-Public-Key"), h.cfg.PublicAPISecret)
+	if h.cfg.TrustProxy || bffAuth {
+		if xfh := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0])); xfh != "" {
+			if len(allowedHosts) > 0 && !allowedHosts[xfh] {
+				slog.Warn("portal.origin.rejected")
+				writeError(w, http.StatusForbidden, "origin_not_allowed", "cross-site portal mutation rejected")
+				return false
+			}
+		}
+	}
+	if origin, present := parseStrictPortalOriginHeader(r.Header.Get("Origin")); present {
+		if origin == "" || !allowedMap[origin] {
 			slog.Warn("portal.origin.rejected")
 			writeError(w, http.StatusForbidden, "origin_not_allowed", "cross-site portal mutation rejected")
 			return false
 		}
-	}
-	origin := normalizePortalOriginHeader(r.Header.Get("Origin"))
-	if origin == "" {
-		origin = normalizePortalOriginHeader(r.Header.Get("Referer"))
-	}
-	if origin == "" {
 		return true
 	}
-	if !allowedMap[origin] {
-		slog.Warn("portal.origin.rejected")
-		writeError(w, http.StatusForbidden, "origin_not_allowed", "cross-site portal mutation rejected")
-		return false
+	if refOrigin, present := extractPortalRefererOrigin(r.Header.Get("Referer")); present {
+		if refOrigin == "" || !allowedMap[refOrigin] {
+			slog.Warn("portal.origin.rejected")
+			writeError(w, http.StatusForbidden, "origin_not_allowed", "cross-site portal mutation rejected")
+			return false
+		}
+		return true
 	}
 	return true
 }
@@ -177,7 +199,7 @@ func hashLimiterDimension(prefix, raw string) string {
 func (h *Handler) checkPortalAuthRateLimit(w http.ResponseWriter, r *http.Request, email, bookingRef string) bool {
 	bffAuth := h.cfg.PublicAPISecret != "" && auth.ConstantTimeEqual(r.Header.Get("X-Lovelace-Public-Key"), h.cfg.PublicAPISecret)
 	meta := httpx.MetaFromContext(r.Context())
-	ipKey := httpx.ResolveForwardedCustomerIP(r, bffAuth, meta.IPAddress)
+	ipKey := httpx.RateLimitKeyForIP(httpx.ResolveForwardedCustomerIP(r, bffAuth, meta.IPAddress))
 	if ipKey == "" {
 		ipKey = "unknown"
 	}
@@ -239,7 +261,7 @@ func (h *Handler) handlePortalAuthChallenge(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	_, _, slug := extractPortalSessionAndCSRF(r, body.PropertySlug)
-	res, err := h.svc.RequestPortalAuthChallenge(r.Context(), publicActorMeta(r), service.RequestPortalChallengeInput{
+	res, err := h.svc.RequestPortalAuthChallenge(r.Context(), h.publicActorMeta(r), service.RequestPortalChallengeInput{
 		PropertySlug:     slug,
 		Email:            body.Email,
 		Purpose:          domain.PortalChallengePurpose(strings.ToUpper(strings.TrimSpace(body.Purpose))),
@@ -277,7 +299,7 @@ func (h *Handler) handlePortalAuthVerify(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	_, _, slug := extractPortalSessionAndCSRF(r, body.PropertySlug)
-	res, err := h.svc.RedeemPortalChallenge(r.Context(), publicActorMeta(r), service.RedeemPortalChallengeInput{
+	res, err := h.svc.RedeemPortalChallenge(r.Context(), h.publicActorMeta(r), service.RedeemPortalChallengeInput{
 		PropertySlug:     slug,
 		Email:            body.Email,
 		OTPCode:          body.Code,
@@ -313,7 +335,7 @@ func (h *Handler) handlePortalAuthBookingToken(w http.ResponseWriter, r *http.Re
 	if strings.TrimSpace(tok) == "" {
 		tok = extractBearerToken(r)
 	}
-	res, err := h.svc.CreatePortalBookingTokenSession(r.Context(), publicActorMeta(r), slug, body.BookingReference, tok)
+	res, err := h.svc.CreatePortalBookingTokenSession(r.Context(), h.publicActorMeta(r), slug, body.BookingReference, tok)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -347,7 +369,7 @@ func (h *Handler) handlePortalLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessTok, csrfTok, slug := extractPortalSessionAndCSRF(r, body.PropertySlug)
-	if err := h.svc.LogoutPortalSession(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok); err != nil {
+	if err := h.svc.LogoutPortalSession(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -369,7 +391,7 @@ func (h *Handler) handlePortalStepUpChallenge(w http.ResponseWriter, r *http.Req
 	if !h.checkPortalAuthRateLimit(w, r, "", "") || !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	if err := h.svc.RequestPortalStepUpChallenge(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok); err != nil {
+	if err := h.svc.RequestPortalStepUpChallenge(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -392,7 +414,7 @@ func (h *Handler) handlePortalStepUpVerify(w http.ResponseWriter, r *http.Reques
 	if !h.checkPortalAuthRateLimit(w, r, "", "") || !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	view, err := h.svc.VerifyPortalStepUpChallenge(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, body.Code)
+	view, err := h.svc.VerifyPortalStepUpChallenge(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, body.Code)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -447,7 +469,7 @@ func (h *Handler) handlePortalUpdateArrival(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ref := strings.TrimSpace(r.PathValue("reference"))
-	detail, err := h.svc.UpdatePortalArrivalDetails(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, ref, body.EstimatedArrivalTime, body.GuestArrivalNotes)
+	detail, err := h.svc.UpdatePortalArrivalDetails(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, ref, body.EstimatedArrivalTime, body.GuestArrivalNotes)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -477,7 +499,7 @@ func (h *Handler) handlePortalChangeRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ref := strings.TrimSpace(r.PathValue("reference"))
-	enq, err := h.svc.RequestPortalBookingChange(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, ref, service.PortalBookingChangeRequestInput{
+	enq, err := h.svc.RequestPortalBookingChange(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, ref, service.PortalBookingChangeRequestInput{
 		RequestedArrival:   body.RequestedArrival,
 		RequestedDeparture: body.RequestedDeparture,
 		RequestedAdults:    body.RequestedAdults,
@@ -509,7 +531,7 @@ func (h *Handler) handlePortalCancelRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ref := strings.TrimSpace(r.PathValue("reference"))
-	detail, err := h.svc.RequestPortalBookingCancellation(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, ref, body.Note)
+	detail, err := h.svc.RequestPortalBookingCancellation(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, ref, body.Note)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -550,7 +572,7 @@ func (h *Handler) handlePortalUpdateProfile(w http.ResponseWriter, r *http.Reque
 	if !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	profile, err := h.svc.UpdatePortalProfile(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, service.UpdatePortalProfileInput{
+	profile, err := h.svc.UpdatePortalProfile(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, service.UpdatePortalProfileInput{
 		Phone:                  body.Phone,
 		PreferredContactMethod: body.PreferredContactMethod,
 		PreferredLanguage:      body.PreferredLanguage,
@@ -579,7 +601,7 @@ func (h *Handler) handlePortalInitiateEmailChange(w http.ResponseWriter, r *http
 	if !h.checkPortalAuthRateLimit(w, r, body.NewEmail, "") || !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	if err := h.svc.InitiatePortalEmailChange(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, body.NewEmail); err != nil {
+	if err := h.svc.InitiatePortalEmailChange(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, body.NewEmail); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -605,7 +627,7 @@ func (h *Handler) handlePortalConfirmEmailChange(w http.ResponseWriter, r *http.
 	if !h.checkPortalAuthRateLimit(w, r, "", "") || !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	profile, err := h.svc.ConfirmPortalEmailChange(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, body.Code)
+	profile, err := h.svc.ConfirmPortalEmailChange(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, body.Code)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -629,7 +651,7 @@ func (h *Handler) handlePortalUpdateConsent(w http.ResponseWriter, r *http.Reque
 	if !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	profile, err := h.svc.UpdatePortalMarketingConsent(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, domain.ConsentStatus(strings.ToUpper(strings.TrimSpace(body.Status))))
+	profile, err := h.svc.UpdatePortalMarketingConsent(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, domain.ConsentStatus(strings.ToUpper(strings.TrimSpace(body.Status))))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -672,7 +694,7 @@ func (h *Handler) handlePortalCreateEnquiry(w http.ResponseWriter, r *http.Reque
 	}
 	enq, err := h.svc.CreatePortalEnquiry(
 		r.Context(),
-		publicActorMeta(r),
+		h.publicActorMeta(r),
 		slug,
 		sessTok,
 		csrfTok,
@@ -708,7 +730,7 @@ func (h *Handler) handlePortalReplyEnquiry(w http.ResponseWriter, r *http.Reques
 	if !h.checkPortalSessionRateLimit(w, sessTok, h.portalEnquiryLimiter, "3600") {
 		return
 	}
-	enq, err := h.svc.ReplyPortalEnquiry(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, enqID, body.Message)
+	enq, err := h.svc.ReplyPortalEnquiry(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, enqID, body.Message)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -732,7 +754,7 @@ func (h *Handler) handlePortalRequestSAR(w http.ResponseWriter, r *http.Request)
 	if !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	receipt, err := h.svc.RequestPortalSAR(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, body.Notes)
+	receipt, err := h.svc.RequestPortalSAR(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, body.Notes)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -756,7 +778,7 @@ func (h *Handler) handlePortalRequestErasure(w http.ResponseWriter, r *http.Requ
 	if !h.checkPortalSessionRateLimit(w, sessTok, h.portalMutationLimiter, "60") {
 		return
 	}
-	receipt, err := h.svc.RequestPortalErasure(r.Context(), publicActorMeta(r), slug, sessTok, csrfTok, body.Reason)
+	receipt, err := h.svc.RequestPortalErasure(r.Context(), h.publicActorMeta(r), slug, sessTok, csrfTok, body.Reason)
 	if err != nil {
 		writeDomainError(w, err)
 		return

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handlePortalBffError, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
+import { handlePortalBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
 import { getPropertySlug } from "@/lib/lovelace-api";
 import {
   assertNoQuerySecrets,
@@ -19,12 +19,12 @@ export async function POST(req: NextRequest) {
   try {
     assertNoQuerySecrets(req);
     assertSameOriginMutation(req);
-    const body = (await req.json()) as {
+    const body = await parseJsonObject<{
       email?: string;
       code?: string;
       magic_token?: string;
       booking_reference?: string;
-    };
+    }>(req);
     const browserNonce = (req.cookies.get(PORTAL_NONCE_COOKIE)?.value || "").trim();
 
     const upstream = await callLovelacePortal<{

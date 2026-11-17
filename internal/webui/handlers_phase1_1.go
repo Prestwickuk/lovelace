@@ -54,7 +54,7 @@ func (h *Handler) registerPhase1_1Routes(mux *http.ServeMux) {
 func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Booking Calendar", "calendar")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 
 	cal, err := h.svc.GetCalendarView(r.Context(), actor, cq)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load calendar")
+		h.renderDomainError(w, err, "Calendar Unavailable", "Unable to load booking calendar.")
 		return
 	}
 
@@ -167,7 +167,7 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservations", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
@@ -213,7 +213,7 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 
 	reservations, err := h.svc.ListReservations(r.Context(), actor, base.Property.ID, filter)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load reservations")
+		h.renderDomainError(w, err, "Reservations Unavailable", "Unable to load reservations.")
 		return
 	}
 	sortReservationsForWorkspace(reservations, sortKey)
@@ -272,7 +272,11 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleReservationNewGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "New Reservation", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Failed to Load Property", "Unable to retrieve property metadata.")
+		h.renderDomainError(w, err, "Failed to Load Property", "Unable to retrieve property metadata.")
+		return
+	}
+	if !base.CanWriteReservations {
+		h.renderError(w, http.StatusForbidden, "Access Denied", "Your administrative role does not have permission to create reservations.")
 		return
 	}
 	allUnits, _ := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
@@ -330,7 +334,7 @@ func (h *Handler) handleReservationNewGet(w http.ResponseWriter, r *http.Request
 func (h *Handler) handleReservationCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "New Reservation", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Failed to Load Property", "Unable to retrieve property metadata.")
+		h.renderDomainError(w, err, "Failed to Load Property", "Unable to retrieve property metadata.")
 		return
 	}
 	arrival, err := domain.ParseDate(r.FormValue("arrival_date"))
@@ -377,12 +381,12 @@ func (h *Handler) handleReservationDetailGet(w http.ResponseWriter, r *http.Requ
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservation Details", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	res, err := h.svc.GetReservation(r.Context(), actor, base.Property.ID, id)
 	if err != nil {
-		h.renderError(w, http.StatusNotFound, "Not Found", "reservation not found")
+		h.renderDomainError(w, err, "Reservation Unavailable", "Unable to load reservation.")
 		return
 	}
 	allUnits, _ := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
@@ -441,7 +445,7 @@ func (h *Handler) handleReservationUpdatePost(w http.ResponseWriter, r *http.Req
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservation Details", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	arrival, err := domain.ParseDate(r.FormValue("arrival_date"))
@@ -489,7 +493,7 @@ func (h *Handler) handleReservationTransitionPost(w http.ResponseWriter, r *http
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservation Details", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	nextStatus := domain.ReservationStatus(r.FormValue("status"))
@@ -519,7 +523,7 @@ func (h *Handler) handleReservationTransitionPost(w http.ResponseWriter, r *http
 func (h *Handler) handleBookingChannelCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservations", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	ch, err := h.svc.CreateBookingChannel(r.Context(), actor, domain.BookingChannel{
@@ -580,12 +584,12 @@ func (h *Handler) buildBlocksPageData(r *http.Request, actor service.Actor, base
 func (h *Handler) handleBlocksGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	data, err := h.buildBlocksPageData(r, actor, base)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load blockouts")
+		h.renderDomainError(w, err, "Blockouts Unavailable", "Unable to load blockouts.")
 		return
 	}
 	h.renderPage(w, "blocks.html", data)
@@ -622,7 +626,7 @@ func (h *Handler) parseBulkBlockoutForm(r *http.Request, propID uuid.UUID) (doma
 func (h *Handler) handleBlockoutPreviewPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	in, err := h.parseBulkBlockoutForm(r, base.Property.ID)
@@ -637,7 +641,7 @@ func (h *Handler) handleBlockoutPreviewPost(w http.ResponseWriter, r *http.Reque
 	}
 	data, err := h.buildBlocksPageData(r, actor, base)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load blockouts")
+		h.renderDomainError(w, err, "Blockouts Unavailable", "Unable to load blockouts.")
 		return
 	}
 	data.Preview = &preview
@@ -648,7 +652,7 @@ func (h *Handler) handleBlockoutPreviewPost(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleBlockoutBulkPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	in, err := h.parseBulkBlockoutForm(r, base.Property.ID)
@@ -672,7 +676,7 @@ func (h *Handler) handleBlockoutGroupReleasePost(w http.ResponseWriter, r *http.
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	unitIDs := parseUUIDsForm(r.Form["unit_ids"])
@@ -691,7 +695,7 @@ func (h *Handler) handleBlockoutGroupReinstatePost(w http.ResponseWriter, r *htt
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	claimIDs := parseUUIDsForm(r.Form["claim_ids"])
@@ -711,7 +715,7 @@ func (h *Handler) handleBlockoutGroupDatesPost(w http.ResponseWriter, r *http.Re
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	sd, err := domain.ParseDate(r.FormValue("start_date"))
@@ -737,13 +741,13 @@ func (h *Handler) handleBlockoutGroupDatesPost(w http.ResponseWriter, r *http.Re
 func (h *Handler) handleReleasesGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	includeCancelled := r.URL.Query().Get("include_cancelled") == "true"
 	rules, err := h.svc.ListReleaseRules(r.Context(), actor, base.Property.ID, includeCancelled)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load release rules")
+		h.renderDomainError(w, err, "Scheduled Releases Unavailable", "Unable to load release rules.")
 		return
 	}
 	units, _ := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
@@ -770,7 +774,7 @@ func (h *Handler) handleReleasesGet(w http.ResponseWriter, r *http.Request, acto
 func (h *Handler) handleReleasesCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	sd, err := domain.ParseDate(r.FormValue("start_date"))
@@ -823,7 +827,7 @@ func (h *Handler) handleReleasesManualPost(w http.ResponseWriter, r *http.Reques
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.ManualReleaseRule(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -841,7 +845,7 @@ func (h *Handler) handleReleasesCancelPost(w http.ResponseWriter, r *http.Reques
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.CancelReleaseRule(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -861,12 +865,12 @@ type channelProviderUIItem struct {
 func (h *Handler) handleChannelManagerGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	providers, err := h.svc.ListChannelProviders(r.Context(), actor, base.Property.ID)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load channel integrations")
+		h.renderDomainError(w, err, "Channel Integrations Unavailable", "Unable to load channel integrations.")
 		return
 	}
 	unitTypes, _ := h.svc.ListUnitTypes(r.Context(), actor, base.Property.ID)
@@ -901,7 +905,7 @@ func (h *Handler) handleChannelManagerSavePost(w http.ResponseWriter, r *http.Re
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	inputs := make(map[string]string)
@@ -927,7 +931,7 @@ func (h *Handler) handleChannelManagerStatusPost(w http.ResponseWriter, r *http.
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.SetChannelStatus(r.Context(), actor, base.Property.ID, providerCode, channels.ConnectionStatus(r.FormValue("status"))); err != nil {
@@ -941,7 +945,7 @@ func (h *Handler) handleChannelManagerDeletePost(w http.ResponseWriter, r *http.
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if err := h.svc.DeleteChannelConfig(r.Context(), actor, base.Property.ID, providerCode); err != nil {
@@ -955,7 +959,7 @@ func (h *Handler) handleChannelManagerVerifyPost(w http.ResponseWriter, r *http.
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	res, err := h.svc.VerifyChannelConnection(r.Context(), actor, base.Property.ID, providerCode)
@@ -970,7 +974,7 @@ func (h *Handler) handleChannelManagerDisconnectPost(w http.ResponseWriter, r *h
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	res, err := h.svc.DisconnectChannelConnection(r.Context(), actor, base.Property.ID, providerCode)
@@ -985,7 +989,7 @@ func (h *Handler) handleChannelManagerMappingPost(w http.ResponseWriter, r *http
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	unitTypeID, err := uuid.Parse(strings.TrimSpace(r.FormValue("unit_type_id")))
@@ -1029,7 +1033,7 @@ func (h *Handler) handleChannelManagerMappingPost(w http.ResponseWriter, r *http
 func (h *Handler) handleChannelManagerMappingDeletePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	mapID, err := uuid.Parse(r.PathValue("mappingID"))
@@ -1048,7 +1052,7 @@ func (h *Handler) handleChannelManagerSyncPost(w http.ResponseWriter, r *http.Re
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	res, err := h.svc.TriggerChannelSync(r.Context(), actor, service.ChannelSyncRequest{

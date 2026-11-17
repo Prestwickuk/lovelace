@@ -7,6 +7,7 @@ import {
   formatPricingModel,
   formatStayDate,
   getUnitTypeGallery,
+  isSafeCheckoutRedirectUrl,
 } from "./format";
 
 describe("format utilities", () => {
@@ -17,10 +18,14 @@ describe("format utilities", () => {
     expect(formatMoney(4200, "EUR")).toBe("€42.00");
   });
 
-  it("formats dates and category/pricing labels", () => {
+  it("formats dates and category/pricing labels across uppercase and Go lowercase API enums", () => {
     expect(formatStayDate("2026-07-15")).toContain("2026");
     expect(formatCategoryLabel("GLAMPING")).toBe("Glamping");
+    expect(formatCategoryLabel("tent_pitch")).toBe("Tent Pitch");
+    expect(formatCategoryLabel("touring_pitch")).toBe("Touring & Hook-Up");
     expect(formatPricingModel("PER_NIGHT")).toBe("per night");
+    expect(formatPricingModel("per_night")).toBe("per night");
+    expect(formatPricingModel("per_person_per_night")).toBe("per guest per night");
     expect(formatAmenity("wood-burner")).toBe("Wood Burner");
   });
 
@@ -59,5 +64,29 @@ describe("format utilities", () => {
     expect(buildSafeSandboxRedirect("failed", "HLD-2026-AB12")).toBe(
       "/book?cancelled=1",
     );
+  });
+
+  it("allows only /checkout/sandbox and https://checkout.stripe.com checkout redirect URLs", () => {
+    expect(isSafeCheckoutRedirectUrl("/checkout/sandbox?session_id=cs_sandbox_1")).toBe(
+      true,
+    );
+    expect(
+      isSafeCheckoutRedirectUrl(
+        "http://127.0.0.1:3000/checkout/sandbox?session_id=cs_sandbox_1",
+        "http://127.0.0.1:3000",
+      ),
+    ).toBe(true);
+    expect(
+      isSafeCheckoutRedirectUrl("https://checkout.stripe.com/c/pay/cs_test_123"),
+    ).toBe(true);
+    expect(isSafeCheckoutRedirectUrl("http://checkout.stripe.com/c/pay/cs_test_123")).toBe(
+      false,
+    );
+    expect(
+      isSafeCheckoutRedirectUrl("https://user@checkout.stripe.com/c/pay/cs_test_123"),
+    ).toBe(false);
+    expect(isSafeCheckoutRedirectUrl("https://evil.example/phish")).toBe(false);
+    expect(isSafeCheckoutRedirectUrl("//evil.example/checkout/sandbox")).toBe(false);
+    expect(isSafeCheckoutRedirectUrl("/stays")).toBe(false);
   });
 });

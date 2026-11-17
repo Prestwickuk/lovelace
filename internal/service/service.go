@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -272,7 +275,7 @@ func New(store *postgres.Store, cfg config.Config) *Service {
 	var payProv payments.Provider
 	if cfg.StripeSecretKey != "" {
 		payProv = payments.NewStripeClient(cfg.StripeSecretKey, cfg.StripeAPIBaseURL)
-	} else if cfg.StripeSandbox && !cfg.IsProduction() {
+	} else if cfg.StripeSandbox && !cfg.IsProduction() && !cfg.IsStaging() {
 		origins := cfg.AllowedPublicOrigins()
 		primaryOrigin := ""
 		if len(origins) > 0 {
@@ -280,15 +283,21 @@ func New(store *postgres.Store, cfg config.Config) *Service {
 		}
 		payProv = payments.NewSandboxProvider(primaryOrigin)
 		if cfg.StripeWebhookSecret == "" {
-			cfg.StripeWebhookSecret = "whsec_sandbox_dev_only"
+			var rnd [16]byte
+			if _, err := rand.Read(rnd[:]); err == nil {
+				cfg.StripeWebhookSecret = "whsec_sandbox_" + hex.EncodeToString(rnd[:])
+			} else {
+				cfg.StripeWebhookSecret = "whsec_sandbox_ephemeral_fallback"
+			}
 		}
 	}
 	var emailSnd mailer.Sender
 	if strings.TrimSpace(cfg.SMTPAddr) != "" {
 		emailSnd = &mailer.SMTPSender{
-			Addr:     cfg.SMTPAddr,
-			Username: cfg.SMTPUsername,
-			Password: cfg.SMTPPassword,
+			Addr:       cfg.SMTPAddr,
+			Username:   cfg.SMTPUsername,
+			Password:   cfg.SMTPPassword,
+			RequireTLS: cfg.IsProduction() && !isLoopbackSMTPAddr(cfg.SMTPAddr),
 		}
 	}
 	attDir := strings.TrimSpace(cfg.AttachmentStorageDir)
@@ -313,6 +322,20 @@ func New(store *postgres.Store, cfg config.Config) *Service {
 
 func (s *Service) HasEmailProvider() bool {
 	return mailer.IsGenuineProvider(s.emailSender)
+}
+
+func isLoopbackSMTPAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		host = strings.TrimSpace(addr)
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
 }
 
 func (s *Service) EmailProviderKind() string {
@@ -491,14 +514,19 @@ func (s *Service) Readiness(ctx context.Context) ReadinessReport {
 		status := "unconfigured"
 		detail := "no genuine SMTP provider configured; confirmation emails remain PENDING in outbox"
 		if s.cfg.IsProduction() {
-			if stripePropsErr != nil {
+			var activePortalProps int
+			var portalPropsErr error
+			if s.cfg.GuestPortalEnabled {
+				activePortalProps, portalPropsErr = s.store.CountActivePortalEnabledProperties(ctx)
+			}
+			if stripePropsErr != nil || portalPropsErr != nil {
 				status = "unknown"
 				report.Ready = false
-				detail = "unable to verify email requirement while property payment policies are unavailable"
-			} else if activeStripeProps > 0 || s.cfg.RequireEmail {
+				detail = "unable to verify email requirement while property policies are unavailable"
+			} else if activeStripeProps > 0 || activePortalProps > 0 || s.cfg.RequireEmail {
 				status = "misconfigured"
 				report.Ready = false
-				detail = "confirmation email provider is required in production when live public bookings are enabled or TIRBACH_REQUIRE_EMAIL=true"
+				detail = "confirmation email provider is required in production when live public bookings or the guest portal are enabled, or TIRBACH_REQUIRE_EMAIL=true"
 			}
 		}
 		report.Email = ReadinessComponent{
@@ -558,6 +586,13 @@ func (s *Service) requirePerm(actor Actor, perm auth.Permission) error {
 func (s *Service) requirePropertyScope(actor Actor, propertyID uuid.UUID) error {
 	if actor.PropertyID != nil && *actor.PropertyID != propertyID {
 		return domain.ErrForbidden
+	}
+	if s.store != nil && actor.UserID != uuid.Nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if scopePropID := s.effectiveActorPropertyScope(ctx, nil, actor); scopePropID != nil && *scopePropID != propertyID {
+			return domain.ErrForbidden
+		}
 	}
 	return nil
 }

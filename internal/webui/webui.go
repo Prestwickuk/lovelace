@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
@@ -220,6 +221,18 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 				return "—"
 			}
 			return *s + "d"
+		},
+		"uuidEq": func(a *uuid.UUID, b uuid.UUID) bool {
+			return a != nil && *a == b
+		},
+		"isNonZeroUUID": func(id uuid.UUID) bool {
+			return id != uuid.Nil
+		},
+		"formatDateInputPtr": func(t *time.Time) string {
+			if t == nil || t.IsZero() {
+				return ""
+			}
+			return t.UTC().Format("2006-01-02")
 		},
 		"bpsToPct": func(bps *int) int {
 			if bps == nil {
@@ -539,12 +552,17 @@ type baseView struct {
 	BrandingPreview       bool
 	Flash                 string
 	Error                 string
+	CanReadProperty       bool
 	CanWriteProperty      bool
+	CanReadInventory      bool
 	CanWriteInventory     bool
+	CanReadRates          bool
 	CanWriteRates         bool
+	CanReadBlocks         bool
 	CanWriteBlocks        bool
 	CanReadReservations   bool
 	CanWriteReservations  bool
+	CanReadReleases       bool
 	CanWriteReleases      bool
 	CanReadChannels       bool
 	CanWriteChannels      bool
@@ -682,12 +700,17 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		BrandingPreview:       brandingPreview,
 		Flash:                 flashMsg,
 		Error:                 flashErr,
+		CanReadProperty:       auth.HasPermission(actor.Role, auth.PermPropertyRead),
 		CanWriteProperty:      auth.HasPermission(actor.Role, auth.PermPropertyWrite),
+		CanReadInventory:      auth.HasPermission(actor.Role, auth.PermInventoryRead),
 		CanWriteInventory:     auth.HasPermission(actor.Role, auth.PermInventoryWrite),
+		CanReadRates:          auth.HasPermission(actor.Role, auth.PermRatesRead),
 		CanWriteRates:         auth.HasPermission(actor.Role, auth.PermRatesWrite),
+		CanReadBlocks:         auth.HasPermission(actor.Role, auth.PermBlocksRead),
 		CanWriteBlocks:        auth.HasPermission(actor.Role, auth.PermBlocksWrite),
 		CanReadReservations:   auth.HasPermission(actor.Role, auth.PermReservationsRead),
 		CanWriteReservations:  auth.HasPermission(actor.Role, auth.PermReservationsWrite),
+		CanReadReleases:       auth.HasPermission(actor.Role, auth.PermReleasesRead),
 		CanWriteReleases:      auth.HasPermission(actor.Role, auth.PermReleasesWrite),
 		CanReadChannels:       auth.HasPermission(actor.Role, auth.PermChannelsRead),
 		CanWriteChannels:      auth.HasPermission(actor.Role, auth.PermChannelsWrite),
@@ -721,10 +744,13 @@ func (h *Handler) renderPage(w http.ResponseWriter, tmplName string, data any) {
 		h.renderError(w, http.StatusInternalServerError, "Template Not Found", "The requested console view could not be found.")
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "layout", data); err != nil {
 		h.renderError(w, http.StatusInternalServerError, "Render Error", "Unable to render the requested administrative view.")
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 func (h *Handler) renderError(w http.ResponseWriter, status int, title, message string) {
@@ -746,16 +772,39 @@ func (h *Handler) renderError(w http.ResponseWriter, status int, title, message 
 }
 
 func redirectMsg(w http.ResponseWriter, r *http.Request, path, msg string) {
-	http.Redirect(w, r, path+"?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	redirectAdminWithQuery(w, r, path, "msg", msg)
 }
 
 func (h *Handler) redirectErr(w http.ResponseWriter, r *http.Request, path string, err error) {
-	msg := err.Error()
 	if errors.Is(err, domain.ErrForbidden) {
 		h.renderError(w, http.StatusForbidden, "Access Denied", "Your administrative role does not have permission for this action.")
 		return
 	}
-	http.Redirect(w, r, path+"?err="+url.QueryEscape(msg), http.StatusSeeOther)
+	redirectAdminWithQuery(w, r, path, "err", sanitizeAdminFlashError(err))
+}
+
+func sanitizeAdminFlashError(err error) string {
+	if err == nil {
+		return "An unexpected error occurred."
+	}
+	return sanitizeAdminFlashMessage(err.Error())
+}
+
+func sanitizeAdminFlashMessage(raw string) string {
+	msg := strings.TrimSpace(raw)
+	if msg == "" {
+		return "An unexpected error occurred."
+	}
+	lower := strings.ToLower(msg)
+	for _, internalMarker := range []string{"sqlstate", "pgconn", "pq:", "/var/", "/tmp/", "/users/", "/etc/", "stat /", "open /"} {
+		if strings.Contains(lower, internalMarker) {
+			return "Operation could not be completed due to an internal system error."
+		}
+	}
+	if len(msg) > 300 {
+		return msg[:300]
+	}
+	return msg
 }
 
 func (h *Handler) renderDomainError(w http.ResponseWriter, err error, fallbackTitle, fallbackMessage string) {

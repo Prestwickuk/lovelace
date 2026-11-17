@@ -1,21 +1,13 @@
 import { NextResponse } from "next/server";
-import { callLovelacePublic } from "@/lib/lovelace-api";
-import { handleBffError } from "@/lib/bff-response";
+import { callLovelacePublic, isStripeSandboxAllowed } from "@/lib/lovelace-api";
+import { handleBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
 import { checkBffRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
-function isSandboxAllowed(): boolean {
-  const flag = (process.env.LOVELACE_STRIPE_SANDBOX || "").trim().toLowerCase();
-  if (process.env.NODE_ENV === "production") {
-    return flag === "true";
-  }
-  return flag !== "false";
-}
-
 export async function POST(request: Request) {
-  if (!isSandboxAllowed()) {
+  if (!isStripeSandboxAllowed()) {
     return NextResponse.json(
       { error: { code: "not_found", message: "Endpoint unavailable" } },
-      { status: 404 },
+      { status: 404, headers: PRIVATE_NO_STORE_HEADERS },
     );
   }
 
@@ -23,7 +15,7 @@ export async function POST(request: Request) {
   if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
   try {
-    const body = await request.json();
+    const body = await parseJsonObject(request);
     const res = await callLovelacePublic(
       "/api/public/v1/dev/stripe-sandbox/complete",
       {
@@ -32,7 +24,7 @@ export async function POST(request: Request) {
       },
       rl.clientIp,
     );
-    return NextResponse.json(res);
+    return NextResponse.json(res, { headers: PRIVATE_NO_STORE_HEADERS });
   } catch (err) {
     return handleBffError(err);
   }

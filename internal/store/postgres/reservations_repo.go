@@ -78,6 +78,8 @@ func (s *Store) FindOrCreateGuest(ctx context.Context, tx pgx.Tx, propertyID uui
 			FROM guests
 			WHERE property_id = $1
 			  AND status NOT IN ('MERGED', 'ANONYMIZED')
+			  AND anonymized_at IS NULL
+			  AND erasure_requested_at IS NULL
 			  AND (normalized_email = $2 OR LOWER(email) = $2)
 			ORDER BY created_at ASC
 			LIMIT 1
@@ -255,7 +257,8 @@ func (s *Store) CreateReservation(ctx context.Context, tx pgx.Tx, r domain.Reser
 func (s *Store) UpdateReservation(ctx context.Context, tx pgx.Tx, r domain.Reservation) (domain.Reservation, error) {
 	tag, err := tx.Exec(ctx, `
 		UPDATE reservations
-		SET guest_name = $3,
+		SET guest_id = CASE WHEN $16::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN guest_id ELSE $16 END,
+		    guest_name = $3,
 		    guest_email = $4,
 		    guest_phone = $5,
 		    channel_code = $6,
@@ -272,7 +275,7 @@ func (s *Store) UpdateReservation(ctx context.Context, tx pgx.Tx, r domain.Reser
 	`,
 		r.PropertyID, r.ID, r.GuestName, r.GuestEmail, r.GuestPhone,
 		r.ChannelCode, domain.FormatDate(r.ArrivalDate), domain.FormatDate(r.DepartureDate),
-		r.Adults, r.Children, r.Infants, r.OccupantDetails, r.InternalNotes, r.UpdatedBy, r.Version,
+		r.Adults, r.Children, r.Infants, r.OccupantDetails, r.InternalNotes, r.UpdatedBy, r.Version, r.GuestID,
 	)
 	if err != nil {
 		return domain.Reservation{}, MapErr(err)

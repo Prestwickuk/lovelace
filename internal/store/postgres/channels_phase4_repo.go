@@ -418,9 +418,14 @@ func (s *Store) ListChannelSyncJobs(ctx context.Context, db DBTX, propertyID uui
 	return out, MapErr(rows.Err())
 }
 
-// ClaimDueChannelSyncJobs atomically leases due or expired-lease jobs using FOR UPDATE SKIP LOCKED
-// and increments the monotonic fence_epoch to fence stale workers.
+// ClaimDueChannelSyncJobs atomically leases due or expired-lease jobs across all properties.
 func (s *Store) ClaimDueChannelSyncJobs(ctx context.Context, workerID string, limit int, leaseTTL time.Duration) ([]domain.ChannelSyncJob, error) {
+	return s.ClaimDueChannelSyncJobsForProperty(ctx, workerID, nil, limit, leaseTTL)
+}
+
+// ClaimDueChannelSyncJobsForProperty atomically leases due or expired-lease jobs using FOR UPDATE SKIP LOCKED
+// (optionally scoped to propertyID when non-nil) and increments the monotonic fence_epoch to fence stale workers.
+func (s *Store) ClaimDueChannelSyncJobsForProperty(ctx context.Context, workerID string, propertyID *uuid.UUID, limit int, leaseTTL time.Duration) ([]domain.ChannelSyncJob, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -443,7 +448,8 @@ func (s *Store) ClaimDueChannelSyncJobs(ctx context.Context, workerID string, li
 		WITH due AS (
 			SELECT j.id
 			FROM channel_sync_jobs j
-			WHERE (
+			WHERE ($5::uuid IS NULL OR j.property_id = $5)
+			  AND (
 				(j.status IN ('PENDING', 'FAILED_RETRYABLE') AND j.next_attempt_at <= NOW())
 				OR (j.status = 'RUNNING' AND j.lease_expires_at IS NOT NULL AND j.lease_expires_at <= NOW())
 			)
@@ -463,7 +469,7 @@ func (s *Store) ClaimDueChannelSyncJobs(ctx context.Context, workerID string, li
 		FROM due
 		WHERE j.id = due.id
 		RETURNING `+channelSyncJobSelectColsWithAlias("j")+`
-	`, limit, workerID, leaseToken, leaseSecs)
+	`, limit, workerID, leaseToken, leaseSecs, propertyID)
 	if err != nil {
 		return nil, MapErr(err)
 	}

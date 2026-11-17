@@ -3,6 +3,7 @@ package payments
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -72,8 +73,24 @@ func NewStripeClient(secretKey, apiBaseURL string) *StripeClient {
 	return &StripeClient{
 		SecretKey:  strings.TrimSpace(secretKey),
 		APIBaseURL: strings.TrimRight(apiBaseURL, "/"),
-		HTTPClient: &http.Client{Timeout: 15 * time.Second},
+		HTTPClient: &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+			},
+		},
 	}
+}
+
+func truncateStripeErrBody(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) > 512 {
+		return s[:512] + "..."
+	}
+	return s
 }
 
 func (c *StripeClient) CreateCheckoutSession(req CheckoutRequest) (CheckoutSession, error) {
@@ -122,7 +139,7 @@ func (c *StripeClient) CreateCheckoutSession(req CheckoutRequest) (CheckoutSessi
 		return CheckoutSession{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return CheckoutSession{}, fmt.Errorf("stripe API error (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return CheckoutSession{}, fmt.Errorf("stripe API error (%d): %s", resp.StatusCode, truncateStripeErrBody(body))
 	}
 
 	var parsed struct {
@@ -175,7 +192,7 @@ func (c *StripeClient) Refund(req RefundRequest) (RefundResult, error) {
 		return RefundResult{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return RefundResult{}, fmt.Errorf("stripe refund error (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return RefundResult{}, fmt.Errorf("stripe refund error (%d): %s", resp.StatusCode, truncateStripeErrBody(body))
 	}
 	var parsed struct {
 		ID     string `json:"id"`
@@ -207,6 +224,9 @@ func VerifyStripeSignature(payload []byte, header, secret string, tolerance time
 		}
 		switch k {
 		case "t":
+			if tsStr != "" {
+				return errors.New("duplicate timestamp in Stripe-Signature header")
+			}
 			tsStr = v
 		case "v1":
 			b, err := hex.DecodeString(v)
@@ -223,7 +243,11 @@ func VerifyStripeSignature(payload []byte, header, secret string, tolerance time
 		return errors.New("invalid Stripe-Signature timestamp")
 	}
 	signedAt := time.Unix(ts, 0)
-	if tolerance > 0 && now.Sub(signedAt).Abs() > tolerance {
+	effectiveTol := tolerance
+	if effectiveTol <= 0 {
+		effectiveTol = 5 * time.Minute
+	}
+	if now.Sub(signedAt).Abs() > effectiveTol {
 		return errors.New("Stripe-Signature timestamp outside tolerance window")
 	}
 

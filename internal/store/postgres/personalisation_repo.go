@@ -135,11 +135,15 @@ func (s *Store) GetPropertyWorkspaceRaw(
 	if db == nil {
 		db = s.pool
 	}
-	err = db.QueryRow(ctx, `
+	query := `
 		SELECT schema_version, preferences, saved_views, created_at, updated_at
 		FROM admin_user_property_workspaces
 		WHERE user_id = $1 AND property_id = $2
-	`, userID, propertyID).Scan(&schemaVersion, &rawPrefs, &rawViews, &createdAt, &updatedAt)
+	`
+	if _, isTx := db.(pgx.Tx); isTx {
+		query += " FOR UPDATE"
+	}
+	err = db.QueryRow(ctx, query, userID, propertyID).Scan(&schemaVersion, &rawPrefs, &rawViews, &createdAt, &updatedAt)
 	if err != nil {
 		return 0, nil, nil, time.Time{}, time.Time{}, MapErr(err)
 	}

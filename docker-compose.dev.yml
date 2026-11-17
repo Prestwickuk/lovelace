@@ -108,6 +108,7 @@ services:
       app:
         condition: service_started
     environment:
+      LOVELACE_ENV: development
       LOVELACE_API_BASE_URL: http://app:8080
       LOVELACE_PROPERTY_SLUG: tir-bach
       LOVELACE_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:-dev-public-bff-secret}

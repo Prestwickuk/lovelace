@@ -558,11 +558,28 @@ func (s *Store) CreateHoldWithClaim(
 }
 
 func (s *Store) expireHoldsInTx(ctx context.Context, tx pgx.Tx, nowUTC time.Time) (int, error) {
+	// Prune expired unattached pricing quotes so booking_quotes does not grow without bound.
+	_, _ = tx.Exec(ctx, `
+		DELETE FROM booking_quotes
+		WHERE hold_id IS NULL AND reservation_id IS NULL AND expires_at <= $1
+	`, nowUTC)
+
+	// Acquire booking_holds row locks in deterministic ascending ID order with SKIP LOCKED
+	// before touching inventory_claims or payment_attempts, preventing AB-BA deadlocks with ConfirmPaymentAndHold.
 	rows, err := tx.Query(ctx, `
-		UPDATE booking_holds
-		SET status = 'EXPIRED', version = version + 1, updated_at = NOW()
-		WHERE status = 'ACTIVE' AND expires_at <= $1
-		RETURNING id
+		WITH expired AS (
+			SELECT id
+			FROM booking_holds
+			WHERE status = 'ACTIVE' AND expires_at <= $1
+			ORDER BY id ASC
+			LIMIT 200
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE booking_holds h
+		SET status = 'EXPIRED', version = h.version + 1, updated_at = NOW()
+		FROM expired
+		WHERE h.id = expired.id
+		RETURNING h.id
 	`, nowUTC)
 	if err != nil {
 		return 0, MapErr(err)
@@ -644,12 +661,23 @@ func (s *Store) GetBookingHold(ctx context.Context, db DBTX, holdID uuid.UUID) (
 }
 
 func (s *Store) CancelBookingHold(ctx context.Context, tx pgx.Tx, holdID uuid.UUID) (domain.BookingHold, error) {
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE booking_holds
 		SET status = 'CANCELLED', version = version + 1, updated_at = NOW()
 		WHERE id = $1 AND status = 'ACTIVE'
-	`, holdID); err != nil {
+	`, holdID)
+	if err != nil {
 		return domain.BookingHold{}, MapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		cur, gErr := s.GetBookingHold(ctx, tx, holdID)
+		if gErr != nil {
+			return domain.BookingHold{}, gErr
+		}
+		if cur.Status == domain.HoldStatusConfirmed {
+			return domain.BookingHold{}, fmt.Errorf("%w: booking hold is already confirmed", domain.ErrConflict)
+		}
+		return cur, nil
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE inventory_claims
@@ -944,6 +972,21 @@ func (s *Store) ConfirmPaymentAndHold(
 	paidCurrency string,
 	nowUTC time.Time,
 ) (FinalizeHoldConfirmationResult, error) {
+	// Read hold_id first without FOR UPDATE so we always lock booking_holds BEFORE payment_attempts,
+	// matching expireHoldsInTx / InitiatePublicCheckout lock order and eliminating AB-BA deadlocks.
+	var probeHoldID *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT hold_id FROM payment_attempts WHERE id = $1`, attemptID).Scan(&probeHoldID); err != nil {
+		return FinalizeHoldConfirmationResult{}, MapErr(err)
+	}
+	var hold domain.BookingHold
+	if probeHoldID != nil {
+		var hErr error
+		hold, hErr = s.GetBookingHoldForUpdate(ctx, tx, *probeHoldID)
+		if hErr != nil {
+			return FinalizeHoldConfirmationResult{}, hErr
+		}
+	}
+
 	var att domain.PaymentAttempt
 	err := tx.QueryRow(ctx, `
 		SELECT id, property_id, hold_id, reservation_id, provider, mode,
@@ -979,10 +1022,11 @@ func (s *Store) ConfirmPaymentAndHold(
 		paymentIntentID = att.ProviderPaymentIntentID
 	}
 
-	// Lock hold row
-	hold, err := s.GetBookingHoldForUpdate(ctx, tx, *att.HoldID)
-	if err != nil {
-		return FinalizeHoldConfirmationResult{}, err
+	if hold.ID != *att.HoldID {
+		hold, err = s.GetBookingHoldForUpdate(ctx, tx, *att.HoldID)
+		if err != nil {
+			return FinalizeHoldConfirmationResult{}, err
+		}
 	}
 
 	// Amount/currency validation
@@ -1670,15 +1714,22 @@ func (s *Store) GetPublicConfirmationByRefAndToken(ctx context.Context, db DBTX,
 }
 
 func (s *Store) RecordCustomerCancellationRequest(ctx context.Context, tx pgx.Tx, propertyID, resID uuid.UUID, note string) (domain.Reservation, error) {
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE reservations
 		SET cancellation_requested_at = COALESCE(cancellation_requested_at, NOW()),
 		    cancellation_request_note = $3,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE property_id = $1 AND id = $2
-	`, propertyID, resID, strings.TrimSpace(note)); err != nil {
+		WHERE property_id = $1 AND id = $2 AND status IN ('PENDING', 'CONFIRMED')
+	`, propertyID, resID, strings.TrimSpace(note))
+	if err != nil {
 		return domain.Reservation{}, MapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		if _, gErr := s.GetReservation(ctx, tx, propertyID, resID); gErr == nil {
+			return domain.Reservation{}, fmt.Errorf("%w: cancellation requests are only permitted for pending or confirmed reservations", domain.ErrConflict)
+		}
+		return domain.Reservation{}, domain.ErrNotFound
 	}
 	return s.GetReservation(ctx, tx, propertyID, resID)
 }
@@ -2411,16 +2462,37 @@ func (s *Store) MarkOutboxEmailsProviderUnconfigured(ctx context.Context, nowUTC
 	return int(tag.RowsAffected()), nil
 }
 
+// RecordAutoRefundSuccess records an automatic refund outcome on both payment_exceptions and payment_attempts.
+func (s *Store) RecordAutoRefundSuccess(ctx context.Context, exceptionID, attemptID uuid.UUID, refundID string) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			UPDATE payment_exceptions
+			SET status = 'AUTO_REFUNDED', resolution_notes = $2, resolved_at = NOW(), updated_at = NOW()
+			WHERE id = $1
+		`, exceptionID, "Automatic refund issued: "+refundID); err != nil {
+			return MapErr(err)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE payment_attempts
+			SET status = 'REFUNDED', updated_at = NOW()
+			WHERE id = $1
+		`, attemptID); err != nil {
+			return MapErr(err)
+		}
+		return nil
+	})
+}
+
 // lockGuestForOutboxTx locks the canonical guest cluster in ascending UUID order BEFORE locking email_outbox
 // so outbox completion/dispatch workers and guest anonymisation never deadlock on opposite lock orders.
-func (s *Store) lockGuestForOutboxTx(ctx context.Context, tx pgx.Tx, outboxID uuid.UUID) (bool, error) {
+func (s *Store) lockGuestForOutboxTx(ctx context.Context, tx pgx.Tx, propertyID *uuid.UUID, outboxID uuid.UUID) (bool, error) {
 	var probePropID uuid.UUID
 	var probeGuestID, probeResID *uuid.UUID
 	if err := tx.QueryRow(ctx, `
 		SELECT o.property_id, o.guest_id, o.reservation_id
 		FROM email_outbox o
-		WHERE o.id = $1
-	`, outboxID).Scan(&probePropID, &probeGuestID, &probeResID); err != nil {
+		WHERE o.id = $1 AND ($2::uuid IS NULL OR o.property_id = $2)
+	`, outboxID, propertyID).Scan(&probePropID, &probeGuestID, &probeResID); err != nil {
 		return false, MapErr(err)
 	}
 	targetGuestID := uuid.Nil
@@ -2485,7 +2557,7 @@ func (s *Store) lockAndVerifyOutboxLeaseTx(
 	fenceEpoch int64,
 	nowUTC time.Time,
 ) (outboxLeaseSnapshot, error) {
-	guestBlocked, lockErr := s.lockGuestForOutboxTx(ctx, tx, id)
+	guestBlocked, lockErr := s.lockGuestForOutboxTx(ctx, tx, nil, id)
 	if lockErr != nil {
 		return outboxLeaseSnapshot{}, lockErr
 	}
@@ -3245,7 +3317,7 @@ func (s *Store) ReconcileUnknownOutboxDispatch(ctx context.Context, tx pgx.Tx, p
 		})
 	}
 
-	if _, lockErr := s.lockGuestForOutboxTx(ctx, tx, params.OutboxID); lockErr != nil {
+	if _, lockErr := s.lockGuestForOutboxTx(ctx, tx, &params.PropertyID, params.OutboxID); lockErr != nil {
 		return domain.EmailOutboxItem{}, lockErr
 	}
 	var atPtr *time.Time

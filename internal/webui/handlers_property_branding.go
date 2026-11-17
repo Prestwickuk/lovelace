@@ -233,6 +233,9 @@ func (h *Handler) handlePropertyBrandingLogoUploadPost(w http.ResponseWriter, r 
 		h.renderError(w, http.StatusBadRequest, "Invalid Upload", "Property logo upload exceeded the 2 MiB limit or was malformed.")
 		return
 	}
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
+	}
 	if !httpx.VerifyCSRFToken(actor, r.FormValue("csrf_token")) {
 		h.renderError(w, http.StatusForbidden, "Security Token Invalid", "Missing or invalid CSRF token. Please reload the page and try again.")
 		return

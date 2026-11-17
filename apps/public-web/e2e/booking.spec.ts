@@ -7,8 +7,14 @@ function futureDate(daysAhead: number): string {
 }
 
 test.describe("Tir Bach Public Direct Booking Engine", () => {
-  test("homepage shows Tir Bach identity and separates admin surface", async ({ page }) => {
-    await page.goto("/");
+  test("homepage shows Tir Bach identity, strict CSP headers, and separates admin surface", async ({
+    page,
+  }) => {
+    const homeResp = await page.goto("/");
+    expect(homeResp?.headers()["content-security-policy"]).toContain("default-src 'self'");
+    expect(homeResp?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(homeResp?.headers()["x-frame-options"]).toBe("DENY");
+    expect(homeResp?.headers()["x-content-type-options"]).toBe("nosniff");
     await expect(page.getByRole("heading", { level: 1 })).toContainText(
       "Tir Bach Campsite",
     );
@@ -54,6 +60,17 @@ test.describe("Tir Bach Public Direct Booking Engine", () => {
     page,
     request,
   }) => {
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    const server5xx: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    page.on("response", (res) => {
+      if (res.status() >= 500) server5xx.push(`${res.status()} ${res.url()}`);
+    });
+
     // Pick an open 2-night window for the single-unit Preseli Shepherd's Hut so consecutive runs succeed reliably.
     let arr = futureDate(70);
     let dep = futureDate(72);
@@ -158,5 +175,9 @@ test.describe("Tir Bach Public Direct Booking Engine", () => {
     // 8. Verify Preseli Shepherd's Hut (only 1 physical unit!) is now unavailable for same dates!
     await page.goto(`/stays?arrival=${arr}&departure=${dep}&adults=2`);
     await expect(page.getByText("Preseli Shepherd's Hut")).toHaveCount(0);
+
+    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+    expect(server5xx).toEqual([]);
   });
 });

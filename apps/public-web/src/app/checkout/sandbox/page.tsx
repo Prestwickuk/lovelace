@@ -1,14 +1,11 @@
 import { notFound } from "next/navigation";
 import { SandboxCheckoutClient } from "@/components/SandboxCheckoutClient";
+import { isStripeSandboxAllowed } from "@/lib/lovelace-api";
 
 export const dynamic = "force-dynamic";
 
 export default function SandboxCheckoutPage() {
-  const flag = (process.env.LOVELACE_STRIPE_SANDBOX || "").trim().toLowerCase();
-  if (process.env.NODE_ENV === "production" && flag !== "true") {
-    notFound();
-  }
-  if (flag === "false") {
+  if (!isStripeSandboxAllowed()) {
     notFound();
   }
 

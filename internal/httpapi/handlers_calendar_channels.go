@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/auth"
 	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/domain"
 	"github.com/tirbach/tir-bach/internal/service"
@@ -330,11 +329,7 @@ func (h *Handler) handleProcessChannelJobs(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if !auth.HasPermission(actor.Role, auth.PermChannelsWrite) || (actor.PropertyID != nil && *actor.PropertyID != propID) {
-		writeDomainError(w, domain.ErrForbidden)
-		return
-	}
-	processed, err := h.svc.ProcessPendingChannelSyncJobs(r.Context(), 20)
+	processed, err := h.svc.ProcessPropertyChannelSyncJobs(r.Context(), actor, propID, 20)
 	if err != nil {
 		writeDomainError(w, err)
 		return

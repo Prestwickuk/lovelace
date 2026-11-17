@@ -837,11 +837,11 @@ func (s *Store) ListMaintenanceRequests(ctx context.Context, db DBTX, propertyID
 		where = append(where, "COALESCE(mr.scheduled_for, mr.target_date, mr.reported_at::date) <= "+p)
 	}
 	if qStr := strings.TrimSpace(filter.Search); qStr != "" {
-		p := addArg("%" + qStr + "%")
+		p := addArg("%" + escapeLikeTerm(qStr) + "%")
 		where = append(where, fmt.Sprintf(`(
-			mr.reference ILIKE %s OR mr.title ILIKE %s OR mr.description ILIKE %s
-			OR COALESCE(ml.name, '') ILIKE %s OR COALESCE(u.code, '') ILIKE %s OR COALESCE(u.name, '') ILIKE %s
-			OR COALESCE(a.name, '') ILIKE %s OR COALESCE(a.asset_code, '') ILIKE %s
+			mr.reference ILIKE %s ESCAPE '\' OR mr.title ILIKE %s ESCAPE '\' OR mr.description ILIKE %s ESCAPE '\'
+			OR COALESCE(ml.name, '') ILIKE %s ESCAPE '\' OR COALESCE(u.code, '') ILIKE %s ESCAPE '\' OR COALESCE(u.name, '') ILIKE %s ESCAPE '\'
+			OR COALESCE(a.name, '') ILIKE %s ESCAPE '\' OR COALESCE(a.asset_code, '') ILIKE %s ESCAPE '\'
 		)`, p, p, p, p, p, p, p, p))
 	}
 

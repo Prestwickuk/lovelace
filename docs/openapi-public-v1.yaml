@@ -102,6 +102,9 @@ paths:
   /api/public/v1/booking/holds/{id}/cancel:
     post:
       summary: Release an active temporary hold explicitly
+      description: >
+        Returns a sanitized BookingHold response with guest contact PII scrubbed.
+        Confirmed holds cannot be cancelled through public hold release (409 conflict).
       parameters:
         - name: id
           in: path
@@ -111,7 +114,9 @@ paths:
             format: uuid
       responses:
         "200":
-          description: Hold cancelled and claim released
+          description: Hold cancelled and claim released (guest PII omitted from response)
+        "409":
+          description: Hold has already been confirmed into a reservation
   /api/public/v1/checkout:
     post:
       summary: Create idempotent single-active payment attempt and Stripe Checkout Session for an active hold

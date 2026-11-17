@@ -184,18 +184,22 @@ func (s *Service) UpdateReservation(ctx context.Context, actor Actor, r domain.R
 				return err
 			}
 		}
-		guest, err := s.store.FindOrCreateGuest(ctx, tx, r.PropertyID, r.GuestName, r.GuestEmail, r.GuestPhone)
-		if err != nil {
-			return err
+		if r.GuestEmail == "" && before.GuestID != uuid.Nil && strings.TrimSpace(r.GuestName) == strings.TrimSpace(before.GuestName) && strings.TrimSpace(r.GuestPhone) == strings.TrimSpace(before.GuestPhone) {
+			r.GuestID = before.GuestID
+		} else {
+			guest, err := s.store.FindOrCreateGuest(ctx, tx, r.PropertyID, r.GuestName, r.GuestEmail, r.GuestPhone)
+			if err != nil {
+				return err
+			}
+			r.GuestID = guest.ID
 		}
-		r.GuestID = guest.ID
 
 		updated, err = s.store.UpdateReservation(ctx, tx, r)
 		if err != nil {
 			return err
 		}
 		if prop, pErr := s.store.GetPropertyByID(ctx, tx, updated.PropertyID); pErr == nil {
-			if jErr := s.store.SyncReservationAutomationJobs(ctx, tx, prop, updated, time.Now().UTC()); jErr != nil {
+			if jErr := s.store.SyncReservationAutomationJobs(ctx, tx, prop, updated, s.nowUTC()); jErr != nil {
 				return jErr
 			}
 		}

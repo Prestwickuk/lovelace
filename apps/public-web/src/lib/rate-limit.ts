@@ -5,10 +5,13 @@ export interface RateLimitWindow {
   resetAtMs: number;
 }
 
+const MAX_RATE_BUCKETS = 16_384;
+
 export class SlidingFixedWindowLimiter {
   private buckets = new Map<string, RateLimitWindow>();
   private readonly limit: number;
   private readonly windowMs: number;
+  private lastSweepMs = 0;
 
   constructor(limit: number, windowMs: number) {
     this.limit = limit;
@@ -16,28 +19,41 @@ export class SlidingFixedWindowLimiter {
   }
 
   allow(key: string, nowMs = Date.now()): { allowed: boolean; retryAfterSeconds: number } {
-    if (this.buckets.size > 5000) {
+    const cur = this.buckets.get(key);
+    if (cur && nowMs < cur.resetAtMs) {
+      if (cur.count >= this.limit) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((cur.resetAtMs - nowMs) / 1000));
+        return { allowed: false, retryAfterSeconds };
+      }
+      cur.count += 1;
+      return { allowed: true, retryAfterSeconds: 0 };
+    }
+
+    const sweepInterval = Math.max(5_000, Math.floor(this.windowMs / 4));
+    if (
+      this.buckets.size >= MAX_RATE_BUCKETS ||
+      (this.buckets.size > 4_096 && nowMs - this.lastSweepMs >= sweepInterval)
+    ) {
       for (const [k, v] of this.buckets.entries()) {
         if (nowMs >= v.resetAtMs) {
           this.buckets.delete(k);
         }
       }
+      this.lastSweepMs = nowMs;
+      while (this.buckets.size >= MAX_RATE_BUCKETS) {
+        const oldestKey = this.buckets.keys().next().value;
+        if (oldestKey === undefined) break;
+        this.buckets.delete(oldestKey);
+      }
     }
-    const cur = this.buckets.get(key);
-    if (!cur || nowMs >= cur.resetAtMs) {
-      this.buckets.set(key, { count: 1, resetAtMs: nowMs + this.windowMs });
-      return { allowed: true, retryAfterSeconds: 0 };
-    }
-    if (cur.count >= this.limit) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((cur.resetAtMs - nowMs) / 1000));
-      return { allowed: false, retryAfterSeconds };
-    }
-    cur.count += 1;
+
+    this.buckets.set(key, { count: 1, resetAtMs: nowMs + this.windowMs });
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
   reset() {
     this.buckets.clear();
+    this.lastSweepMs = 0;
   }
 }
 
@@ -47,17 +63,21 @@ function normalizeIp(raw: string): string {
   // Strip IPv6 brackets and optional :port on IPv4
   if (trimmed.startsWith("[")) {
     const end = trimmed.indexOf("]");
-    if (end > 1) return trimmed.slice(1, end);
+    if (end > 1) return normalizeIp(trimmed.slice(1, end));
   }
   const zoneIdx = trimmed.indexOf("%");
   const withoutZone = zoneIdx >= 0 ? trimmed.slice(0, zoneIdx) : trimmed;
+  // Unmap IPv4-mapped IPv6 (e.g. ::ffff:203.0.113.5) BEFORE checking 4-dot IPv4:port
+  if (withoutZone.toLowerCase().startsWith("::ffff:")) {
+    const mapped = withoutZone.slice(7);
+    if (mapped.split(".").length === 4) {
+      return mapped;
+    }
+  }
   // IPv4 with port e.g. 1.2.3.4:5678
   const dotParts = withoutZone.split(".");
-  if (dotParts.length === 4 && withoutZone.includes(":")) {
+  if (dotParts.length === 4 && withoutZone.indexOf(":") === withoutZone.lastIndexOf(":") && withoutZone.includes(":")) {
     return withoutZone.split(":")[0];
-  }
-  if (withoutZone.startsWith("::ffff:")) {
-    return withoutZone.slice(7);
   }
   return withoutZone;
 }
@@ -158,28 +178,37 @@ export function resolveTrustedClientIp(opts: ClientIpOptions): string {
   }
 
   if (opts.xForwardedFor) {
-    const parts = opts.xForwardedFor
-      .split(",")
-      .map((s) => normalizeIp(s))
-      .filter((s) => isValidIp(s));
-    for (let i = parts.length - 1; i >= 0; i -= 1) {
-      if (!isIpInCidrs(parts[i], opts.trustedProxies)) {
-        return parts[i];
+    const rawParts = opts.xForwardedFor.split(",");
+    for (let i = rawParts.length - 1; i >= 0; i -= 1) {
+      const candidate = normalizeIp(rawParts[i]);
+      if (!isValidIp(candidate)) {
+        // Malformed X-Forwarded-For hop: fail closed without falling back to client-controlled leftmost hop or X-Real-IP.
+        return isValidIp(remote) ? remote : "direct";
+      }
+      if (!isIpInCidrs(candidate, opts.trustedProxies)) {
+        return candidate;
       }
     }
-    if (parts.length > 0) {
-      return parts[0];
-    }
+    return isValidIp(remote) ? remote : "direct";
   }
 
   if (opts.xRealIp) {
     const real = normalizeIp(opts.xRealIp);
-    if (isValidIp(real)) {
+    if (isValidIp(real) && !isIpInCidrs(real, opts.trustedProxies)) {
       return real;
     }
   }
 
   return isValidIp(remote) ? remote : "direct";
+}
+
+export function rateLimitBucketKeyForIp(ip: string): string {
+  if (!ip || ip === "direct") return "direct";
+  const v6 = ipv6ToBigInt(ip);
+  if (v6 !== null && v6 !== 1n) {
+    return `v6:${(v6 >> 64n).toString(16)}`;
+  }
+  return ip;
 }
 
 function getTrustedProxyEnv(): { trustProxy: boolean; trustedProxies: string[] } {
@@ -190,6 +219,18 @@ function getTrustedProxyEnv(): { trustProxy: boolean; trustedProxies: string[] }
     .map((s) => s.trim())
     .filter(Boolean);
   return { trustProxy, trustedProxies };
+}
+
+export function resolveRequestClientIp(req: Request): string {
+  const { trustProxy, trustedProxies } = getTrustedProxyEnv();
+  const clientIp = resolveTrustedClientIp({
+    xForwardedFor: req.headers.get("x-forwarded-for"),
+    xRealIp: req.headers.get("x-real-ip"),
+    remoteAddr: (req as unknown as { ip?: string }).ip || "",
+    trustProxy,
+    trustedProxies,
+  });
+  return isValidIp(clientIp) ? clientIp : "";
 }
 
 const bffGlobalLimiter = new SlidingFixedWindowLimiter(500, 60_000);
@@ -224,7 +265,7 @@ export function checkBffRateLimit(
       : tier === "write"
         ? bffWriteLimiter
         : bffReadLimiter;
-  const ipKey = clientIp === "direct" ? "direct" : clientIp;
+  const ipKey = rateLimitBucketKeyForIp(clientIp);
   const clientCheck = tierLimiter.allow(`${tier}:${ipKey}`, now);
   return {
     allowed: clientCheck.allowed,

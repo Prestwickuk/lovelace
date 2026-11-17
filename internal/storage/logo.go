@@ -222,6 +222,8 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 		width     int
 		height    int
 		haveDims  bool
+		haveVP8X  bool
+		haveALPH  bool
 		haveImage bool
 	)
 
@@ -243,6 +245,9 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 
 		switch chunkID {
 		case "VP8X":
+			if haveVP8X || haveImage || haveALPH {
+				return nil, 0, 0, fmt.Errorf("%w: duplicate or misplaced VP8X chunk", ErrCorruptLogoImage)
+			}
 			if len(payload) != 10 {
 				return nil, 0, 0, fmt.Errorf("%w: invalid VP8X chunk", ErrCorruptLogoImage)
 			}
@@ -250,12 +255,12 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 			if payload[0]&0x02 != 0 {
 				return nil, 0, 0, fmt.Errorf("%w: animated WebP logos are not permitted", ErrUnsupportedFileType)
 			}
-			w := 1 + int(payload[4]) | int(payload[5])<<8 | int(payload[6])<<16
-			h := 1 + int(payload[7]) | int(payload[8])<<8 | int(payload[9])<<16
+			w := 1 + (int(payload[4]) | int(payload[5])<<8 | int(payload[6])<<16)
+			h := 1 + (int(payload[7]) | int(payload[8])<<8 | int(payload[9])<<16)
 			if err := validateLogoDimensions(w, h); err != nil {
 				return nil, 0, 0, err
 			}
-			width, height, haveDims = w, h, true
+			width, height, haveDims, haveVP8X = w, h, true, true
 			// Clear ICCP (0x20), EXIF (0x08), XMP (0x04), ANIM (0x02) flags while keeping Alpha (0x10).
 			var cleanedVP8X [10]byte
 			copy(cleanedVP8X[:], payload)
@@ -263,6 +268,9 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 			writeRIFFChunk(&body, "VP8X", cleanedVP8X[:])
 
 		case "VP8 ":
+			if haveImage {
+				return nil, 0, 0, fmt.Errorf("%w: multiple WebP image bitstreams are not permitted", ErrCorruptLogoImage)
+			}
 			if len(payload) < 10 {
 				return nil, 0, 0, fmt.Errorf("%w: invalid VP8 bitstream", ErrCorruptLogoImage)
 			}
@@ -274,6 +282,9 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 			if err := validateLogoDimensions(w, h); err != nil {
 				return nil, 0, 0, err
 			}
+			if haveVP8X && (w != width || h != height) {
+				return nil, 0, 0, fmt.Errorf("%w: VP8 frame dimensions do not match VP8X canvas", ErrCorruptLogoImage)
+			}
 			if !haveDims {
 				width, height, haveDims = w, h, true
 			}
@@ -281,6 +292,9 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 			writeRIFFChunk(&body, chunkID, payload)
 
 		case "VP8L":
+			if haveImage {
+				return nil, 0, 0, fmt.Errorf("%w: multiple WebP image bitstreams are not permitted", ErrCorruptLogoImage)
+			}
 			if len(payload) < 5 || payload[0] != 0x2f {
 				return nil, 0, 0, fmt.Errorf("%w: invalid VP8L bitstream", ErrCorruptLogoImage)
 			}
@@ -290,6 +304,9 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 			if err := validateLogoDimensions(w, h); err != nil {
 				return nil, 0, 0, err
 			}
+			if haveVP8X && (w != width || h != height) {
+				return nil, 0, 0, fmt.Errorf("%w: VP8L frame dimensions do not match VP8X canvas", ErrCorruptLogoImage)
+			}
 			if !haveDims {
 				width, height, haveDims = w, h, true
 			}
@@ -297,6 +314,10 @@ func sanitizeWebPLogo(data []byte) ([]byte, int, int, error) {
 			writeRIFFChunk(&body, chunkID, payload)
 
 		case "ALPH":
+			if haveALPH || haveImage {
+				return nil, 0, 0, fmt.Errorf("%w: duplicate or misplaced ALPH chunk", ErrCorruptLogoImage)
+			}
+			haveALPH = true
 			writeRIFFChunk(&body, chunkID, payload)
 
 		case "ANIM", "ANMF":

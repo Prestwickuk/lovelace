@@ -30,6 +30,14 @@
       </select>
     </div>
     <div class="field filter-field">
+      <label for="compare_start">Compare Start (custom)</label>
+      <input type="date" id="compare_start" name="compare_start" value="{{.FilterCompareStart}}">
+    </div>
+    <div class="field filter-field">
+      <label for="compare_end">Compare End (custom)</label>
+      <input type="date" id="compare_end" name="compare_end" value="{{.FilterCompareEnd}}">
+    </div>
+    <div class="field filter-field">
       <label for="horizon_days">Forecast Horizon (days)</label>
       <input type="number" id="horizon_days" name="horizon_days" value="{{.FilterHorizon}}" min="1" max="180" class="w-num-md">
     </div>

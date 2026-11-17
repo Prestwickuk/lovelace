@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -117,12 +118,43 @@ func NewSafeHTTPClient(cfg AdapterConfig) *SafeHTTPClient {
 		maxBytes = defaultMaxResponseBytes
 	}
 
+	rawDialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	dialCtx := rawDialer.DialContext
+	if !cfg.AllowHTTPForTests {
+		dialCtx = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+			if err != nil || len(ips) == 0 {
+				if err != nil {
+					return nil, err
+				}
+				return nil, errors.New("no IP addresses resolved for provider host")
+			}
+			for _, ip := range ips {
+				if isBlockedOutboundAddr(ip) {
+					return nil, fmt.Errorf("blocked private or loopback provider IP %s", ip.String())
+				}
+			}
+			var lastErr error
+			for _, ip := range ips {
+				conn, dErr := rawDialer.DialContext(ctx, network, net.JoinHostPort(ip.Unmap().String(), port))
+				if dErr == nil {
+					return conn, nil
+				}
+				lastErr = dErr
+			}
+			return nil, lastErr
+		}
+	}
 	baseTransport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		Proxy:       nil,
+		DialContext: dialCtx,
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
@@ -264,6 +296,9 @@ func (c *SafeHTTPClient) Do(ctx context.Context, spec RequestSpec) (*httpRespons
 
 	fullPath := strings.TrimRight(baseURL.Path, "/")
 	if spec.Path != "" {
+		if strings.Contains(spec.Path, "..") || strings.ContainsRune(spec.Path, '\\') {
+			return nil, newProviderError(ErrInvalidInput, spec.ProviderCode, spec.Operation, 0, "INVALID_PATH_SEGMENT", "provider request path contains disallowed traversal characters")
+		}
 		if !strings.HasPrefix(spec.Path, "/") {
 			fullPath += "/" + spec.Path
 		} else {
@@ -443,4 +478,19 @@ func parseRetryAfter(header http.Header, now time.Time) time.Duration {
 		}
 	}
 	return 0
+}
+
+func isBlockedOutboundAddr(addr netip.Addr) bool {
+	a := addr.Unmap()
+	if !a.IsValid() || a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() || a.IsMulticast() || a.IsUnspecified() {
+		return true
+	}
+	// Block RFC 6598 CGNAT (100.64.0.0/10).
+	if a.Is4() {
+		b := a.As4()
+		if b[0] == 100 && b[1] >= 64 && b[1] <= 127 {
+			return true
+		}
+	}
+	return false
 }

@@ -62,6 +62,7 @@ export default async function BookPage({
         region={detail?.property.region || "Pembrokeshire, Wales"}
         branding={detail?.property.branding}
         propertySlug={detail?.property.slug}
+        portalEnabled={Boolean(detail?.property.policy?.guest_portal_enabled)}
       />
 
       <main className="container section">
