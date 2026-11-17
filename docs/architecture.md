@@ -50,7 +50,7 @@ For an independent glamping and camping business like Tir Bach, operational reli
 
 ## 2. Five-Phase Roadmap & Current Scope
 
-> **Phase 3 Milestone 3 Boundary:** Built on top of Phases 1–2.1.1 and Milestones 1–2 (+ 3.2.1/3.2.2 Maintenance Integrity), Milestone 3 introduces **Guest Management & Communications CRM** (`/guests`, `/enquiries`, `/communications/settings`, and `/api/v1/properties/{propertyID}/guests|enquiries|communications|communication-templates|automation-rules*`) inside the LOVELACE admin console with strict separation from `apps/public-web/` and `/api/public/v1/*`. Milestone 4 (Public Guest Portal) and Phases 4–5 (live OTA sync and BI analytics) remain deferred.
+> **Phase 3 Milestone 3 & Public Boundary:** Built on top of Phases 1–2.1.1 and Milestones 1–2 (+ 3.2.1/3.2.2 Maintenance Integrity), Milestone 3 introduces **Guest Management & Communications CRM** (`/guests`, `/enquiries`, `/communications/settings`, and `/api/v1/properties/{propertyID}/guests|enquiries|communications|communication-templates|automation-rules*`) inside the LOVELACE admin console with strict separation from `apps/public-web/` and `/api/public/v1/*`. Phases 4–5 and `PWE-1`–`PWE-5` are implemented; **Phase 3 Milestone 4 (Self-Service Public Guest Portal) remains deferred** pending owner review of [Phase 3 Milestone 4 Guest Portal (`PROPOSED / OWNER REVIEW REQUIRED`)](phase3-milestone4-guest-portal.md).
 
 | Phase | Name | Scope & Status |
 |---|---|---|
