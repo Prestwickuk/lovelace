@@ -1747,17 +1747,22 @@ func (s *Store) QueueEmail(ctx context.Context, db DBTX, item domain.EmailOutbox
 			}
 		}
 	}
+	var createdPtr *time.Time
+	if !item.CreatedAt.IsZero() {
+		u := item.CreatedAt.UTC()
+		createdPtr = &u
+	}
 	item.Status = "PENDING"
 	err := db.QueryRow(ctx, `
 		INSERT INTO email_outbox (
 			id, property_id, reservation_id, guest_id, communication_id,
-			recipient_email, template, subject, body_text, body_html, status, next_attempt_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING', $11)
+			recipient_email, template, subject, body_text, body_html, status, next_attempt_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING', $11, COALESCE($12::timestamptz, NOW()))
 		ON CONFLICT (reservation_id, template) WHERE reservation_id IS NOT NULL DO NOTHING
 		RETURNING next_attempt_at, created_at
 	`,
 		item.ID, item.PropertyID, item.ReservationID, item.GuestID, item.CommunicationID, item.RecipientEmail,
-		item.Template, item.Subject, item.BodyText, item.BodyHTML, item.NextAttemptAt,
+		item.Template, item.Subject, item.BodyText, item.BodyHTML, item.NextAttemptAt, createdPtr,
 	).Scan(&item.NextAttemptAt, &item.CreatedAt)
 	if err == pgx.ErrNoRows && item.ReservationID != nil {
 		err = db.QueryRow(ctx, `
@@ -1828,6 +1833,16 @@ func (s *Store) SweepStaleOutboxDispatches(ctx context.Context, nowUTC time.Time
 			    dispatch_fence_epoch = o.dispatch_fence_epoch + 1,
 			    dispatch_outcome = 'WORKER_FENCED',
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE
+			        WHEN o.template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
+			        THEN '[redacted security challenge]'
+			        ELSE o.body_text
+			    END,
+			    body_html = CASE
+			        WHEN o.template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
+			        THEN ''
+			        ELSE o.body_html
+			    END,
 			    last_error = CASE
 			        WHEN EXISTS (
 			            SELECT 1
@@ -2116,12 +2131,12 @@ func (s *Store) BeginOutboxDispatchLease(ctx context.Context, id uuid.UUID, work
 
 		var propID uuid.UUID
 		var resID, guestID, commID, rowToken *uuid.UUID
-		var status, recEmail, cancelReason string
+		var status, recEmail, cancelReason, tpl, bodyText string
 		var rowGuestBlocked bool
-		var evalNow time.Time
+		var createdAt, evalNow time.Time
 		err := tx.QueryRow(ctx, `
 			SELECT o.property_id, o.reservation_id, o.guest_id, o.communication_id,
-			       o.status, o.recipient_email, o.cancel_reason, o.worker_token,
+			       o.status, o.recipient_email, o.cancel_reason, o.template, o.body_text, o.created_at, o.worker_token,
 			       COALESCE(g.status = 'ANONYMIZED' OR g.anonymized_at IS NOT NULL OR g.erasure_requested_at IS NOT NULL, FALSE),
 			       COALESCE($2::timestamptz, clock_timestamp())
 			FROM email_outbox o
@@ -2129,7 +2144,7 @@ func (s *Store) BeginOutboxDispatchLease(ctx context.Context, id uuid.UUID, work
 			LEFT JOIN guests g ON g.property_id = o.property_id AND g.id = COALESCE(o.guest_id, r.guest_id)
 			WHERE o.id = $1
 			FOR UPDATE OF o
-		`, id, nowPtr).Scan(&propID, &resID, &guestID, &commID, &status, &recEmail, &cancelReason, &rowToken, &rowGuestBlocked, &evalNow)
+		`, id, nowPtr).Scan(&propID, &resID, &guestID, &commID, &status, &recEmail, &cancelReason, &tpl, &bodyText, &createdAt, &rowToken, &rowGuestBlocked, &evalNow)
 		if err != nil {
 			return MapErr(err)
 		}
@@ -2202,6 +2217,28 @@ func (s *Store) BeginOutboxDispatchLease(ctx context.Context, id uuid.UUID, work
 			return nil
 		}
 		if status != domain.OutboxStatusProcessing {
+			allowed = false
+			return nil
+		}
+		if domain.IsPortalSecurityChallengeTemplate(tpl) && (bodyText == "[redacted security challenge]" || evalNow.Sub(createdAt) >= domain.PortalChallengeTTL) {
+			reason := cancelReason
+			if reason == "" {
+				reason = "Cancelled pre-dispatch: portal security challenge expired or invalidated"
+			}
+			if _, uErr := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'CANCELLED',
+				    body_text = '[redacted security challenge]',
+				    body_html = '',
+				    cancel_reason = $2,
+				    cancelled_at = COALESCE(cancelled_at, $3),
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, reason, evalNow); uErr != nil {
+				return MapErr(uErr)
+			}
 			allowed = false
 			return nil
 		}
@@ -2429,6 +2466,7 @@ type outboxLeaseSnapshot struct {
 	Subject         string
 	BodyText        string
 	BodyHTML        string
+	CreatedAt       time.Time
 	FenceEpoch      int64
 	FencedAt        *time.Time
 	LeaseExpiresAt  *time.Time
@@ -2460,7 +2498,7 @@ func (s *Store) lockAndVerifyOutboxLeaseTx(
 	var rowGuestBlocked bool
 	err := tx.QueryRow(ctx, `
 		SELECT o.property_id, o.reservation_id, o.guest_id, o.communication_id, o.worker_token,
-		       o.status, o.cancel_reason, o.attempts, o.recipient_email, o.template, o.subject, o.body_text, o.body_html,
+		       o.status, o.cancel_reason, o.attempts, o.recipient_email, o.template, o.subject, o.body_text, o.body_html, o.created_at,
 		       o.dispatch_fence_epoch, o.dispatch_fenced_at, o.dispatch_lease_expires_at,
 		       COALESCE(g.status = 'ANONYMIZED' OR g.anonymized_at IS NOT NULL OR g.erasure_requested_at IS NOT NULL, FALSE),
 		       COALESCE($2::timestamptz, clock_timestamp())
@@ -2471,7 +2509,7 @@ func (s *Store) lockAndVerifyOutboxLeaseTx(
 		FOR UPDATE OF o
 	`, id, nowPtr).Scan(
 		&snap.PropertyID, &snap.ReservationID, &snap.GuestID, &snap.CommunicationID, &snap.WorkerToken,
-		&snap.Status, &snap.CancelReason, &snap.Attempts, &snap.RecipientEmail, &snap.Template, &snap.Subject, &snap.BodyText, &snap.BodyHTML,
+		&snap.Status, &snap.CancelReason, &snap.Attempts, &snap.RecipientEmail, &snap.Template, &snap.Subject, &snap.BodyText, &snap.BodyHTML, &snap.CreatedAt,
 		&snap.FenceEpoch, &snap.FencedAt, &snap.LeaseExpiresAt,
 		&rowGuestBlocked, &snap.EvalNow,
 	)
@@ -2713,6 +2751,7 @@ func (s *Store) MarkOutboxDispatchUnknownWithLeaseAt(ctx context.Context, id uui
 		if snap.GuestBlocked || snap.Status == domain.OutboxStatusCancelRequested {
 			safeErr = sanitizeOutboxErrorForAnon(errMsg, false)
 		}
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET status = 'DISPATCH_UNKNOWN',
@@ -2722,11 +2761,13 @@ func (s *Store) MarkOutboxDispatchUnknownWithLeaseAt(ctx context.Context, id uui
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
 			    last_error = $3,
+			    body_text = CASE WHEN $4 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $4 THEN '' ELSE body_html END,
 			    locked_at = NULL,
 			    worker_token = NULL,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, effectiveAt, safeErr); err != nil {
+		`, id, effectiveAt, safeErr, isPortalChallenge); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -2804,6 +2845,35 @@ func (s *Store) MarkOutboxDispatchTerminatedBeforeSendWithLeaseAt(ctx context.Co
 			return nil
 		}
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
+		if isPortalChallenge && (snap.BodyText == "[redacted security challenge]" || effectiveAt.Sub(snap.CreatedAt) >= domain.PortalChallengeTTL) {
+			cReason := snap.CancelReason
+			if cReason == "" {
+				cReason = "Portal security challenge expired or invalidated; retry suppressed"
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'CANCELLED',
+				    attempts = attempts + 1,
+				    dispatch_outcome = 'TERMINATED_BEFORE_SEND',
+				    dispatch_fenced_at = $2,
+				    dispatch_fence_epoch = dispatch_fence_epoch + 1,
+				    dispatch_lease_expires_at = NULL,
+				    last_error = $3,
+				    body_text = '[redacted security challenge]',
+				    body_html = '',
+				    cancel_reason = $4,
+				    cancelled_at = COALESCE(cancelled_at, $2),
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, effectiveAt, reason, cReason); err != nil {
+				return MapErr(err)
+			}
+			return nil
+		}
+
 		nextStatus := domain.OutboxStatusPending
 		outcome := ""
 		var fencedAt *time.Time
@@ -2812,6 +2882,7 @@ func (s *Store) MarkOutboxDispatchTerminatedBeforeSendWithLeaseAt(ctx context.Co
 			outcome = "TERMINATED_BEFORE_SEND"
 			fencedAt = &effectiveAt
 		}
+		scrubChallengeBody := isPortalChallenge && nextStatus == domain.OutboxStatusFailed
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET attempts = attempts + 1,
@@ -2822,11 +2893,13 @@ func (s *Store) MarkOutboxDispatchTerminatedBeforeSendWithLeaseAt(ctx context.Co
 			    dispatch_fenced_at = $6,
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE WHEN $7 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $7 THEN '' ELSE body_html END,
 			    locked_at = NULL,
 			    worker_token = NULL,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, reason, effectiveRetry, nextStatus, outcome, fencedAt); err != nil {
+		`, id, reason, effectiveRetry, nextStatus, outcome, fencedAt, scrubChallengeBody); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -2914,6 +2987,35 @@ func (s *Store) MarkOutboxEmailRetryWithLeaseAt(ctx context.Context, id uuid.UUI
 			return nil
 		}
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
+		if isPortalChallenge && (snap.BodyText == "[redacted security challenge]" || effectiveNow.Sub(snap.CreatedAt) >= domain.PortalChallengeTTL) {
+			cReason := snap.CancelReason
+			if cReason == "" {
+				cReason = "Portal security challenge expired or invalidated; retry suppressed"
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'CANCELLED',
+				    attempts = attempts + 1,
+				    dispatch_outcome = 'PRE_SUBMIT_FAILED',
+				    dispatch_fenced_at = $2,
+				    dispatch_fence_epoch = dispatch_fence_epoch + 1,
+				    dispatch_lease_expires_at = NULL,
+				    last_error = $3,
+				    body_text = '[redacted security challenge]',
+				    body_html = '',
+				    cancel_reason = $4,
+				    cancelled_at = COALESCE(cancelled_at, $2),
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, effectiveNow, errMsg, cReason); err != nil {
+				return MapErr(err)
+			}
+			return nil
+		}
+
 		nextStatus := domain.OutboxStatusPending
 		outcome := ""
 		var fencedAt *time.Time
@@ -2926,6 +3028,7 @@ func (s *Store) MarkOutboxEmailRetryWithLeaseAt(ctx context.Context, id uuid.UUI
 		if nextRetry.IsZero() {
 			effectiveRetry = effectiveNow.Add(2 * time.Minute)
 		}
+		scrubChallengeBody := isPortalChallenge && nextStatus == domain.OutboxStatusFailed
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET attempts = attempts + 1,
@@ -2938,9 +3041,11 @@ func (s *Store) MarkOutboxEmailRetryWithLeaseAt(ctx context.Context, id uuid.UUI
 			    dispatch_fenced_at = $6,
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE WHEN $7 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $7 THEN '' ELSE body_html END,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, errMsg, effectiveRetry, nextStatus, outcome, fencedAt); err != nil {
+		`, id, errMsg, effectiveRetry, nextStatus, outcome, fencedAt, scrubChallengeBody); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -3030,6 +3135,7 @@ func (s *Store) MarkOutboxEmailPermanentFailureWithLeaseAt(ctx context.Context, 
 			return nil
 		}
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET attempts = attempts + 1,
@@ -3041,9 +3147,11 @@ func (s *Store) MarkOutboxEmailPermanentFailureWithLeaseAt(ctx context.Context, 
 			    dispatch_fenced_at = $3,
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE WHEN $4 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $4 THEN '' ELSE body_html END,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, errMsg, effectiveNow); err != nil {
+		`, id, errMsg, effectiveNow, isPortalChallenge); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -3269,6 +3377,9 @@ func (s *Store) ReconcileUnknownOutboxDispatch(ctx context.Context, tx pgx.Tx, p
 			res.CancelledAt = &at
 			res.CancelReason = "Reconciled after unknown dispatch: cancelled without re-send"
 			lastErr = "[redacted on anonymisation: reconciled unknown dispatch]"
+		} else if domain.IsPortalSecurityChallengeTemplate(res.Template) {
+			res.BodyText = "[redacted security challenge]"
+			res.BodyHTML = ""
 		}
 		res.Status = targetStatus
 		res.LastError = lastErr

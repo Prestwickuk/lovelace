@@ -1922,19 +1922,22 @@ func (s *Store) RetryFailedOutboxEmail(ctx context.Context, tx pgx.Tx, propertyI
 		return lockErr
 	}
 	var commID *uuid.UUID
-	var curStatus string
+	var curStatus, tpl string
 	var rowGuestBlocked bool
 	err := tx.QueryRow(ctx, `
-		SELECT o.communication_id, o.status,
+		SELECT o.communication_id, o.status, o.template,
 		       COALESCE(g.status = 'ANONYMIZED' OR g.anonymized_at IS NOT NULL OR g.erasure_requested_at IS NOT NULL, FALSE)
 		FROM email_outbox o
 		LEFT JOIN reservations r ON r.property_id = o.property_id AND r.id = o.reservation_id
 		LEFT JOIN guests g ON g.property_id = o.property_id AND g.id = COALESCE(o.guest_id, r.guest_id)
 		WHERE o.property_id = $1 AND o.id = $2
 		FOR UPDATE OF o
-	`, propertyID, outboxID).Scan(&commID, &curStatus, &rowGuestBlocked)
+	`, propertyID, outboxID).Scan(&commID, &curStatus, &tpl, &rowGuestBlocked)
 	if err != nil {
 		return MapErr(err)
+	}
+	if domain.IsPortalSecurityChallengeTemplate(tpl) {
+		return fmt.Errorf("%w: security verification challenge emails cannot be retried; send a fresh portal verification code instead", domain.ErrConflict)
 	}
 	if guestBlocked || rowGuestBlocked || curStatus == domain.OutboxStatusCancelled || curStatus == domain.OutboxStatusCancelRequested {
 		return fmt.Errorf("%w: cannot retry cancelled or anonymized email", domain.ErrConflict)

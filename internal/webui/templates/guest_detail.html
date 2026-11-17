@@ -304,6 +304,29 @@
       </div>
     </form>
     {{end}}
+    {{if and (ne (printf "%s" .Detail.Guest.Status) "ANONYMIZED") (ne (printf "%s" .Detail.Guest.Status) "MERGED")}}
+    <hr>
+    <h3>Guest Portal Support &amp; Recovery</h3>
+    {{if .PortalEnabledForProperty}}
+    <p class="subtitle">Support staff cannot mint guest sessions or view OTP codes. Verification codes are dispatched directly to the guest's confirmed email address.</p>
+    <div class="inline-row mt-1">
+      {{if .CanWriteComms}}
+      <form method="post" action="/guests/{{.Detail.Guest.ID}}/portal/send-verification">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-secondary btn-sm">Send Portal Verification Code</button>
+      </form>
+      {{end}}
+      {{if .CanWriteGuests}}
+      <form method="post" action="/guests/{{.Detail.Guest.ID}}/portal/revoke-sessions">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-secondary btn-sm">Revoke Guest Portal Sessions</button>
+      </form>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="subtitle">Self-Service Guest Portal is currently disabled for this property (disabled by default in production; requires both deployment and property policy gates).</p>
+    {{end}}
+    {{end}}
   </div>
 </div>
 {{end}}

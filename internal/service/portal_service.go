@@ -33,7 +33,7 @@ var (
 
 const portalPrivacyReceiptMessage = "Your request has been recorded for review by the property team."
 
-func validatePortalMasterKey(seed []byte, isProduction bool) error {
+func validatePortalMasterKey(seed []byte) error {
 	if len(seed) != sha256.Size {
 		return ErrPortalKeyUnavailable
 	}
@@ -44,19 +44,17 @@ func validatePortalMasterKey(seed []byte, isProduction bool) error {
 	if nonZero == 0 {
 		return ErrPortalKeyUnavailable
 	}
-	if isProduction {
-		if subtle.ConstantTimeCompare(seed, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
-			return ErrPortalKeyUnavailable
-		}
-		if insecureHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && subtle.ConstantTimeCompare(seed, insecureHex) == 1 {
-			return ErrPortalKeyUnavailable
-		}
+	if subtle.ConstantTimeCompare(seed, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
+		return ErrPortalKeyUnavailable
+	}
+	if insecureHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && subtle.ConstantTimeCompare(seed, insecureHex) == 1 {
+		return ErrPortalKeyUnavailable
 	}
 	return nil
 }
 
-func derivePortalHMACSubkey(seed []byte, isProduction bool, subkeyPurpose string) ([]byte, error) {
-	if err := validatePortalMasterKey(seed, isProduction); err != nil {
+func derivePortalHMACSubkey(seed []byte, subkeyPurpose string) ([]byte, error) {
+	if err := validatePortalMasterKey(seed); err != nil {
 		return nil, err
 	}
 	mac := hmac.New(sha256.New, seed)
@@ -65,11 +63,11 @@ func derivePortalHMACSubkey(seed []byte, isProduction bool, subkeyPurpose string
 }
 
 func (s *Service) portalCSRFHMACKey() ([]byte, error) {
-	return derivePortalHMACSubkey(s.cfg.EncryptionKey, s.cfg.IsProduction(), "lovelace-portal-subkey-csrf-v1")
+	return derivePortalHMACSubkey(s.cfg.EncryptionKey, "lovelace-portal-subkey-csrf-v1")
 }
 
 func (s *Service) portalOTPHMACKey() ([]byte, error) {
-	return derivePortalHMACSubkey(s.cfg.EncryptionKey, s.cfg.IsProduction(), "lovelace-portal-subkey-otp-hmac-v2")
+	return derivePortalHMACSubkey(s.cfg.EncryptionKey, "lovelace-portal-subkey-otp-hmac-v2")
 }
 
 // portalActor constructs the pseudonymous public guest audit actor without recording
@@ -170,6 +168,7 @@ func (s *Service) queuePortalSecurityChallengeEmailTx(
 		BodyText:        bodyText,
 		BodyHTML:        bodyHTML,
 		NextAttemptAt:   nowUTC,
+		CreatedAt:       nowUTC,
 	})
 	return err
 }
@@ -246,6 +245,7 @@ func (s *Service) queuePortalOperationalNotificationTx(
 		BodyText:        bodyText,
 		BodyHTML:        bodyHTML,
 		NextAttemptAt:   nowUTC,
+		CreatedAt:       nowUTC,
 	}); err != nil {
 		return err
 	}

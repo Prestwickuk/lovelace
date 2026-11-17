@@ -113,6 +113,24 @@ func normalizePortalOriginHeader(raw string) string {
 }
 
 func (h *Handler) checkPortalMutationOrigin(w http.ResponseWriter, r *http.Request) bool {
+	allowedMap := make(map[string]bool)
+	allowedHosts := make(map[string]bool)
+	for k := range h.allowedPublicOrigins() {
+		norm := normalizePortalOriginHeader(k)
+		if norm != "" {
+			allowedMap[norm] = true
+			if u, err := url.Parse(norm); err == nil && u.Host != "" {
+				allowedHosts[strings.ToLower(u.Host)] = true
+			}
+		}
+	}
+	if xfh := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0])); xfh != "" {
+		if len(allowedHosts) > 0 && !allowedHosts[xfh] {
+			slog.Warn("portal.origin.rejected")
+			writeError(w, http.StatusForbidden, "origin_not_allowed", "cross-site portal mutation rejected")
+			return false
+		}
+	}
 	origin := normalizePortalOriginHeader(r.Header.Get("Origin"))
 	if origin == "" {
 		origin = normalizePortalOriginHeader(r.Header.Get("Referer"))
@@ -120,7 +138,7 @@ func (h *Handler) checkPortalMutationOrigin(w http.ResponseWriter, r *http.Reque
 	if origin == "" {
 		return true
 	}
-	if !h.allowedPublicOrigins()[origin] {
+	if !allowedMap[origin] {
 		slog.Warn("portal.origin.rejected")
 		writeError(w, http.StatusForbidden, "origin_not_allowed", "cross-site portal mutation rejected")
 		return false

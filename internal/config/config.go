@@ -70,6 +70,11 @@ func (c Config) IsProduction() bool {
 	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "production")
 }
 
+// IsStaging reports whether the application runs in staging mode.
+func (c Config) IsStaging() bool {
+	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "staging")
+}
+
 // AllowedPublicOrigins splits PublicOrigin into normalized scheme://host[:port] strings.
 func (c Config) AllowedPublicOrigins() []string {
 	var out []string
@@ -170,9 +175,22 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid TIRBACH_ENCRYPTION_KEY: %w", err)
 		}
 		cfg.EncryptionKey = key
-	} else if !cfg.IsProduction() {
-		// Explicit development/test fallback key; production fails closed below.
+	} else if !cfg.IsProduction() && !cfg.IsStaging() {
+		// Explicit local development/test fallback key for non-portal admin vault;
+		// production, staging, and all Guest Portal OTP/CSRF operations fail closed.
 		cfg.EncryptionKey = []byte("tirbach-dev-only-32byte-key-0001")
+	}
+
+	if cfg.IsStaging() {
+		if len(cfg.EncryptionKey) != 32 {
+			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY (32-byte hex or base64) is required in staging")
+		}
+		if isInsecureSecret(rawKey) || isAllZeroBytes(cfg.EncryptionKey) {
+			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure or all-zero value")
+		}
+		if cfg.PublicAPISecret != "" && isInsecureSecret(cfg.PublicAPISecret) {
+			return Config{}, fmt.Errorf("TIRBACH_PUBLIC_API_SECRET uses a known insecure development value")
+		}
 	}
 
 	if cfg.IsProduction() {
@@ -188,7 +206,7 @@ func Load() (Config, error) {
 		if len(cfg.EncryptionKey) != 32 {
 			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY (32-byte hex or base64) is required in production")
 		}
-		if isInsecureSecret(rawKey) {
+		if isInsecureSecret(rawKey) || isAllZeroBytes(cfg.EncryptionKey) {
 			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure development value")
 		}
 		if cfg.PublicAPISecret != "" && isInsecureSecret(cfg.PublicAPISecret) {
@@ -384,6 +402,14 @@ func parseEncryptionKey(raw string) ([]byte, error) {
 		return b, nil
 	}
 	return nil, fmt.Errorf("must decode to exactly 32 bytes (64 hex chars or 44 base64 chars)")
+}
+
+func isAllZeroBytes(b []byte) bool {
+	var acc byte
+	for _, v := range b {
+		acc |= v
+	}
+	return acc == 0
 }
 
 func isInsecureSecret(v string) bool {

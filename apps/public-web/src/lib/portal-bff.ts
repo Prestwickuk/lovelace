@@ -3,7 +3,11 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { PRIVATE_NO_STORE_HEADERS } from "./bff-response";
 import { callLovelacePublic, getPropertySlug, LovelaceApiError } from "./lovelace-api";
-import { checkBffRateLimit, rateLimitResponse, type BffLimitTier } from "./rate-limit";
+import {
+  checkBffRateLimit,
+  rateLimitResponse,
+  SlidingFixedWindowLimiter,
+} from "./rate-limit";
 import type { PortalSessionScope } from "./types";
 
 export const GUEST_SESSION_COOKIE = "lovelace_guest_session";
@@ -22,15 +26,33 @@ const FORBIDDEN_QUERY_PARAMS = [
   "csrf_token",
 ];
 
+function readRuntimeEnv(key: string): string {
+  const envDict: Record<string, string | undefined> = process.env;
+  return (envDict[key] || "").trim();
+}
+
+function isProductionEnv(): boolean {
+  const appEnv = readRuntimeEnv("LOVELACE_ENV").toLowerCase();
+  if (appEnv) {
+    return appEnv === "production";
+  }
+  const siteUrl = readRuntimeEnv("NEXT_PUBLIC_SITE_URL").toLowerCase();
+  if (siteUrl.startsWith("http://127.0.0.1") || siteUrl.startsWith("http://localhost")) {
+    return false;
+  }
+  return readRuntimeEnv("NODE_ENV").toLowerCase() === "production";
+}
+
 function isSecureCookieEnv(): boolean {
-  return (
-    process.env.NODE_ENV === "production" ||
-    process.env.LOVELACE_ENV === "production"
-  );
+  const siteUrl = readRuntimeEnv("NEXT_PUBLIC_SITE_URL").toLowerCase();
+  if (siteUrl.startsWith("https://")) {
+    return true;
+  }
+  return isProductionEnv();
 }
 
 function isTrustProxyEnabled(): boolean {
-  return (process.env.LOVELACE_TRUST_PROXY || "").trim().toLowerCase() === "true";
+  return readRuntimeEnv("LOVELACE_TRUST_PROXY").toLowerCase() === "true";
 }
 
 export function assertNoQuerySecrets(req: NextRequest): void {
@@ -75,6 +97,19 @@ function normalizeOrigin(raw: string | null): string {
   }
 }
 
+function isLoopbackHost(host: string): boolean {
+  const clean = host.trim().toLowerCase();
+  const hostname = clean.startsWith("[")
+    ? clean.slice(0, clean.indexOf("]") + 1)
+    : clean.split(":")[0];
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "public-web"
+  );
+}
+
 export function assertSameOriginMutation(req: NextRequest): void {
   const reqOrigin = normalizeOrigin(req.headers.get("origin"));
   const refererOrigin = normalizeOrigin(req.headers.get("referer"));
@@ -88,25 +123,37 @@ export function assertSameOriginMutation(req: NextRequest): void {
   }
 
   const allowed = new Set<string>();
-  const selfOrigin = normalizeOrigin(req.nextUrl.origin);
-  if (selfOrigin) allowed.add(selfOrigin);
+  const rawConfigured = [
+    readRuntimeEnv("NEXT_PUBLIC_SITE_URL"),
+    readRuntimeEnv("LOVELACE_SITE_URL"),
+    readRuntimeEnv("LOVELACE_ALLOWED_ORIGINS"),
+  ]
+    .join(",")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-  const trustProxy = isTrustProxyEnabled();
-  const hostHeader = trustProxy
-    ? (req.headers.get("x-forwarded-host") || req.headers.get("host") || "").split(",")[0].trim()
-    : (req.headers.get("host") || "").trim();
-  const protoHeader = trustProxy
-    ? (req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "") || "http")
-        .split(",")[0]
-        .trim()
-    : req.nextUrl.protocol.replace(":", "") || "http";
-  if (hostHeader && (protoHeader === "http" || protoHeader === "https")) {
-    const hostOrigin = normalizeOrigin(`${protoHeader}://${hostHeader}`);
-    if (hostOrigin) allowed.add(hostOrigin);
+  for (const item of rawConfigured) {
+    const norm = normalizeOrigin(item);
+    if (norm) allowed.add(norm);
   }
 
-  const configuredSite = normalizeOrigin(process.env.NEXT_PUBLIC_SITE_URL || null);
-  if (configuredSite) allowed.add(configuredSite);
+  if (allowed.size === 0) {
+    if (isSecureCookieEnv()) {
+      throw new LovelaceApiError(
+        403,
+        "origin_not_allowed",
+        "Public site origin is not configured.",
+      );
+    }
+    const selfOrigin = normalizeOrigin(req.nextUrl.origin);
+    if (selfOrigin) {
+      const selfHost = new URL(selfOrigin).host;
+      if (isLoopbackHost(selfHost)) {
+        allowed.add(selfOrigin);
+      }
+    }
+  }
 
   if (!isSecureCookieEnv()) {
     for (const candidate of Array.from(allowed)) {
@@ -125,6 +172,48 @@ export function assertSameOriginMutation(req: NextRequest): void {
       "Cross-site portal mutation rejected.",
     );
   }
+
+  const allowedHosts = new Set<string>();
+  for (const orig of allowed) {
+    allowedHosts.add(new URL(orig).host.toLowerCase());
+  }
+
+  const trustProxy = isTrustProxyEnabled();
+  const rawXfh = (req.headers.get("x-forwarded-host") || "").split(",")[0].trim().toLowerCase();
+  if (rawXfh && !allowedHosts.has(rawXfh)) {
+    throw new LovelaceApiError(
+      403,
+      "origin_not_allowed",
+      "Spoofed or untrusted forwarded host rejected.",
+    );
+  }
+
+  const rawHost = (req.headers.get("host") || "").trim().toLowerCase();
+  if (rawHost) {
+    const proxyInternalHop = trustProxy && Boolean(rawXfh) && isLoopbackHost(rawHost);
+    if (!proxyInternalHop && !allowedHosts.has(rawHost)) {
+      throw new LovelaceApiError(
+        403,
+        "origin_not_allowed",
+        "Unrecognised Host header rejected.",
+      );
+    }
+  }
+}
+
+const portalBucketLimiters = new Map<string, SlidingFixedWindowLimiter>();
+
+function getPortalBucketLimiter(
+  bucket: string,
+  limitPerMinute: number,
+): SlidingFixedWindowLimiter {
+  const key = `${bucket}:${limitPerMinute}`;
+  let lim = portalBucketLimiters.get(key);
+  if (!lim) {
+    lim = new SlidingFixedWindowLimiter(Math.max(1, limitPerMinute), 60_000);
+    portalBucketLimiters.set(key, lim);
+  }
+  return lim;
 }
 
 export function enforcePortalBffRateLimit(
@@ -132,15 +221,18 @@ export function enforcePortalBffRateLimit(
   bucket: string,
   limitPerMinute: number,
 ): NextResponse | null {
-  const tier: BffLimitTier =
-    bucket.includes("auth") || bucket.includes("privacy") || limitPerMinute <= 15
-      ? "lookup"
-      : limitPerMinute <= 30
-        ? "write"
-        : "read";
-  const rl = checkBffRateLimit(req, tier);
-  if (!rl.allowed) {
-    const res = rateLimitResponse(rl.retryAfterSeconds);
+  const baseCheck = checkBffRateLimit(req, "read");
+  if (!baseCheck.allowed) {
+    const res = rateLimitResponse(baseCheck.retryAfterSeconds);
+    for (const [k, v] of Object.entries(PRIVATE_NO_STORE_HEADERS)) {
+      res.headers.set(k, v);
+    }
+    return res;
+  }
+  const ipKey = baseCheck.clientIp || "direct";
+  const bucketCheck = getPortalBucketLimiter(bucket, limitPerMinute).allow(ipKey);
+  if (!bucketCheck.allowed) {
+    const res = rateLimitResponse(bucketCheck.retryAfterSeconds);
     for (const [k, v] of Object.entries(PRIVATE_NO_STORE_HEADERS)) {
       res.headers.set(k, v);
     }
@@ -246,6 +338,10 @@ export async function callLovelacePortal<T>(
 
   const headers = new Headers(init.headers);
   headers.set("X-Lovelace-Property", getPropertySlug());
+  const fwdOrigin = normalizeOrigin(req.headers.get("origin")) || normalizeOrigin(req.headers.get("referer"));
+  if (fwdOrigin && !headers.has("Origin")) {
+    headers.set("Origin", fwdOrigin);
+  }
   if (sessionToken) {
     headers.set("X-Guest-Session", sessionToken);
   }

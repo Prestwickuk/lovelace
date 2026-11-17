@@ -19,12 +19,18 @@ import { portalFetch, statusBadgeClass } from "./portal-client";
 
 describe("Guest Portal BFF security & boundary helpers", () => {
   const originalTrustProxy = process.env.LOVELACE_TRUST_PROXY;
+  const originalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
   afterEach(() => {
     if (originalTrustProxy === undefined) {
       delete process.env.LOVELACE_TRUST_PROXY;
     } else {
       process.env.LOVELACE_TRUST_PROXY = originalTrustProxy;
+    }
+    if (originalSiteUrl === undefined) {
+      delete process.env.NEXT_PUBLIC_SITE_URL;
+    } else {
+      process.env.NEXT_PUBLIC_SITE_URL = originalSiteUrl;
     }
   });
 
@@ -95,11 +101,13 @@ describe("Guest Portal BFF security & boundary helpers", () => {
     expect(() => assertSameOriginMutation(spoofedForwardedHostReq)).toThrow();
 
     process.env.LOVELACE_TRUST_PROXY = "true";
+    process.env.NEXT_PUBLIC_SITE_URL = "https://bookings.tirbach.wales";
     const trustedProxyReq = new NextRequest(
       "http://127.0.0.1:3000/api/public/portal/consent",
       {
         method: "POST",
         headers: {
+          host: "127.0.0.1:3000",
           origin: "https://bookings.tirbach.wales",
           "x-forwarded-host": "bookings.tirbach.wales",
           "x-forwarded-proto": "https",
@@ -108,6 +116,37 @@ describe("Guest Portal BFF security & boundary helpers", () => {
     );
     expect(() => assertSameOriginMutation(trustedProxyReq)).not.toThrow();
 
+    // Even when LOVELACE_TRUST_PROXY=true, spoofed X-Forwarded-Host outside NEXT_PUBLIC_SITE_URL fails closed.
+    const spoofedWithTrustProxyReq = new NextRequest(
+      "http://127.0.0.1:3000/api/public/portal/consent",
+      {
+        method: "POST",
+        headers: {
+          host: "127.0.0.1:3000",
+          origin: "https://evil.example.org",
+          "x-forwarded-host": "evil.example.org",
+          "x-forwarded-proto": "https",
+        },
+      },
+    );
+    expect(() => assertSameOriginMutation(spoofedWithTrustProxyReq)).toThrow();
+
+    // Direct spoofed Host header fails closed even when Origin matches spoofed Host.
+    process.env.LOVELACE_TRUST_PROXY = "false";
+    process.env.NEXT_PUBLIC_SITE_URL = "http://127.0.0.1:3000";
+    const spoofedHostHeaderReq = new NextRequest(
+      "http://evil.example.org/api/public/portal/consent",
+      {
+        method: "POST",
+        headers: {
+          host: "evil.example.org",
+          origin: "http://evil.example.org",
+        },
+      },
+    );
+    expect(() => assertSameOriginMutation(spoofedHostHeaderReq)).toThrow();
+
+    delete process.env.NEXT_PUBLIC_SITE_URL;
     const missingOriginReq = new NextRequest(
       "http://localhost:3000/api/public/portal/consent",
       { method: "POST" },

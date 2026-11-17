@@ -106,6 +106,18 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
     );
     expect(spoofedForwardedHostResp.status()).toBe(403);
 
+    const spoofedHostHeaderResp = await request.post(
+      "/api/public/portal/auth/challenge",
+      {
+        headers: {
+          Host: "evil.example.org",
+          Origin: "http://evil.example.org",
+        },
+        data: { email: "pilot.guest@example.wales" },
+      },
+    );
+    expect(spoofedHostHeaderResp.status()).toBe(403);
+
     const adminCookieResp = await request.get("/api/public/portal/bookings", {
       headers: {
         Cookie: "tirbach_session=forged-admin-session-token",

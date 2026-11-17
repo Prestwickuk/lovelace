@@ -134,13 +134,19 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 		t.Fatalf("expected mismatched browser nonce to fail magic-link verification (ok=%v err=%v)", ok, err)
 	}
 
-	// Fail closed when safe HMAC key is unavailable (nil, empty, short, or all-zero).
+	// Fail closed when safe HMAC key is unavailable (nil, empty, short, overlong, all-zero, or known dev keys).
+	devHexKey, _ := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	overlongKey := make([]byte, 64)
+	overlongKey[0] = 0x42
 	for _, badKey := range [][]byte{
 		nil,
 		{},
 		make([]byte, 16),
 		make([]byte, 31),
+		overlongKey,
 		make([]byte, 32), // all-zero 32-byte key
+		[]byte("tirbach-dev-only-32byte-key-0001"),
+		devHexKey,
 	} {
 		if _, err := postgres.HashPortalOTP(badKey, chID, "nia.portal@example.wales", "482910"); !errors.Is(err, postgres.ErrPortalOTPKeyInvalid) {
 			t.Fatalf("expected ErrPortalOTPKeyInvalid on unsafe key (len=%d), got %v", len(badKey), err)

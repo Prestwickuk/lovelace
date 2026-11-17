@@ -25,14 +25,23 @@ var (
 )
 
 func isSafeHMACKey(key []byte) bool {
-	if len(key) < sha256.Size {
+	if len(key) != sha256.Size {
 		return false
 	}
 	var nonZero byte
 	for _, b := range key {
 		nonZero |= b
 	}
-	return nonZero != 0
+	if nonZero == 0 {
+		return false
+	}
+	if subtle.ConstantTimeCompare(key, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
+		return false
+	}
+	if insecureHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && subtle.ConstantTimeCompare(key, insecureHex) == 1 {
+		return false
+	}
+	return true
 }
 
 func isSixDigitOTP(s string) bool {
@@ -547,21 +556,81 @@ func (s *Store) UpsertPortalIdentityOnLoginTx(
 	`, newID, propertyID, canonicalGuestID, cleanEmail, normEmail, nowUTC))
 }
 
-func scrubSettledChallengeOutboxByEmailTx(ctx context.Context, tx pgx.Tx, propertyID uuid.UUID, normEmail string) error {
+func portalChallengeTemplateForPurpose(purpose domain.PortalChallengePurpose) string {
+	switch purpose {
+	case domain.PortalChallengeStepUp:
+		return "portal_step_up"
+	case domain.PortalChallengeVerifyEmail:
+		return "portal_email_change_verify"
+	default:
+		return "portal_verification"
+	}
+}
+
+// scrubChallengeOutboxForPurposeTx cancels un-dispatched PENDING/FAILED/stale-PROCESSING challenge
+// outbox items for (propertyID, normEmail, purpose) and scrubs body_text/body_html across all states
+// while leaving active worker leases (PROCESSING/CANCEL_REQUESTED/DISPATCHING/DISPATCH_UNKNOWN) intact.
+func scrubChallengeOutboxForPurposeTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	propertyID uuid.UUID,
+	normEmail string,
+	purpose domain.PortalChallengePurpose,
+	nowUTC time.Time,
+) error {
 	if normEmail == "" {
 		return nil
 	}
+	tpl := portalChallengeTemplateForPurpose(purpose)
+	staleCutoff := nowUTC.Add(-5 * time.Minute)
 	_, err := tx.Exec(ctx, `
 		UPDATE email_outbox
-		SET body_text = '[redacted security challenge]',
+		SET status = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $4))
+		        THEN 'CANCELLED'
+		        ELSE status
+		    END,
+		    cancel_reason = CASE
+		        WHEN (
+		            status IN ('PENDING', 'FAILED')
+		            OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $4))
+		        ) AND cancel_reason = ''
+		        THEN 'Superseded or consumed portal security challenge cancelled before delivery'
+		        ELSE cancel_reason
+		    END,
+		    cancelled_at = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $4))
+		        THEN COALESCE(cancelled_at, $5)
+		        ELSE cancelled_at
+		    END,
+		    locked_at = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $4))
+		        THEN NULL
+		        ELSE locked_at
+		    END,
+		    worker_token = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $4))
+		        THEN NULL
+		        ELSE worker_token
+		    END,
+		    body_text = '[redacted security challenge]',
 		    body_html = '',
 		    updated_at = NOW()
 		WHERE property_id = $1
-		  AND LOWER(recipient_email) = $2
-		  AND template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
-		  AND status IN ('SENT', 'CANCELLED', 'FAILED')
-		  AND body_text <> '[redacted security challenge]'
-	`, propertyID, normEmail)
+		  AND LOWER(TRIM(recipient_email)) = $2
+		  AND (
+		      template = $3
+		      OR (
+		          template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
+		          AND status IN ('SENT', 'CANCELLED', 'FAILED', 'DISPATCH_UNKNOWN')
+		      )
+		  )
+		  AND (body_text <> '[redacted security challenge]' OR body_html <> '')
+	`, propertyID, normEmail, tpl, staleCutoff, nowUTC)
 	return MapErr(err)
 }
 
@@ -586,7 +655,7 @@ func (s *Store) InvalidateActivePortalChallengesTx(
 	`, propertyID, norm, string(purpose), nowUTC); err != nil {
 		return MapErr(err)
 	}
-	return scrubSettledChallengeOutboxByEmailTx(ctx, tx, propertyID, norm)
+	return scrubChallengeOutboxForPurposeTx(ctx, tx, propertyID, norm, purpose, nowUTC)
 }
 
 func (s *Store) CreatePortalChallengeTx(
@@ -743,7 +812,8 @@ func (s *Store) IncrementPortalChallengeFailure(ctx context.Context, propertyID,
 }
 
 func (s *Store) ConsumePortalChallengeTx(ctx context.Context, tx pgx.Tx, propertyID, challengeID uuid.UUID, normEmail string, nowUTC time.Time) error {
-	tag, err := tx.Exec(ctx, `
+	var purp string
+	err := tx.QueryRow(ctx, `
 		UPDATE guest_portal_challenges
 		SET consumed_at = $3
 		WHERE property_id = $1
@@ -752,14 +822,15 @@ func (s *Store) ConsumePortalChallengeTx(ctx context.Context, tx pgx.Tx, propert
 		  AND invalidated_at IS NULL
 		  AND expires_at > $3
 		  AND failed_attempts < max_attempts
-	`, propertyID, challengeID, nowUTC)
+		RETURNING purpose
+	`, propertyID, challengeID, nowUTC).Scan(&purp)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrUnauthorized
+		}
 		return MapErr(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return domain.ErrUnauthorized
-	}
-	return scrubSettledChallengeOutboxByEmailTx(ctx, tx, propertyID, domain.NormalizeEmail(normEmail))
+	return scrubChallengeOutboxForPurposeTx(ctx, tx, propertyID, domain.NormalizeEmail(normEmail), domain.PortalChallengePurpose(purp), nowUTC)
 }
 
 // VerifyChallengeProof checks either a 6-digit OTP code (using constant-time HMAC-SHA256
@@ -1285,16 +1356,48 @@ func (s *Store) PruneExpiredPortalState(ctx context.Context, nowUTC time.Time) e
 	outboxCutoff := nowUTC.Add(-domain.PortalChallengeTTL)
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE email_outbox
-		SET body_text = '[redacted security challenge]',
+		SET status = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $2))
+		        THEN 'CANCELLED'
+		        ELSE status
+		    END,
+		    cancel_reason = CASE
+		        WHEN (
+		            status IN ('PENDING', 'FAILED')
+		            OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $2))
+		        ) AND cancel_reason = ''
+		        THEN 'Expired portal security challenge cancelled before delivery'
+		        ELSE cancel_reason
+		    END,
+		    cancelled_at = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $2))
+		        THEN COALESCE(cancelled_at, $3)
+		        ELSE cancelled_at
+		    END,
+		    locked_at = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $2))
+		        THEN NULL
+		        ELSE locked_at
+		    END,
+		    worker_token = CASE
+		        WHEN status IN ('PENDING', 'FAILED')
+		          OR (status = 'PROCESSING' AND (locked_at IS NULL OR locked_at < $2))
+		        THEN NULL
+		        ELSE worker_token
+		    END,
+		    body_text = '[redacted security challenge]',
 		    body_html = '',
 		    updated_at = NOW()
 		WHERE template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
-		  AND body_text <> '[redacted security challenge]'
+		  AND (body_text <> '[redacted security challenge]' OR body_html <> '')
 		  AND (
-			status IN ('SENT', 'CANCELLED', 'FAILED')
+			status IN ('SENT', 'CANCELLED', 'FAILED', 'DISPATCH_UNKNOWN')
 			OR created_at <= $1
 		  )
-	`, outboxCutoff); err != nil {
+	`, outboxCutoff, skewCutoff, nowUTC); err != nil {
 		return MapErr(err)
 	}
 	return nil

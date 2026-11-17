@@ -1338,3 +1338,365 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 		t.Fatal("expected historical challenge_issued audit evidence preserved intact")
 	}
 }
+
+func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSupport(t *testing.T) {
+	pubSecret := "pub-m4-staging-hardening-secret"
+	srv, store, svc, prop, _, mailMock, clk := setupPortalTestServer(t, pubSecret, true)
+	ctx := context.Background()
+	pubClient := newClient(t)
+	adminClient := newClient(t)
+
+	loginStatus, adminCSRF := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	if loginStatus != http.StatusOK || adminCSRF == "" {
+		t.Fatalf("admin login failed: status=%d csrf=%q", loginStatus, adminCSRF)
+	}
+
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	if err != nil {
+		t.Fatalf("get owner: %v", err)
+	}
+	ownerActor := service.Actor{
+		UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role,
+	}
+	pol, err := svc.GetBookingPolicy(ctx, ownerActor, prop.ID)
+	if err != nil {
+		t.Fatalf("get booking policy: %v", err)
+	}
+	pol.GuestPortalEnabled = true
+	if _, err := svc.UpdateBookingPolicy(ctx, ownerActor, pol); err != nil {
+		t.Fatalf("enable guest portal: %v", err)
+	}
+
+	portalBase := srv.URL + "/api/public/v1/properties/" + prop.Slug + "/portal"
+
+	// 1. Staging config & known development keys fail closed across staging and development.
+	t.Setenv("TIRBACH_ENV", "staging")
+	t.Setenv("DATABASE_URL", os.Getenv("TEST_DATABASE_URL"))
+	t.Setenv("TIRBACH_ENCRYPTION_KEY", "")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected staging config.Load() to fail closed when TIRBACH_ENCRYPTION_KEY is missing")
+	}
+	t.Setenv("TIRBACH_ENCRYPTION_KEY", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected staging config.Load() to fail closed on known development key")
+	}
+	t.Setenv("TIRBACH_ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected staging config.Load() to fail closed on all-zero key")
+	}
+	t.Setenv("TIRBACH_ENV", "test")
+	t.Setenv("TIRBACH_ENCRYPTION_KEY", "")
+
+	devHexKey, _ := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	for _, devKey := range [][]byte{
+		[]byte("tirbach-dev-only-32byte-key-0001"),
+		devHexKey,
+	} {
+		devSvc := service.New(store, config.Config{
+			AppEnv:             "development",
+			DatabaseURL:        os.Getenv("TEST_DATABASE_URL"),
+			EncryptionKey:      devKey,
+			PublicOrigin:       "http://127.0.0.1:3000",
+			PublicAPISecret:    pubSecret,
+			GuestPortalEnabled: true,
+			EmailFrom:          "bookings@tirbach.wales",
+		})
+		devSvc.SetClock(clk.Now)
+		if _, err := devSvc.RequestPortalAuthChallenge(ctx, service.Actor{}, service.RequestPortalChallengeInput{
+			PropertySlug: prop.Slug,
+			Email:        "any.guest@example.wales",
+			Purpose:      domain.PortalChallengeLogin,
+		}); !errors.Is(err, service.ErrPortalKeyUnavailable) {
+			t.Fatalf("expected known dev key to fail closed with ErrPortalKeyUnavailable even in development, got %v", err)
+		}
+	}
+
+	// 2. Spoofed X-Forwarded-Host on Go portal mutation fails closed with 403.
+	spoofReq, _ := http.NewRequest(http.MethodPost, portalBase+"/auth/challenge", strings.NewReader(`{"email":"any@example.wales"}`))
+	spoofReq.Header.Set("Content-Type", "application/json")
+	spoofReq.Header.Set("X-Lovelace-Public-Key", pubSecret)
+	spoofReq.Header.Set("Origin", "http://127.0.0.1:3000")
+	spoofReq.Header.Set("X-Forwarded-Host", "evil.example.org")
+	spoofResp, err := pubClient.Do(spoofReq)
+	if err != nil {
+		t.Fatalf("spoofed X-Forwarded-Host req: %v", err)
+	}
+	spoofResp.Body.Close()
+	if spoofResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 on spoofed X-Forwarded-Host, got %d", spoofResp.StatusCode)
+	}
+
+	// 3. Admin HTTP API support verification & session revocation + strict admin/guest cookie isolation.
+	guest, err := svc.CreateGuest(ctx, ownerActor, domain.Guest{
+		PropertyID: prop.ID,
+		FirstName:  "Gwen",
+		LastName:   "Fencing",
+		Email:      "gwen.fencing@example.wales",
+		Phone:      "+447700900777",
+	})
+	if err != nil {
+		t.Fatalf("create guest: %v", err)
+	}
+
+	sendVerifResp := doJSON(t, adminClient, http.MethodPost, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/guests/"+guest.ID.String()+"/portal/send-verification", adminCSRF, map[string]any{})
+	sendVerifBody, _ := io.ReadAll(sendVerifResp.Body)
+	sendVerifResp.Body.Close()
+	if sendVerifResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202 from admin send-verification API, got %d: %s", sendVerifResp.StatusCode, string(sendVerifBody))
+	}
+	if reExtractOTP.Match(sendVerifBody) || strings.Contains(string(sendVerifBody), "code") {
+		t.Fatalf("admin send-verification response must never leak OTP: %s", string(sendVerifBody))
+	}
+	staffOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "gwen.fencing@example.wales"))[1]
+
+	// Verify zero challenge rows in guest_communications (only the non-secret system notification summary).
+	var leakedCommCount int
+	_ = store.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM guest_communications WHERE property_id = $1 AND body_text LIKE $2`, prop.ID, "%"+staffOTP+"%").Scan(&leakedCommCount)
+	if leakedCommCount != 0 {
+		t.Fatalf("CRITICAL: OTP leaked into guest_communications (%d rows)", leakedCommCount)
+	}
+
+	redeemResp, redeemBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.150", map[string]any{
+		"email": "gwen.fencing@example.wales",
+		"code":  staffOTP,
+	})
+	if redeemResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 redeeming staff-triggered OTP, got %d: %s", redeemResp.StatusCode, string(redeemBody))
+	}
+	var loginRes service.PortalLoginResult
+	_ = json.Unmarshal(redeemBody, &loginRes)
+
+	// Guest session cookie cannot authenticate admin API or admin pages; admin cookie cannot authenticate guest portal.
+	guestOnAdminReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/properties", nil)
+	guestOnAdminReq.Header.Set("Cookie", "lovelace_guest_session="+loginRes.SessionToken)
+	guestOnAdminResp, err := pubClient.Do(guestOnAdminReq)
+	if err != nil {
+		t.Fatalf("guest cookie on admin API: %v", err)
+	}
+	guestOnAdminResp.Body.Close()
+	if guestOnAdminResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 using guest cookie on /api/v1/properties, got %d", guestOnAdminResp.StatusCode)
+	}
+	guestOnAdminUIReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/operations", nil)
+	guestOnAdminUIReq.Header.Set("Cookie", "lovelace_guest_session="+loginRes.SessionToken)
+	guestOnAdminUIResp, err := pubClient.Do(guestOnAdminUIReq)
+	if err != nil {
+		t.Fatalf("guest cookie on admin UI: %v", err)
+	}
+	guestOnAdminUIResp.Body.Close()
+	if guestOnAdminUIResp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(guestOnAdminUIResp.Header.Get("Location"), "/login") {
+		t.Fatalf("expected 303 redirect to /login using guest cookie on /operations, got %d (%s)", guestOnAdminUIResp.StatusCode, guestOnAdminUIResp.Header.Get("Location"))
+	}
+
+	// Admin revokes guest portal sessions via HTTP API -> guest session immediately rejected 401.
+	revResp := doJSON(t, adminClient, http.MethodPost, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/guests/"+guest.ID.String()+"/portal/revoke-sessions", adminCSRF, map[string]any{})
+	revBody, _ := io.ReadAll(revResp.Body)
+	revResp.Body.Close()
+	if revResp.StatusCode != http.StatusOK || !strings.Contains(string(revBody), `"revoked_count":1`) {
+		t.Fatalf("expected 200 with revoked_count=1, got %d: %s", revResp.StatusCode, string(revBody))
+	}
+	afterRevResp, _ := doPortalReq(t, pubClient, http.MethodGet, portalBase+"/bookings", pubSecret, loginRes.SessionToken, "", "203.0.113.150", nil)
+	if afterRevResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 after staff session revocation, got %d", afterRevResp.StatusCode)
+	}
+
+	// 4. Outbox challenge scrubbing across expired PENDING, live DISPATCHING (preserving worker lease fencing),
+	// DISPATCH_UNKNOWN (swept & post-DATA timeout + CONFIRMED_FAILED reconciliation), and terminal FAILED.
+	// 4a. Expired PENDING challenge email is cancelled & scrubbed by PruneExpiredPortalState before dispatch.
+	expOutbox, err := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
+		ID:             uuid.Must(uuid.NewV7()),
+		PropertyID:     prop.ID,
+		GuestID:        &guest.ID,
+		RecipientEmail: "gwen.fencing@example.wales",
+		Template:       "portal_verification",
+		Subject:        "Expired Code",
+		BodyText:       "Expired OTP: 654321",
+		BodyHTML:       "<p>654321</p>",
+		NextAttemptAt:  clk.Now(),
+	})
+	if err != nil {
+		t.Fatalf("queue expired challenge outbox: %v", err)
+	}
+	_, _ = store.Pool().Exec(ctx, `UPDATE email_outbox SET created_at = $2 WHERE id = $1`, expOutbox.ID, clk.Now().Add(-16*time.Minute))
+	if err := svc.PruneExpiredPortalState(ctx); err != nil {
+		t.Fatalf("PruneExpiredPortalState: %v", err)
+	}
+	var expStatus, expBody string
+	_ = store.Pool().QueryRow(ctx, `SELECT status, body_text FROM email_outbox WHERE id = $1`, expOutbox.ID).Scan(&expStatus, &expBody)
+	if expStatus != "CANCELLED" || expBody != "[redacted security challenge]" {
+		t.Fatalf("expected expired PENDING challenge outbox CANCELLED & redacted, got status=%s body=%q", expStatus, expBody)
+	}
+	mailMock.mu.Lock()
+	beforeSent := len(mailMock.sent)
+	mailMock.mu.Unlock()
+	if _, err := svc.DispatchPendingEmails(ctx); err != nil {
+		t.Fatalf("DispatchPendingEmails: %v", err)
+	}
+	mailMock.mu.Lock()
+	afterSent := len(mailMock.sent)
+	mailMock.mu.Unlock()
+	if afterSent != beforeSent {
+		t.Fatal("expired cancelled challenge email must never be dispatched")
+	}
+
+	// 4b. Live DISPATCHING challenge outbox row: expiry/legacy scrub redacts body_text/body_html WITHOUT
+	// defeating worker lease fencing (AnonymizeGuest still blocks with 409, heartbeat still renews, and
+	// pre-DATA retry suppresses re-queueing by settling to CANCELLED).
+	dispOutbox, err := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
+		ID:             uuid.Must(uuid.NewV7()),
+		PropertyID:     prop.ID,
+		GuestID:        &guest.ID,
+		RecipientEmail: "gwen.fencing@example.wales",
+		Template:       "portal_verification",
+		Subject:        "Live Dispatching Code",
+		BodyText:       "Dispatching OTP: 112233",
+		BodyHTML:       "<p>112233</p>",
+		NextAttemptAt:  clk.Now(),
+	})
+	if err != nil {
+		t.Fatalf("queue dispatching challenge outbox: %v", err)
+	}
+	claimed, err := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)
+	if err != nil || len(claimed) == 0 {
+		t.Fatalf("ClaimDueOutboxEmails: err=%v len=%d", err, len(claimed))
+	}
+	var workerTok *uuid.UUID
+	for _, c := range claimed {
+		if c.ID == dispOutbox.ID {
+			workerTok = c.WorkerToken
+		}
+	}
+	if workerTok == nil {
+		t.Fatal("expected dispOutbox to be claimed with workerToken")
+	}
+	allowed, fenceEpoch, err := store.BeginOutboxDispatchLease(ctx, dispOutbox.ID, workerTok, "staging-worker-1", clk.Now(), 60*time.Second)
+	if err != nil || !allowed || fenceEpoch <= 0 {
+		t.Fatalf("BeginOutboxDispatchLease failed: allowed=%v epoch=%d err=%v", allowed, fenceEpoch, err)
+	}
+	// Backdate created_at past 15m TTL while worker lease is LIVE, then run PruneExpiredPortalState.
+	_, _ = store.Pool().Exec(ctx, `UPDATE email_outbox SET created_at = $2 WHERE id = $1`, dispOutbox.ID, clk.Now().Add(-16*time.Minute))
+	if err := svc.PruneExpiredPortalState(ctx); err != nil {
+		t.Fatalf("PruneExpiredPortalState during live DISPATCHING: %v", err)
+	}
+	var dispStatus, dispBody string
+	var dispTok *uuid.UUID
+	_ = store.Pool().QueryRow(ctx, `SELECT status, body_text, worker_token FROM email_outbox WHERE id = $1`, dispOutbox.ID).Scan(&dispStatus, &dispBody, &dispTok)
+	if dispStatus != "DISPATCHING" || dispBody != "[redacted security challenge]" || dispTok == nil || *dispTok != *workerTok {
+		t.Fatalf("expected live DISPATCHING lease preserved while body scrubbed, got status=%s body=%q tok=%v", dispStatus, dispBody, dispTok)
+	}
+	// Worker heartbeat renewal still works!
+	if renewed, err := store.RenewOutboxDispatchHeartbeat(ctx, dispOutbox.ID, workerTok, "staging-worker-1", fenceEpoch, clk.Now().Add(10*time.Second), 60*time.Second); err != nil || !renewed {
+		t.Fatalf("expected live worker heartbeat renewal to remain intact (renewed=%v err=%v)", renewed, err)
+	}
+	// Concurrent AnonymizeGuest on a separate guest with a live DISPATCHING challenge STILL respects lease fencing (409 Conflict).
+	eraseGuest, _ := svc.CreateGuest(ctx, ownerActor, domain.Guest{
+		PropertyID: prop.ID, FirstName: "Iwan", LastName: "Lease", Email: "iwan.lease@example.wales",
+	})
+	eraseOutbox, _ := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
+		ID: uuid.Must(uuid.NewV7()), PropertyID: prop.ID, GuestID: &eraseGuest.ID,
+		RecipientEmail: "iwan.lease@example.wales", Template: "portal_verification",
+		Subject: "Code", BodyText: "OTP: 889900", NextAttemptAt: clk.Now(),
+	})
+	claimedErase, _ := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)
+	var eraseTok *uuid.UUID
+	for _, c := range claimedErase {
+		if c.ID == eraseOutbox.ID {
+			eraseTok = c.WorkerToken
+		}
+	}
+	_, eraseEpoch, _ := store.BeginOutboxDispatchLease(ctx, eraseOutbox.ID, eraseTok, "staging-worker-2", clk.Now(), 60*time.Second)
+	_, _ = store.Pool().Exec(ctx, `UPDATE email_outbox SET created_at = $2 WHERE id = $1`, eraseOutbox.ID, clk.Now().Add(-16*time.Minute))
+	_ = svc.PruneExpiredPortalState(ctx)
+	if _, err := svc.AnonymizeGuest(ctx, ownerActor, prop.ID, eraseGuest.ID, "Test live lease conflict"); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected AnonymizeGuest to respect live DISPATCHING lease with ErrConflict, got %v", err)
+	}
+	// Settle dispOutbox via pre-DATA retry -> suppressed cleanly to CANCELLED (not re-queued as PENDING).
+	if err := store.MarkOutboxEmailRetryWithLeaseAt(ctx, dispOutbox.ID, workerTok, fenceEpoch, "dial timeout before DATA", clk.Now().Add(2*time.Minute), clk.Now().Add(15*time.Second)); err != nil {
+		t.Fatalf("MarkOutboxEmailRetryWithLeaseAt: %v", err)
+	}
+	_ = store.Pool().QueryRow(ctx, `SELECT status, body_text FROM email_outbox WHERE id = $1`, dispOutbox.ID).Scan(&dispStatus, &dispBody)
+	if dispStatus != "CANCELLED" || dispBody != "[redacted security challenge]" {
+		t.Fatalf("expected pre-DATA retry of expired/redacted challenge to settle CANCELLED, got status=%s body=%q", dispStatus, dispBody)
+	}
+
+	// 4c. Stale DISPATCHING lease swept to DISPATCH_UNKNOWN scrubs challenge body immediately, fences late worker,
+	// and keeps body scrubbed upon CONFIRMED_FAILED operator reconciliation while rejecting manual retry.
+	fencedIDs, err := store.SweepStaleOutboxDispatches(ctx, clk.Now().Add(2*time.Minute))
+	if err != nil || len(fencedIDs) == 0 {
+		t.Fatalf("SweepStaleOutboxDispatches expected fenced eraseOutbox: ids=%v err=%v", fencedIDs, err)
+	}
+	var unkStatus, unkBody string
+	_ = store.Pool().QueryRow(ctx, `SELECT status, body_text FROM email_outbox WHERE id = $1`, eraseOutbox.ID).Scan(&unkStatus, &unkBody)
+	if unkStatus != "DISPATCH_UNKNOWN" || unkBody != "[redacted security challenge]" {
+		t.Fatalf("expected swept DISPATCH_UNKNOWN challenge body redacted immediately, got status=%s body=%q", unkStatus, unkBody)
+	}
+	if err := store.MarkOutboxEmailSentWithLeaseAt(ctx, eraseOutbox.ID, eraseTok, eraseEpoch, clk.Now().Add(2*time.Minute), clk.Now().Add(2*time.Minute)); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected late fenced worker completion rejected with ErrConflict, got %v", err)
+	}
+
+	// Also verify DISPATCH_UNKNOWN -> CONFIRMED_FAILED reconciliation on a non-erased guest scrubs body & blocks manual retry.
+	unkGuest, _ := svc.CreateGuest(ctx, ownerActor, domain.Guest{
+		PropertyID: prop.ID, FirstName: "mali", LastName: "Unknown", Email: "mali.unknown@example.wales",
+	})
+	unkOutbox, _ := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
+		ID: uuid.Must(uuid.NewV7()), PropertyID: prop.ID, GuestID: &unkGuest.ID,
+		RecipientEmail: "mali.unknown@example.wales", Template: "portal_step_up",
+		Subject: "Step Up", BodyText: "Step-up OTP: 445566", BodyHTML: "<p>445566</p>", NextAttemptAt: clk.Now(),
+	})
+	claimedUnk, _ := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)
+	var unkTok *uuid.UUID
+	for _, c := range claimedUnk {
+		if c.ID == unkOutbox.ID {
+			unkTok = c.WorkerToken
+		}
+	}
+	_, unkEpoch, _ := store.BeginOutboxDispatchLease(ctx, unkOutbox.ID, unkTok, "staging-worker-3", clk.Now(), 60*time.Second)
+	if err := store.MarkOutboxDispatchUnknownWithLeaseAt(ctx, unkOutbox.ID, unkTok, unkEpoch, "EOF after DATA", clk.Now().Add(5*time.Second), clk.Now().Add(5*time.Second)); err != nil {
+		t.Fatalf("MarkOutboxDispatchUnknownWithLeaseAt: %v", err)
+	}
+	_ = store.Pool().QueryRow(ctx, `SELECT status, body_text, body_html FROM email_outbox WHERE id = $1`, unkOutbox.ID).Scan(&unkStatus, &unkBody, &expBody)
+	if unkStatus != "DISPATCH_UNKNOWN" || unkBody != "[redacted security challenge]" || expBody != "" {
+		t.Fatalf("expected MarkOutboxDispatchUnknownWithLeaseAt to scrub challenge body, got status=%s text=%q html=%q", unkStatus, unkBody, expBody)
+	}
+	reconciled, err := svc.ReconcileUnknownOutboxDispatch(ctx, ownerActor, service.ReconcileOutboxInput{
+		PropertyID:   prop.ID,
+		OutboxID:     unkOutbox.ID,
+		Resolution:   "CONFIRMED_FAILED",
+		ReasonCode:   "MTA_BOUNCE_CONFIRMED",
+		EvidenceType: "MTA_REJECTED",
+		EvidenceRef:  "postfix-queue-ref-001",
+		Note:         "Confirmed rejected by staging sink",
+	})
+	if err != nil {
+		t.Fatalf("ReconcileUnknownOutboxDispatch(CONFIRMED_FAILED): %v", err)
+	}
+	if reconciled.Status != domain.OutboxStatusFailed || reconciled.BodyText != "[redacted security challenge]" || reconciled.BodyHTML != "" {
+		t.Fatalf("expected CONFIRMED_FAILED challenge outbox to remain redacted, got status=%s body=%q", reconciled.Status, reconciled.BodyText)
+	}
+	if err := svc.RetryFailedOutboxEmail(ctx, ownerActor, prop.ID, unkOutbox.ID); !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("expected manual retry of FAILED security challenge rejected with ErrConflict, got %v", err)
+	}
+
+	// 4d. Terminal permanent failure scrubs security challenge body immediately.
+	permOutbox, _ := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
+		ID: uuid.Must(uuid.NewV7()), PropertyID: prop.ID, GuestID: &unkGuest.ID,
+		RecipientEmail: "mali.unknown@example.wales", Template: "portal_email_change_verify",
+		Subject: "Verify Email", BodyText: "Verify OTP: 778899", BodyHTML: "<p>778899</p>", NextAttemptAt: clk.Now(),
+	})
+	claimedPerm, _ := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)
+	var permTok *uuid.UUID
+	for _, c := range claimedPerm {
+		if c.ID == permOutbox.ID {
+			permTok = c.WorkerToken
+		}
+	}
+	_, permEpoch, _ := store.BeginOutboxDispatchLease(ctx, permOutbox.ID, permTok, "staging-worker-4", clk.Now(), 60*time.Second)
+	if err := store.MarkOutboxEmailPermanentFailureWithLeaseAt(ctx, permOutbox.ID, permTok, permEpoch, "550 mailbox unavailable", clk.Now().Add(2*time.Second)); err != nil {
+		t.Fatalf("MarkOutboxEmailPermanentFailureWithLeaseAt: %v", err)
+	}
+	var permStatus, permBody, permHTML string
+	_ = store.Pool().QueryRow(ctx, `SELECT status, body_text, body_html FROM email_outbox WHERE id = $1`, permOutbox.ID).Scan(&permStatus, &permBody, &permHTML)
+	if permStatus != "FAILED" || permBody != "[redacted security challenge]" || permHTML != "" {
+		t.Fatalf("expected permanent FAILED challenge outbox scrubbed, got status=%s text=%q html=%q", permStatus, permBody, permHTML)
+	}
+}

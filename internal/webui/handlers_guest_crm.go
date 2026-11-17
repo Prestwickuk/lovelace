@@ -30,6 +30,8 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guests/{id}/consent", h.requirePageAuth(true, h.handleGuestConsentPost))
 	mux.HandleFunc("GET /guests/{id}/export", h.requirePageAuth(false, h.handleGuestExportGet))
 	mux.HandleFunc("POST /guests/{id}/anonymize", h.requirePageAuth(true, h.handleGuestAnonymizePost))
+	mux.HandleFunc("POST /guests/{id}/portal/send-verification", h.requirePageAuth(true, h.handleGuestPortalSendVerificationPost))
+	mux.HandleFunc("POST /guests/{id}/portal/revoke-sessions", h.requirePageAuth(true, h.handleGuestPortalRevokeSessionsPost))
 	mux.HandleFunc("POST /communications/{id}/complete-followup", h.requirePageAuth(true, h.handleCommFollowUpCompletePost))
 
 	mux.HandleFunc("GET /enquiries", h.requirePageAuth(false, h.handleEnquiriesListGet))
@@ -189,22 +191,26 @@ func (h *Handler) handleGuestDetailGet(w http.ResponseWriter, r *http.Request, a
 		}
 	}
 
+	policy, _ := h.svc.GetBookingPolicy(r.Context(), actor, base.Property.ID)
+
 	h.renderPage(w, "guest_detail.html", struct {
 		baseView
-		Detail          domain.GuestDetailBundle
-		Templates       []domain.CommunicationTemplate
-		StaffUsers      []domain.AdminUser
-		PreviewTplID    string
-		PreviewSubject  string
-		PreviewBodyText string
+		Detail                   domain.GuestDetailBundle
+		Templates                []domain.CommunicationTemplate
+		StaffUsers               []domain.AdminUser
+		PreviewTplID             string
+		PreviewSubject           string
+		PreviewBodyText          string
+		PortalEnabledForProperty bool
 	}{
-		baseView:        base,
-		Detail:          detail,
-		Templates:       templates,
-		StaffUsers:      staff,
-		PreviewTplID:    r.URL.Query().Get("preview_template"),
-		PreviewSubject:  previewSubj,
-		PreviewBodyText: previewBody,
+		baseView:                 base,
+		Detail:                   detail,
+		Templates:                templates,
+		StaffUsers:               staff,
+		PreviewTplID:             r.URL.Query().Get("preview_template"),
+		PreviewSubject:           previewSubj,
+		PreviewBodyText:          previewBody,
+		PortalEnabledForProperty: base.GlobalPortalEnabled && policy.GuestPortalEnabled,
 	})
 }
 
@@ -833,4 +839,38 @@ func (h *Handler) handleRetentionPolicyPost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	redirectMsg(w, r, "/communications/settings", "Data retention policy updated.")
+}
+
+func (h *Handler) handleGuestPortalSendVerificationPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	guestID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Guest", "invalid guest id")
+		return
+	}
+	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
+	if err != nil {
+		return
+	}
+	if err := h.svc.SendGuestPortalVerification(r.Context(), actor, base.Property.ID, guestID); err != nil {
+		h.redirectErr(w, r, "/guests/"+guestID.String(), err)
+		return
+	}
+	redirectMsg(w, r, "/guests/"+guestID.String(), "Portal verification code queued to guest email (code withheld from staff logs).")
+}
+
+func (h *Handler) handleGuestPortalRevokeSessionsPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	guestID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Guest", "invalid guest id")
+		return
+	}
+	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
+	if err != nil {
+		return
+	}
+	if _, err := h.svc.RevokeGuestPortalSessions(r.Context(), actor, base.Property.ID, guestID); err != nil {
+		h.redirectErr(w, r, "/guests/"+guestID.String(), err)
+		return
+	}
+	redirectMsg(w, r, "/guests/"+guestID.String(), "Active guest portal sessions and challenges revoked.")
 }
