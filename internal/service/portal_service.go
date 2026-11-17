@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html"
@@ -25,19 +28,48 @@ var (
 	ErrPortalOTAManaged              = errors.New("booking is managed through an external channel")
 	ErrPortalDoNotContactRestricted  = errors.New("profile updates are restricted while do-not-contact status is active")
 	ErrPortalCSRFInvalid             = errors.New("invalid or missing portal CSRF token")
+	ErrPortalKeyUnavailable          = errors.New("portal cryptographic key is unavailable or unsafe")
 )
 
 const portalPrivacyReceiptMessage = "Your request has been recorded for review by the property team."
 
-func (s *Service) portalHMACKey() []byte {
-	seed := s.cfg.EncryptionKey
-	if len(seed) == 0 {
-		seed = []byte("lovelace-dev-portal-hmac-fallback-key")
+func validatePortalMasterKey(seed []byte, isProduction bool) error {
+	if len(seed) != sha256.Size {
+		return ErrPortalKeyUnavailable
 	}
-	h := sha256.New()
-	_, _ = h.Write([]byte("lovelace-portal-hmac-v1:"))
-	_, _ = h.Write(seed)
-	return h.Sum(nil)
+	var nonZero byte
+	for _, b := range seed {
+		nonZero |= b
+	}
+	if nonZero == 0 {
+		return ErrPortalKeyUnavailable
+	}
+	if isProduction {
+		if subtle.ConstantTimeCompare(seed, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
+			return ErrPortalKeyUnavailable
+		}
+		if insecureHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && subtle.ConstantTimeCompare(seed, insecureHex) == 1 {
+			return ErrPortalKeyUnavailable
+		}
+	}
+	return nil
+}
+
+func derivePortalHMACSubkey(seed []byte, isProduction bool, subkeyPurpose string) ([]byte, error) {
+	if err := validatePortalMasterKey(seed, isProduction); err != nil {
+		return nil, err
+	}
+	mac := hmac.New(sha256.New, seed)
+	_, _ = mac.Write([]byte(subkeyPurpose))
+	return mac.Sum(nil), nil
+}
+
+func (s *Service) portalCSRFHMACKey() ([]byte, error) {
+	return derivePortalHMACSubkey(s.cfg.EncryptionKey, s.cfg.IsProduction(), "lovelace-portal-subkey-csrf-v1")
+}
+
+func (s *Service) portalOTPHMACKey() ([]byte, error) {
+	return derivePortalHMACSubkey(s.cfg.EncryptionKey, s.cfg.IsProduction(), "lovelace-portal-subkey-otp-hmac-v2")
 }
 
 // portalActor constructs the pseudonymous public guest audit actor without recording
@@ -109,8 +141,12 @@ func (s *Service) queuePortalSecurityChallengeEmailTx(
 	if err != nil || cleanSubj == "" {
 		return fmt.Errorf("invalid email subject")
 	}
+	senderFrom := strings.TrimSpace(s.cfg.EmailFrom)
+	if senderFrom == "" {
+		senderFrom = "bookings@tirbach.wales"
+	}
 	if _, err := mailer.ValidateMessage(mailer.Message{
-		From:     s.cfg.EmailFrom,
+		From:     senderFrom,
 		To:       cleanRecip,
 		Subject:  cleanSubj,
 		BodyText: bodyText,
@@ -260,6 +296,10 @@ func (s *Service) RequestPortalAuthChallenge(
 	}
 	normEmail := domain.NormalizeEmail(cleanEmail)
 	bookingRef := strings.ToUpper(strings.TrimSpace(in.BookingReference))
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return PortalChallengeInitiated{}, err
+	}
 
 	nowUTC := s.nowUTC()
 	_ = s.store.PruneExpiredPortalState(ctx, nowUTC)
@@ -279,7 +319,7 @@ func (s *Service) RequestPortalAuthChallenge(
 		return resp, nil
 	}
 
-	_ = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+	if err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		var targetIdentityID, targetGuestID *uuid.UUID
 		var sendChallenge bool
 
@@ -327,6 +367,10 @@ func (s *Service) RequestPortalAuthChallenge(
 		if err != nil {
 			return err
 		}
+		otpHash, err := postgres.HashPortalOTP(otpKey, chID, normEmail, otpPlain)
+		if err != nil {
+			return err
+		}
 		if _, err := s.store.CreatePortalChallengeTx(ctx, tx, domain.GuestPortalChallenge{
 			ID:               chID,
 			PropertyID:       prop.ID,
@@ -334,7 +378,8 @@ func (s *Service) RequestPortalAuthChallenge(
 			GuestID:          targetGuestID,
 			NormalizedEmail:  normEmail,
 			Purpose:          purpose,
-			OTPHash:          postgres.HashPortalOTP(chID, normEmail, otpPlain),
+			OTPHash:          otpHash,
+			OTPHashAlg:       domain.PortalOTPHashAlgHMACSHA256V1,
 			TokenHash:        postgres.HashPortalValue(magicToken),
 			BrowserNonceHash: postgres.HashPortalValue(browserNonce),
 			BookingReference: bookingRef,
@@ -374,7 +419,9 @@ func (s *Service) RequestPortalAuthChallenge(
 			html.EscapeString(prop.Name), html.EscapeString(otpPlain), html.EscapeString(verifyURL),
 		)
 		return s.queuePortalSecurityChallengeEmailTx(ctx, tx, prop.ID, targetGuestID, cleanEmail, "portal_verification", subj, bodyText, bodyHTML, nowUTC)
-	})
+	}); err != nil {
+		return PortalChallengeInitiated{}, err
+	}
 
 	return resp, nil
 }
@@ -417,6 +464,14 @@ func (s *Service) RedeemPortalChallenge(
 			"email": "email is required when verifying with a 6-digit code",
 		})
 	}
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return PortalLoginResult{}, err
+	}
+	csrfKey, err := s.portalCSRFHMACKey()
+	if err != nil {
+		return PortalLoginResult{}, err
+	}
 
 	nowUTC := s.nowUTC()
 	var failedChallengeID uuid.UUID
@@ -436,7 +491,11 @@ func (s *Service) RedeemPortalChallenge(
 		if ch.Purpose != domain.PortalChallengeLogin {
 			return domain.ErrUnauthorized
 		}
-		if !postgres.VerifyChallengeProof(ch, otpCode, magicToken, in.BrowserNonce) {
+		proofOK, pErr := postgres.VerifyChallengeProof(otpKey, ch, otpCode, magicToken, in.BrowserNonce)
+		if pErr != nil {
+			return pErr
+		}
+		if !proofOK {
 			failedChallengeID = ch.ID
 			return domain.ErrUnauthorized
 		}
@@ -572,7 +631,10 @@ func (s *Service) RedeemPortalChallenge(
 			return err
 		}
 		sessHash := postgres.HashPortalValue(plainSession)
-		csrfPlain, csrfHash := postgres.DerivePortalCSRFToken(s.portalHMACKey(), sessionID, sessHash)
+		csrfPlain, csrfHash, err := postgres.DerivePortalCSRFToken(csrfKey, sessionID, sessHash)
+		if err != nil {
+			return err
+		}
 
 		sess, err := s.store.CreatePortalSessionTx(ctx, tx, domain.GuestPortalSession{
 			ID:                sessionID,
@@ -678,6 +740,10 @@ func (s *Service) CreatePortalBookingTokenSession(
 			"booking_reference": "booking_reference and confirmation_token are required",
 		})
 	}
+	csrfKey, err := s.portalCSRFHMACKey()
+	if err != nil {
+		return PortalLoginResult{}, err
+	}
 	nowUTC := s.nowUTC()
 	var out PortalLoginResult
 	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -694,7 +760,10 @@ func (s *Service) CreatePortalBookingTokenSession(
 			return err
 		}
 		sessHash := postgres.HashPortalValue(plainSession)
-		csrfPlain, csrfHash := postgres.DerivePortalCSRFToken(s.portalHMACKey(), sessionID, sessHash)
+		csrfPlain, csrfHash, err := postgres.DerivePortalCSRFToken(csrfKey, sessionID, sessHash)
+		if err != nil {
+			return err
+		}
 
 		absExp := nowUTC.Add(domain.PortalTierAAbsoluteTTL)
 		if tokExpiresAt.Before(absExp) {
@@ -777,13 +846,20 @@ func (s *Service) authenticatePortalSession(
 	if err != nil {
 		return resolvedPortalAuth{}, err
 	}
+	csrfKey, err := s.portalCSRFHMACKey()
+	if err != nil {
+		return resolvedPortalAuth{}, err
+	}
 	nowUTC := s.nowUTC()
 	sess, err := s.store.AuthenticateAndSlidePortalSession(ctx, prop.ID, plainSessionToken, nowUTC)
 	if err != nil {
 		return resolvedPortalAuth{}, domain.ErrUnauthorized
 	}
 
-	csrfPlain, csrfExpectedHash := postgres.DerivePortalCSRFToken(s.portalHMACKey(), sess.ID, sess.SessionTokenHash)
+	csrfPlain, csrfExpectedHash, err := postgres.DerivePortalCSRFToken(csrfKey, sess.ID, sess.SessionTokenHash)
+	if err != nil {
+		return resolvedPortalAuth{}, err
+	}
 	if !auth.ConstantTimeEqual(csrfExpectedHash, sess.CSRFSecretHash) {
 		return resolvedPortalAuth{}, domain.ErrUnauthorized
 	}
@@ -962,6 +1038,10 @@ func (s *Service) RequestPortalStepUpChallenge(
 	if authCtx.Session.ScopeType != domain.PortalScopeAccount || authCtx.Identity == nil {
 		return domain.ErrForbidden
 	}
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return err
+	}
 	nowUTC := s.nowUTC()
 	return s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := s.store.InvalidateActivePortalChallengesTx(ctx, tx, authCtx.Property.ID, authCtx.Identity.NormalizedVerifiedEmail, domain.PortalChallengeStepUp, nowUTC); err != nil {
@@ -979,6 +1059,10 @@ func (s *Service) RequestPortalStepUpChallenge(
 		if err != nil {
 			return err
 		}
+		otpHash, err := postgres.HashPortalOTP(otpKey, chID, authCtx.Identity.NormalizedVerifiedEmail, otpPlain)
+		if err != nil {
+			return err
+		}
 		gid := authCtx.CanonicalGuest.ID
 		identID := authCtx.Identity.ID
 		if _, err := s.store.CreatePortalChallengeTx(ctx, tx, domain.GuestPortalChallenge{
@@ -988,7 +1072,8 @@ func (s *Service) RequestPortalStepUpChallenge(
 			GuestID:          &gid,
 			NormalizedEmail:  authCtx.Identity.NormalizedVerifiedEmail,
 			Purpose:          domain.PortalChallengeStepUp,
-			OTPHash:          postgres.HashPortalOTP(chID, authCtx.Identity.NormalizedVerifiedEmail, otpPlain),
+			OTPHash:          otpHash,
+			OTPHashAlg:       domain.PortalOTPHashAlgHMACSHA256V1,
 			TokenHash:        postgres.HashPortalValue(tokDummy),
 			MaxAttempts:      domain.PortalChallengeMaxAttempts,
 			ExpiresAt:        nowUTC.Add(domain.PortalChallengeTTL),
@@ -1030,6 +1115,10 @@ func (s *Service) VerifyPortalStepUpChallenge(
 	if strings.TrimSpace(otpCode) == "" {
 		return domain.PortalSessionView{}, domain.NewValidationError(map[string]string{"code": "verification code is required"})
 	}
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return domain.PortalSessionView{}, err
+	}
 	nowUTC := s.nowUTC()
 	var failedID uuid.UUID
 	txErr := s.store.WithTx(ctx, func(tx pgx.Tx) error {
@@ -1037,7 +1126,11 @@ func (s *Service) VerifyPortalStepUpChallenge(
 		if err != nil {
 			return domain.ErrUnauthorized
 		}
-		if !postgres.VerifyChallengeProof(ch, otpCode, "", "") {
+		proofOK, pErr := postgres.VerifyChallengeProof(otpKey, ch, otpCode, "", "")
+		if pErr != nil {
+			return pErr
+		}
+		if !proofOK {
 			failedID = ch.ID
 			return domain.ErrUnauthorized
 		}
@@ -1732,11 +1825,15 @@ func (s *Service) InitiatePortalEmailChange(
 	if normNew == authCtx.Identity.NormalizedVerifiedEmail {
 		return domain.NewValidationError(map[string]string{"new_email": "must be different from your current verified email"})
 	}
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return err
+	}
 	if domain.IsOTAProxyEmail(normNew) {
 		return nil
 	}
 
-	_ = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+	if err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		if existingIdent, iErr := s.store.GetPortalIdentityByVerifiedEmail(ctx, tx, authCtx.Property.ID, normNew); iErr == nil && existingIdent.ID != authCtx.Identity.ID {
 			return nil
 		}
@@ -1769,6 +1866,10 @@ func (s *Service) InitiatePortalEmailChange(
 		if err != nil {
 			return err
 		}
+		otpHash, err := postgres.HashPortalOTP(otpKey, chID, normNew, otpPlain)
+		if err != nil {
+			return err
+		}
 		identID := authCtx.Identity.ID
 		gid := authCtx.CanonicalGuest.ID
 		if _, err := s.store.CreatePortalChallengeTx(ctx, tx, domain.GuestPortalChallenge{
@@ -1778,7 +1879,8 @@ func (s *Service) InitiatePortalEmailChange(
 			GuestID:          &gid,
 			NormalizedEmail:  normNew,
 			Purpose:          domain.PortalChallengeVerifyEmail,
-			OTPHash:          postgres.HashPortalOTP(chID, normNew, otpPlain),
+			OTPHash:          otpHash,
+			OTPHashAlg:       domain.PortalOTPHashAlgHMACSHA256V1,
 			TokenHash:        postgres.HashPortalValue(tokDummy),
 			MaxAttempts:      domain.PortalChallengeMaxAttempts,
 			ExpiresAt:        exp,
@@ -1803,7 +1905,9 @@ func (s *Service) InitiatePortalEmailChange(
 		txt := fmt.Sprintf("Hello %s,\n\nUse verification code %s within 15 minutes to confirm changing your Guest Portal email address to %s.\n", authCtx.CanonicalGuest.FullName, otpPlain, cleanNew)
 		htm := fmt.Sprintf("<p>Hello %s,</p><p>Use verification code <strong style=\"font-family:monospace;font-size:20px;\">%s</strong> within 15 minutes to confirm changing your Guest Portal email address.</p>", html.EscapeString(authCtx.CanonicalGuest.FullName), html.EscapeString(otpPlain))
 		return s.queuePortalSecurityChallengeEmailTx(ctx, tx, authCtx.Property.ID, &gid, cleanNew, "portal_email_change_verify", subj, txt, htm, nowUTC)
-	})
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1829,6 +1933,10 @@ func (s *Service) ConfirmPortalEmailChange(
 	if strings.TrimSpace(otpCode) == "" {
 		return domain.PortalProfileView{}, domain.NewValidationError(map[string]string{"code": "verification code is required"})
 	}
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return domain.PortalProfileView{}, err
+	}
 
 	oldVerifiedEmail := authCtx.Identity.VerifiedEmail
 	var failedID uuid.UUID
@@ -1840,7 +1948,11 @@ func (s *Service) ConfirmPortalEmailChange(
 		if ch.PortalIdentityID == nil || *ch.PortalIdentityID != authCtx.Identity.ID {
 			return domain.ErrUnauthorized
 		}
-		if !postgres.VerifyChallengeProof(ch, otpCode, "", "") {
+		proofOK, pErr := postgres.VerifyChallengeProof(otpKey, ch, otpCode, "", "")
+		if pErr != nil {
+			return pErr
+		}
+		if !proofOK {
 			failedID = ch.ID
 			return domain.ErrUnauthorized
 		}
@@ -2454,6 +2566,10 @@ func (s *Service) SendGuestPortalVerification(
 	if err := s.requirePropertyScope(actor, propertyID); err != nil {
 		return err
 	}
+	otpKey, err := s.portalOTPHMACKey()
+	if err != nil {
+		return err
+	}
 	nowUTC := s.nowUTC()
 	return s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		prop, err := s.store.GetPropertyByID(ctx, tx, propertyID)
@@ -2497,6 +2613,10 @@ func (s *Service) SendGuestPortalVerification(
 		if err != nil {
 			return err
 		}
+		otpHash, err := postgres.HashPortalOTP(otpKey, chID, normEmail, otpPlain)
+		if err != nil {
+			return err
+		}
 		var identID *uuid.UUID
 		if ident, iErr := s.store.GetPortalIdentityByGuest(ctx, tx, propertyID, canonID); iErr == nil {
 			idCopy := ident.ID
@@ -2509,7 +2629,8 @@ func (s *Service) SendGuestPortalVerification(
 			GuestID:          &canonID,
 			NormalizedEmail:  normEmail,
 			Purpose:          domain.PortalChallengeLogin,
-			OTPHash:          postgres.HashPortalOTP(chID, normEmail, otpPlain),
+			OTPHash:          otpHash,
+			OTPHashAlg:       domain.PortalOTPHashAlgHMACSHA256V1,
 			TokenHash:        postgres.HashPortalValue(tokDummy),
 			MaxAttempts:      domain.PortalChallengeMaxAttempts,
 			ExpiresAt:        nowUTC.Add(domain.PortalChallengeTTL),

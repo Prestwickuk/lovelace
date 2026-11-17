@@ -32,6 +32,11 @@ const (
 	PortalIdentitySuspended PortalIdentityStatus = "SUSPENDED"
 )
 
+const (
+	PortalOTPHashAlgHMACSHA256V1       = "HMAC-SHA256-V1"
+	PortalOTPHashAlgInvalidatedUnkeyed = "INVALIDATED_UNKEYED"
+)
+
 // Portal session, challenge, and validation bounds (Owner-Confirmed D8 & Section 6.1).
 const (
 	PortalChallengeTTL            = 15 * time.Minute
@@ -111,6 +116,7 @@ type GuestPortalChallenge struct {
 	NormalizedEmail  string
 	Purpose          PortalChallengePurpose
 	OTPHash          string
+	OTPHashAlg       string
 	TokenHash        string
 	BrowserNonceHash string
 	BookingReference string

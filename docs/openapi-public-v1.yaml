@@ -183,8 +183,10 @@ paths:
       description: >
         Disabled by default (returns 404 when TIRBACH_GUEST_PORTAL_ENABLED=false or property guest_portal_enabled=false).
         Always returns uniform 202 Accepted without enumerating whether an active guest profile exists.
-        Queues a single-use 6-digit OTP and #t=<magic_token> fragment link via email_outbox (15-minute TTL, max 5 attempts)
-        without writing credentials to guest_communications, and scrubs email_outbox body_text upon SENT or expiry.
+        Queues a single-use 6-digit OTP (stored at rest solely as a server-keyed HMAC-SHA256 digest bound to
+        challenge_id, normalized_email, and normalized_otp) and #t=<magic_token> fragment link via email_outbox
+        (15-minute TTL, max 5 attempts) without writing credentials to guest_communications, and scrubs
+        email_outbox body_text upon SENT or expiry.
       parameters:
         - $ref: "#/components/parameters/PropertySlug"
       responses:

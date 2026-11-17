@@ -3,6 +3,9 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1077,5 +1080,261 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 	})
 	if expiredResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 after 16m OTP expiry, got %d", expiredResp.StatusCode)
+	}
+}
+
+func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
+	pubSecret := "pub-m4-hmac-p1-secret"
+	srv, store, svc, prop, _, _, clk := setupPortalTestServer(t, pubSecret, true)
+	ctx := context.Background()
+	pubClient := newClient(t)
+
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	if err != nil {
+		t.Fatalf("get owner: %v", err)
+	}
+	ownerActor := service.Actor{
+		UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role,
+	}
+	pol, err := svc.GetBookingPolicy(ctx, ownerActor, prop.ID)
+	if err != nil {
+		t.Fatalf("get booking policy: %v", err)
+	}
+	pol.GuestPortalEnabled = true
+	if _, err := svc.UpdateBookingPolicy(ctx, ownerActor, pol); err != nil {
+		t.Fatalf("enable guest portal: %v", err)
+	}
+
+	portalBase := srv.URL + "/api/public/v1/properties/" + prop.Slug + "/portal"
+
+	guest, err := svc.CreateGuest(ctx, ownerActor, domain.Guest{
+		PropertyID: prop.ID,
+		FirstName:  "Carys",
+		LastName:   "HMAC",
+		Email:      "carys.hmac@example.wales",
+		Phone:      "+447700900555",
+	})
+	if err != nil {
+		t.Fatalf("create guest: %v", err)
+	}
+
+	assertChallengeIsKeyedHMAC := func(normEmail string, purpose domain.PortalChallengePurpose, plainOTP string) uuid.UUID {
+		t.Helper()
+		var chID uuid.UUID
+		var otpHash, otpAlg string
+		var maxAttempts int
+		var expiresAt time.Time
+		if qErr := store.Pool().QueryRow(ctx, `
+			SELECT id, otp_hash, otp_hash_alg, max_attempts, expires_at
+			FROM guest_portal_challenges
+			WHERE property_id = $1 AND normalized_email = $2 AND purpose = $3
+			ORDER BY created_at DESC LIMIT 1
+		`, prop.ID, normEmail, string(purpose)).Scan(&chID, &otpHash, &otpAlg, &maxAttempts, &expiresAt); qErr != nil {
+			t.Fatalf("query challenge (%s/%s): %v", normEmail, purpose, qErr)
+		}
+		if otpAlg != domain.PortalOTPHashAlgHMACSHA256V1 {
+			t.Fatalf("expected otp_hash_alg=%s, got %q", domain.PortalOTPHashAlgHMACSHA256V1, otpAlg)
+		}
+		if maxAttempts != domain.PortalChallengeMaxAttempts {
+			t.Fatalf("expected max_attempts=%d, got %d", domain.PortalChallengeMaxAttempts, maxAttempts)
+		}
+		ttl := expiresAt.Sub(clk.Now())
+		if ttl < 14*time.Minute+55*time.Second || ttl > 15*time.Minute+5*time.Second {
+			t.Fatalf("expected ~15m challenge TTL, got %s", ttl)
+		}
+		unkeyedLegacy := sha256.Sum256([]byte(fmt.Sprintf("lovelace-portal-otp:%s:%s:%s", chID.String(), normEmail, plainOTP)))
+		if otpHash == hex.EncodeToString(unkeyedLegacy[:]) {
+			t.Fatal("CRITICAL: persisted otp_hash matched unkeyed SHA-256 construction")
+		}
+		return chID
+	}
+
+	// 1. Login OTP path + Wrong-Key Server Rejection:
+	// Build a second server connected to the exact same PostgreSQL DB with a distinct 32-byte server key.
+	altKey := make([]byte, 32)
+	if _, err := rand.Read(altKey); err != nil {
+		t.Fatal("failed to generate alternate 32-byte key")
+	}
+	altCfg := config.Config{
+		AppEnv:             "test",
+		DatabaseURL:        os.Getenv("TEST_DATABASE_URL"),
+		EncryptionKey:      altKey,
+		PublicOrigin:       "http://127.0.0.1:3000",
+		PublicAPISecret:    pubSecret,
+		GuestPortalEnabled: true,
+		EmailFrom:          "bookings@tirbach.wales",
+	}
+	altSvc := service.New(store, altCfg)
+	altSvc.SetClock(clk.Now)
+	altRouter, err := app.NewRouter(altCfg, store, altSvc)
+	if err != nil {
+		t.Fatalf("alt router: %v", err)
+	}
+	altSrv := httptest.NewServer(altRouter)
+	defer altSrv.Close()
+	altPortalBase := altSrv.URL + "/api/public/v1/properties/" + prop.Slug + "/portal"
+
+	chResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.90", map[string]any{
+		"email": "carys.hmac@example.wales",
+	})
+	if chResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("login challenge expected 202, got %d", chResp.StatusCode)
+	}
+	loginOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.wales"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.hmac@example.wales", domain.PortalChallengeLogin, loginOTP)
+
+	// Attempting to redeem the exact OTP against a server holding a different HMAC key must fail with 401.
+	wrongKeyResp, _ := doPortalReq(t, pubClient, http.MethodPost, altPortalBase+"/auth/verify", pubSecret, "", "", "203.0.113.91", map[string]any{
+		"email": "carys.hmac@example.wales",
+		"code":  loginOTP,
+	})
+	if wrongKeyResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when verifying OTP under mismatched server HMAC key, got %d", wrongKeyResp.StatusCode)
+	}
+
+	// Redeeming under the matching server key succeeds (even with whitespace/case variations).
+	okLoginResp, okLoginBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.92", map[string]any{
+		"email": "  Carys.HMAC@Example.Wales ",
+		"code":  " " + loginOTP + " ",
+	})
+	if okLoginResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on matching-key login OTP verify, got %d: %s", okLoginResp.StatusCode, string(okLoginBody))
+	}
+	var loginRes service.PortalLoginResult
+	_ = json.Unmarshal(okLoginBody, &loginRes)
+
+	// 2. Step-Up OTP path (keyed HMAC + 5-attempt lockout + 15m TTL + successful redemption).
+	clk.Advance(20 * time.Minute)
+	stepChResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/challenge", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.92", map[string]any{})
+	if stepChResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("step-up challenge expected 202, got %d", stepChResp.StatusCode)
+	}
+	stepOTP1 := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.wales"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.hmac@example.wales", domain.PortalChallengeStepUp, stepOTP1)
+
+	wrongStep := "000000"
+	if stepOTP1 == wrongStep {
+		wrongStep = "999999"
+	}
+	for i := 0; i < 5; i++ {
+		r, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/verify", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, fmt.Sprintf("203.0.113.%d", 100+i), map[string]any{"code": wrongStep})
+		if r.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("step-up wrong attempt %d expected 401, got %d", i+1, r.StatusCode)
+		}
+	}
+	lockedStepResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/verify", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.106", map[string]any{"code": stepOTP1})
+	if lockedStepResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 6th step-up attempt rejected 401 after 5 failures, got %d", lockedStepResp.StatusCode)
+	}
+
+	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/challenge", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.107", map[string]any{})
+	stepOTP2 := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.wales"))[1]
+	stepVerResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/verify", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.107", map[string]any{"code": stepOTP2})
+	if stepVerResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected step-up verification 200, got %d", stepVerResp.StatusCode)
+	}
+
+	// 3. Pending-Email Change OTP path (keyed HMAC + 15m TTL + successful confirmation).
+	emChResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/profile/email-change", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.108", map[string]any{
+		"new_email": "carys.updated@example.wales",
+	})
+	if emChResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("email-change challenge expected 202, got %d", emChResp.StatusCode)
+	}
+	emOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.updated@example.wales"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.updated@example.wales", domain.PortalChallengeVerifyEmail, emOTP)
+
+	emConfResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/profile/email-change/confirm", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.108", map[string]any{
+		"code": emOTP,
+	})
+	if emConfResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected email-change confirm 200, got %d", emConfResp.StatusCode)
+	}
+
+	// 4. Staff-Triggered Support Verification OTP path (keyed HMAC + successful guest login redemption).
+	if err := svc.SendGuestPortalVerification(ctx, ownerActor, prop.ID, guest.ID); err != nil {
+		t.Fatalf("SendGuestPortalVerification: %v", err)
+	}
+	staffOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.updated@example.wales"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.updated@example.wales", domain.PortalChallengeLogin, staffOTP)
+
+	staffRedeemResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.109", map[string]any{
+		"email": "carys.updated@example.wales",
+		"code":  staffOTP,
+	})
+	if staffRedeemResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected staff-triggered portal OTP to verify 200, got %d", staffRedeemResp.StatusCode)
+	}
+
+	// 5. Fail-closed when a safe HMAC key is unavailable (missing or zero EncryptionKey, or dev key in production).
+	missingKeyCfg := config.Config{
+		AppEnv:             "test",
+		DatabaseURL:        os.Getenv("TEST_DATABASE_URL"),
+		EncryptionKey:      nil,
+		PublicOrigin:       "http://127.0.0.1:3000",
+		PublicAPISecret:    pubSecret,
+		GuestPortalEnabled: true,
+		EmailFrom:          "bookings@tirbach.wales",
+	}
+	missingKeySvc := service.New(store, missingKeyCfg)
+	missingKeySvc.SetClock(clk.Now)
+	if _, err := missingKeySvc.RequestPortalAuthChallenge(ctx, service.Actor{}, service.RequestPortalChallengeInput{
+		PropertySlug: prop.Slug,
+		Email:        "carys.updated@example.wales",
+		Purpose:      domain.PortalChallengeLogin,
+	}); !errors.Is(err, service.ErrPortalKeyUnavailable) {
+		t.Fatalf("expected RequestPortalAuthChallenge to fail closed with ErrPortalKeyUnavailable, got %v", err)
+	}
+	if err := missingKeySvc.SendGuestPortalVerification(ctx, ownerActor, prop.ID, guest.ID); !errors.Is(err, service.ErrPortalKeyUnavailable) {
+		t.Fatalf("expected SendGuestPortalVerification to fail closed with ErrPortalKeyUnavailable, got %v", err)
+	}
+
+	insecureProdSvc := service.New(store, config.Config{
+		AppEnv:          "production",
+		DatabaseURL:     os.Getenv("TEST_DATABASE_URL"),
+		CookieSecure:    true,
+		EncryptionKey:   []byte("tirbach-dev-only-32byte-key-0001"),
+		PublicOrigin:    "https://book.tirbach.wales",
+		PublicAPISecret: "prod-m4-strong-public-api-secret-2026",
+	})
+	if err := insecureProdSvc.ValidateProductionStartup(ctx); !errors.Is(err, service.ErrPortalKeyUnavailable) {
+		t.Fatalf("expected ValidateProductionStartup to reject dev fallback key in production with ErrPortalKeyUnavailable, got %v", err)
+	}
+
+	// 6. Invalidated legacy challenge row (migration 0027 INVALIDATED_UNKEYED) is rejected while audit evidence stays intact,
+	// and requesting a fresh challenge succeeds cleanly.
+	legacyID, _ := uuid.NewV7()
+	legacyTokPlain, _ := postgres.GeneratePortalRandomHex(32)
+	if _, err := store.Pool().Exec(ctx, `
+		INSERT INTO guest_portal_challenges (
+			id, property_id, guest_id, normalized_email, purpose,
+			otp_hash, otp_hash_alg, token_hash, browser_nonce_hash,
+			failed_attempts, max_attempts, expires_at, invalidated_at
+		) VALUES (
+			$1, $2, $3, 'carys.updated@example.wales', 'LOGIN',
+			repeat('0', 64), 'INVALIDATED_UNKEYED', $4, $5,
+			0, 5, $6, $7
+		)
+	`, legacyID, prop.ID, guest.ID, postgres.HashPortalValue(legacyTokPlain), postgres.HashPortalValue("legacy-nonce"), clk.Now().Add(15*time.Minute), clk.Now()); err != nil {
+		t.Fatalf("insert invalidated legacy challenge: %v", err)
+	}
+	legacyOTPResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.115", map[string]any{
+		"email": "carys.updated@example.wales",
+		"code":  "000000",
+	})
+	if legacyOTPResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected invalidated legacy challenge OTP rejected 401, got %d", legacyOTPResp.StatusCode)
+	}
+	legacyMagicResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.116", map[string]any{
+		"magic_token":   legacyTokPlain,
+		"browser_nonce": "legacy-nonce",
+	})
+	if legacyMagicResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected invalidated legacy challenge magic link rejected 401, got %d", legacyMagicResp.StatusCode)
+	}
+	var challengeAudits int
+	_ = store.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs_effective WHERE property_id = $1 AND action = 'guest_portal_identity.challenge_issued'`, prop.ID).Scan(&challengeAudits)
+	if challengeAudits == 0 {
+		t.Fatal("expected historical challenge_issued audit evidence preserved intact")
 	}
 }

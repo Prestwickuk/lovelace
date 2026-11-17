@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -18,32 +19,106 @@ import (
 	"github.com/tirbach/tir-bach/internal/domain"
 )
 
-// HashPortalValue computes a lowercase SHA-256 hex digest of a trimmed secret value.
+var (
+	ErrPortalOTPKeyInvalid  = errors.New("portal OTP HMAC key is missing or unsafe")
+	ErrPortalCSRFKeyInvalid = errors.New("portal CSRF HMAC key is missing or unsafe")
+)
+
+func isSafeHMACKey(key []byte) bool {
+	if len(key) < sha256.Size {
+		return false
+	}
+	var nonZero byte
+	for _, b := range key {
+		nonZero |= b
+	}
+	return nonZero != 0
+}
+
+func isSixDigitOTP(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// NormalizePortalOTP canonicalizes user-entered 6-digit OTP input by trimming surrounding whitespace.
+func NormalizePortalOTP(otpCode string) string {
+	return strings.TrimSpace(otpCode)
+}
+
+// HashPortalValue computes a lowercase SHA-256 hex digest of a trimmed high-entropy secret value
+// (used only for 256-bit random session tokens, magic-link tokens, and browser nonces).
 func HashPortalValue(plain string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(plain)))
 	return hex.EncodeToString(sum[:])
 }
 
-// HashPortalOTP binds a 6-digit OTP to its specific challenge ID and normalized email
-// so two challenges with the same 6-digit code never share the same digest.
-func HashPortalOTP(challengeID uuid.UUID, normalizedEmail, otpCode string) string {
-	payload := fmt.Sprintf("lovelace-portal-otp:%s:%s:%s",
+func computePortalOTPMAC(hmacKey []byte, challengeID uuid.UUID, normalizedEmail, otpCode string) ([]byte, error) {
+	if !isSafeHMACKey(hmacKey) {
+		return nil, ErrPortalOTPKeyInvalid
+	}
+	if challengeID == uuid.Nil {
+		return nil, errors.New("challenge ID is required for portal OTP HMAC")
+	}
+	normEmail := domain.NormalizeEmail(normalizedEmail)
+	if normEmail == "" {
+		return nil, errors.New("normalized email is required for portal OTP HMAC")
+	}
+	normOTP := NormalizePortalOTP(otpCode)
+	if normOTP == "" {
+		return nil, errors.New("OTP code is required for portal OTP HMAC")
+	}
+	mac := hmac.New(sha256.New, hmacKey)
+	payload := fmt.Sprintf(
+		"lovelace-portal-otp-hmac-v2|%s|%d:%s|%d:%s",
 		challengeID.String(),
-		domain.NormalizeEmail(normalizedEmail),
-		strings.TrimSpace(otpCode),
+		len(normEmail), normEmail,
+		len(normOTP), normOTP,
 	)
-	sum := sha256.Sum256([]byte(payload))
-	return hex.EncodeToString(sum[:])
+	_, _ = mac.Write([]byte(payload))
+	return mac.Sum(nil), nil
+}
+
+// HashPortalOTP computes a server-keyed HMAC-SHA256 digest over a domain-separated,
+// length-delimited payload binding (challengeID, normalizedEmail, normalizedOTP).
+// Fails closed if hmacKey is missing/short/zero or if inputs are invalid.
+func HashPortalOTP(hmacKey []byte, challengeID uuid.UUID, normalizedEmail, otpCode string) (string, error) {
+	normOTP := NormalizePortalOTP(otpCode)
+	if !isSixDigitOTP(normOTP) {
+		if !isSafeHMACKey(hmacKey) {
+			return "", ErrPortalOTPKeyInvalid
+		}
+		return "", errors.New("portal OTP must be exactly 6 ASCII digits")
+	}
+	sum, err := computePortalOTPMAC(hmacKey, challengeID, normalizedEmail, normOTP)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum), nil
 }
 
 // DerivePortalCSRFToken deterministically derives the session-bound CSRF token from a server
 // HMAC key, session ID, and session_token_hash so PostgreSQL stores only csrf_secret_hash.
-func DerivePortalCSRFToken(hmacKey []byte, sessionID uuid.UUID, sessionTokenHash string) (csrfPlain string, csrfHash string) {
+// Uses a distinct HMAC domain from HashPortalOTP and fails closed if hmacKey is unsafe.
+func DerivePortalCSRFToken(hmacKey []byte, sessionID uuid.UUID, sessionTokenHash string) (csrfPlain string, csrfHash string, err error) {
+	if !isSafeHMACKey(hmacKey) {
+		return "", "", ErrPortalCSRFKeyInvalid
+	}
+	cleanSessHash := strings.ToLower(strings.TrimSpace(sessionTokenHash))
+	if sessionID == uuid.Nil || cleanSessHash == "" {
+		return "", "", errors.New("session ID and session token hash are required for CSRF derivation")
+	}
 	mac := hmac.New(sha256.New, hmacKey)
-	_, _ = mac.Write([]byte("lovelace-portal-csrf:" + sessionID.String() + ":" + strings.ToLower(strings.TrimSpace(sessionTokenHash))))
+	_, _ = mac.Write([]byte("lovelace-portal-csrf:" + sessionID.String() + ":" + cleanSessHash))
 	csrfPlain = hex.EncodeToString(mac.Sum(nil))
 	csrfHash = HashPortalValue(csrfPlain)
-	return csrfPlain, csrfHash
+	return csrfPlain, csrfHash, nil
 }
 
 // GeneratePortalRandomHex generates nBytes of CSPRNG entropy encoded as lowercase hex.
@@ -529,29 +604,38 @@ func (s *Store) CreatePortalChallengeTx(
 	if c.MaxAttempts <= 0 {
 		c.MaxAttempts = domain.PortalChallengeMaxAttempts
 	}
+	if c.OTPHashAlg == "" {
+		c.OTPHashAlg = domain.PortalOTPHashAlgHMACSHA256V1
+	}
+	if c.OTPHashAlg != domain.PortalOTPHashAlgHMACSHA256V1 {
+		return domain.GuestPortalChallenge{}, errors.New("refusing to persist non-HMAC portal OTP challenge")
+	}
+	if rawMAC, err := hex.DecodeString(strings.TrimSpace(c.OTPHash)); err != nil || len(rawMAC) != sha256.Size {
+		return domain.GuestPortalChallenge{}, errors.New("portal challenge otp_hash must be a 32-byte hex HMAC-SHA256 digest")
+	}
 	var out domain.GuestPortalChallenge
 	var purpose string
 	err := tx.QueryRow(ctx, `
 		INSERT INTO guest_portal_challenges (
 			id, property_id, portal_identity_id, guest_id, reservation_id,
-			normalized_email, purpose, otp_hash, token_hash, browser_nonce_hash,
+			normalized_email, purpose, otp_hash, otp_hash_alg, token_hash, browser_nonce_hash,
 			booking_reference, failed_attempts, max_attempts, expires_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10,
-			$11, 0, $12, $13
+			$6, $7, $8, $9, $10, $11,
+			$12, 0, $13, $14
 		)
 		RETURNING id, property_id, portal_identity_id, guest_id, reservation_id,
-		          normalized_email, purpose, otp_hash, token_hash, browser_nonce_hash,
+		          normalized_email, purpose, otp_hash, otp_hash_alg, token_hash, browser_nonce_hash,
 		          booking_reference, failed_attempts, max_attempts, expires_at,
 		          consumed_at, invalidated_at, created_at
 	`,
 		c.ID, c.PropertyID, c.PortalIdentityID, c.GuestID, c.ReservationID,
-		domain.NormalizeEmail(c.NormalizedEmail), string(c.Purpose), c.OTPHash, c.TokenHash, c.BrowserNonceHash,
+		domain.NormalizeEmail(c.NormalizedEmail), string(c.Purpose), strings.ToLower(strings.TrimSpace(c.OTPHash)), c.OTPHashAlg, c.TokenHash, c.BrowserNonceHash,
 		strings.ToUpper(strings.TrimSpace(c.BookingReference)), c.MaxAttempts, c.ExpiresAt,
 	).Scan(
 		&out.ID, &out.PropertyID, &out.PortalIdentityID, &out.GuestID, &out.ReservationID,
-		&out.NormalizedEmail, &purpose, &out.OTPHash, &out.TokenHash, &out.BrowserNonceHash,
+		&out.NormalizedEmail, &purpose, &out.OTPHash, &out.OTPHashAlg, &out.TokenHash, &out.BrowserNonceHash,
 		&out.BookingReference, &out.FailedAttempts, &out.MaxAttempts, &out.ExpiresAt,
 		&out.ConsumedAt, &out.InvalidatedAt, &out.CreatedAt,
 	)
@@ -562,7 +646,7 @@ func (s *Store) CreatePortalChallengeTx(
 	return out, nil
 }
 
-// LockLatestPortalChallengeByEmailTx locks the newest active unconsumed challenge for (propertyID, normEmail, purpose).
+// LockLatestPortalChallengeByEmailTx locks the newest active unconsumed HMAC-protected challenge for (propertyID, normEmail, purpose).
 func (s *Store) LockLatestPortalChallengeByEmailTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -575,13 +659,14 @@ func (s *Store) LockLatestPortalChallengeByEmailTx(
 	var purp string
 	err := tx.QueryRow(ctx, `
 		SELECT id, property_id, portal_identity_id, guest_id, reservation_id,
-		       normalized_email, purpose, otp_hash, token_hash, browser_nonce_hash,
+		       normalized_email, purpose, otp_hash, otp_hash_alg, token_hash, browser_nonce_hash,
 		       booking_reference, failed_attempts, max_attempts, expires_at,
 		       consumed_at, invalidated_at, created_at
 		FROM guest_portal_challenges
 		WHERE property_id = $1
 		  AND normalized_email = $2
 		  AND purpose = $3
+		  AND otp_hash_alg = $5
 		  AND consumed_at IS NULL
 		  AND invalidated_at IS NULL
 		  AND expires_at > $4
@@ -589,9 +674,9 @@ func (s *Store) LockLatestPortalChallengeByEmailTx(
 		ORDER BY created_at DESC
 		LIMIT 1
 		FOR UPDATE
-	`, propertyID, domain.NormalizeEmail(normEmail), string(purpose), nowUTC).Scan(
+	`, propertyID, domain.NormalizeEmail(normEmail), string(purpose), nowUTC, domain.PortalOTPHashAlgHMACSHA256V1).Scan(
 		&out.ID, &out.PropertyID, &out.PortalIdentityID, &out.GuestID, &out.ReservationID,
-		&out.NormalizedEmail, &purp, &out.OTPHash, &out.TokenHash, &out.BrowserNonceHash,
+		&out.NormalizedEmail, &purp, &out.OTPHash, &out.OTPHashAlg, &out.TokenHash, &out.BrowserNonceHash,
 		&out.BookingReference, &out.FailedAttempts, &out.MaxAttempts, &out.ExpiresAt,
 		&out.ConsumedAt, &out.InvalidatedAt, &out.CreatedAt,
 	)
@@ -605,7 +690,7 @@ func (s *Store) LockLatestPortalChallengeByEmailTx(
 	return out, nil
 }
 
-// LockPortalChallengeByTokenHashTx locks an unconsumed challenge by its magic-link token_hash.
+// LockPortalChallengeByTokenHashTx locks an unconsumed HMAC-protected challenge by its magic-link token_hash.
 func (s *Store) LockPortalChallengeByTokenHashTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -617,20 +702,21 @@ func (s *Store) LockPortalChallengeByTokenHashTx(
 	var purp string
 	err := tx.QueryRow(ctx, `
 		SELECT id, property_id, portal_identity_id, guest_id, reservation_id,
-		       normalized_email, purpose, otp_hash, token_hash, browser_nonce_hash,
+		       normalized_email, purpose, otp_hash, otp_hash_alg, token_hash, browser_nonce_hash,
 		       booking_reference, failed_attempts, max_attempts, expires_at,
 		       consumed_at, invalidated_at, created_at
 		FROM guest_portal_challenges
 		WHERE property_id = $1
 		  AND token_hash = $2
+		  AND otp_hash_alg = $4
 		  AND consumed_at IS NULL
 		  AND invalidated_at IS NULL
 		  AND expires_at > $3
 		  AND failed_attempts < max_attempts
 		FOR UPDATE
-	`, propertyID, tokenHash, nowUTC).Scan(
+	`, propertyID, tokenHash, nowUTC, domain.PortalOTPHashAlgHMACSHA256V1).Scan(
 		&out.ID, &out.PropertyID, &out.PortalIdentityID, &out.GuestID, &out.ReservationID,
-		&out.NormalizedEmail, &purp, &out.OTPHash, &out.TokenHash, &out.BrowserNonceHash,
+		&out.NormalizedEmail, &purp, &out.OTPHash, &out.OTPHashAlg, &out.TokenHash, &out.BrowserNonceHash,
 		&out.BookingReference, &out.FailedAttempts, &out.MaxAttempts, &out.ExpiresAt,
 		&out.ConsumedAt, &out.InvalidatedAt, &out.CreatedAt,
 	)
@@ -676,19 +762,37 @@ func (s *Store) ConsumePortalChallengeTx(ctx context.Context, tx pgx.Tx, propert
 	return scrubSettledChallengeOutboxByEmailTx(ctx, tx, propertyID, domain.NormalizeEmail(normEmail))
 }
 
-// VerifyChallengeProof checks either a 6-digit OTP code or a magic-link token paired with
-// a matching same-browser nonce cookie hash (preventing email scanner GET/link-forwarding hijacks).
-func VerifyChallengeProof(ch domain.GuestPortalChallenge, otpCode, magicToken, browserNonce string) bool {
-	if strings.TrimSpace(otpCode) != "" {
-		expected := HashPortalOTP(ch.ID, ch.NormalizedEmail, otpCode)
-		return constantTimeHexEqual(expected, ch.OTPHash)
+// VerifyChallengeProof checks either a 6-digit OTP code (using constant-time HMAC-SHA256
+// verification with a server-held key) or a magic-link token paired with a matching same-browser
+// nonce cookie hash. Fails closed with ErrPortalOTPKeyInvalid if otpHMACKey is missing/unsafe,
+// and never accepts pre-remediation unkeyed challenge rows.
+func VerifyChallengeProof(otpHMACKey []byte, ch domain.GuestPortalChallenge, otpCode, magicToken, browserNonce string) (bool, error) {
+	if NormalizePortalOTP(otpCode) != "" {
+		if !isSafeHMACKey(otpHMACKey) {
+			return false, ErrPortalOTPKeyInvalid
+		}
+		if ch.OTPHashAlg != domain.PortalOTPHashAlgHMACSHA256V1 {
+			return false, nil
+		}
+		storedMAC, decErr := hex.DecodeString(strings.TrimSpace(ch.OTPHash))
+		if decErr != nil || len(storedMAC) != sha256.Size {
+			return false, nil
+		}
+		expectedMAC, macErr := computePortalOTPMAC(otpHMACKey, ch.ID, ch.NormalizedEmail, otpCode)
+		if macErr != nil {
+			return false, nil
+		}
+		return hmac.Equal(expectedMAC, storedMAC), nil
+	}
+	if ch.OTPHashAlg != domain.PortalOTPHashAlgHMACSHA256V1 {
+		return false, nil
 	}
 	if strings.TrimSpace(magicToken) != "" && strings.TrimSpace(browserNonce) != "" && ch.BrowserNonceHash != "" {
 		tokOK := constantTimeHexEqual(HashPortalValue(magicToken), ch.TokenHash)
 		nonceOK := constantTimeHexEqual(HashPortalValue(browserNonce), ch.BrowserNonceHash)
-		return tokOK && nonceOK
+		return tokOK && nonceOK, nil
 	}
-	return false
+	return false, nil
 }
 
 func (s *Store) CreatePortalSessionTx(
