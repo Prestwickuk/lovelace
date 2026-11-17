@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -48,6 +49,7 @@ type Config struct {
 	EncryptionKey        []byte
 	PublicOrigin         string
 	PublicAPISecret      string
+	GuestPortalEnabled   bool
 	StripeSecretKey      string
 	StripeWebhookSecret  string
 	StripeAPIBaseURL     string
@@ -67,6 +69,11 @@ type Config struct {
 // IsProduction reports whether the application runs in production mode.
 func (c Config) IsProduction() bool {
 	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "production")
+}
+
+// IsStaging reports whether the application runs in staging mode.
+func (c Config) IsStaging() bool {
+	return strings.EqualFold(strings.TrimSpace(c.AppEnv), "staging")
 }
 
 // AllowedPublicOrigins splits PublicOrigin into normalized scheme://host[:port] strings.
@@ -126,6 +133,7 @@ func Load() (Config, error) {
 		AutoSeed:             envBool("TIRBACH_AUTO_SEED", false),
 		PublicOrigin:         strings.TrimRight(publicOrigin, "/"),
 		PublicAPISecret:      strings.TrimSpace(os.Getenv("TIRBACH_PUBLIC_API_SECRET")),
+		GuestPortalEnabled:   envBool("TIRBACH_GUEST_PORTAL_ENABLED", false),
 		StripeSecretKey:      strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_SECRET_KEY")),
 		StripeWebhookSecret:  strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_WEBHOOK_SECRET")),
 		StripeAPIBaseURL:     strings.TrimRight(envOrDefault("TIRBACH_STRIPE_API_BASE_URL", "https://api.stripe.com"), "/"),
@@ -168,9 +176,25 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid TIRBACH_ENCRYPTION_KEY: %w", err)
 		}
 		cfg.EncryptionKey = key
-	} else if !cfg.IsProduction() {
-		// Explicit development/test fallback key; production fails closed below.
+	} else if !cfg.IsProduction() && !cfg.IsStaging() {
+		// Explicit local development/test fallback key for non-portal admin vault;
+		// production, staging, and all Guest Portal OTP/CSRF operations fail closed.
 		cfg.EncryptionKey = []byte("tirbach-dev-only-32byte-key-0001")
+	}
+
+	if cfg.IsStaging() {
+		if cfg.StripeSandbox {
+			return Config{}, fmt.Errorf("TIRBACH_STRIPE_SANDBOX cannot be enabled in staging")
+		}
+		if len(cfg.EncryptionKey) != 32 {
+			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY (32-byte hex or base64) is required in staging")
+		}
+		if isInsecureSecret(rawKey) || isInsecureEncryptionKeyBytes(cfg.EncryptionKey) {
+			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure or low-entropy value")
+		}
+		if cfg.PublicAPISecret != "" && isInsecureSecret(cfg.PublicAPISecret) {
+			return Config{}, fmt.Errorf("TIRBACH_PUBLIC_API_SECRET uses a known insecure development value")
+		}
 	}
 
 	if cfg.IsProduction() {
@@ -183,11 +207,14 @@ func Load() (Config, error) {
 		if cfg.StripeSandbox {
 			return Config{}, fmt.Errorf("TIRBACH_STRIPE_SANDBOX cannot be enabled in production")
 		}
+		if cfg.TrustProxy && strings.TrimSpace(os.Getenv("TIRBACH_TRUSTED_PROXIES")) == "" {
+			return Config{}, fmt.Errorf("TIRBACH_TRUSTED_PROXIES must be explicitly configured when TIRBACH_TRUST_PROXY=true in production")
+		}
 		if len(cfg.EncryptionKey) != 32 {
 			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY (32-byte hex or base64) is required in production")
 		}
-		if isInsecureSecret(rawKey) {
-			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure development value")
+		if isInsecureSecret(rawKey) || isInsecureEncryptionKeyBytes(cfg.EncryptionKey) {
+			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure or low-entropy value")
 		}
 		if cfg.PublicAPISecret != "" && isInsecureSecret(cfg.PublicAPISecret) {
 			return Config{}, fmt.Errorf("TIRBACH_PUBLIC_API_SECRET uses a known insecure development value")
@@ -201,6 +228,12 @@ func Load() (Config, error) {
 			if err := ValidatePublicOrigins(cfg.AllowedPublicOrigins(), true); err != nil {
 				return Config{}, fmt.Errorf("invalid TIRBACH_PUBLIC_ORIGIN: %w", err)
 			}
+		}
+	}
+
+	if cfg.StripeAPIBaseURL != "" {
+		if err := validateStripeAPIBaseURL(cfg.StripeAPIBaseURL, cfg.IsProduction()); err != nil {
+			return Config{}, fmt.Errorf("invalid TIRBACH_STRIPE_API_BASE_URL: %w", err)
 		}
 	}
 
@@ -382,6 +415,47 @@ func parseEncryptionKey(raw string) ([]byte, error) {
 		return b, nil
 	}
 	return nil, fmt.Errorf("must decode to exactly 32 bytes (64 hex chars or 44 base64 chars)")
+}
+
+func isInsecureEncryptionKeyBytes(key []byte) bool {
+	if len(key) != 32 {
+		return true
+	}
+	if bytes.Equal(key, []byte("tirbach-dev-only-32byte-key-0001")) {
+		return true
+	}
+	if devHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && bytes.Equal(key, devHex) {
+		return true
+	}
+	var seen [256]bool
+	distinct := 0
+	for _, b := range key {
+		if !seen[b] {
+			seen[b] = true
+			distinct++
+		}
+	}
+	return distinct < 8
+}
+
+func validateStripeAPIBaseURL(raw string, isProduction bool) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !u.IsAbs() || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("must be a valid absolute URL without userinfo, query, or fragment")
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "https" && scheme != "http" {
+		return fmt.Errorf("unsupported scheme %q", u.Scheme)
+	}
+	if isProduction {
+		if scheme != "https" {
+			return fmt.Errorf("must use https in production")
+		}
+		if strings.ToLower(u.Hostname()) != "api.stripe.com" {
+			return fmt.Errorf("must point to api.stripe.com in production")
+		}
+	}
+	return nil
 }
 
 func isInsecureSecret(v string) bool {

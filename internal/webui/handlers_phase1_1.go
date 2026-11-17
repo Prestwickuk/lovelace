@@ -42,6 +42,11 @@ func (h *Handler) registerPhase1_1Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}", h.requirePageAuth(true, h.handleChannelManagerSavePost))
 	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/status", h.requirePageAuth(true, h.handleChannelManagerStatusPost))
 	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/delete", h.requirePageAuth(true, h.handleChannelManagerDeletePost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/verify", h.requirePageAuth(true, h.handleChannelManagerVerifyPost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/disconnect", h.requirePageAuth(true, h.handleChannelManagerDisconnectPost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/mappings", h.requirePageAuth(true, h.handleChannelManagerMappingPost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/mappings/{mappingID}/delete", h.requirePageAuth(true, h.handleChannelManagerMappingDeletePost))
+	mux.HandleFunc("POST /settings/integrations/channel-manager/{providerCode}/sync", h.requirePageAuth(true, h.handleChannelManagerSyncPost))
 }
 
 // --- Calendar ---
@@ -49,17 +54,57 @@ func (h *Handler) registerPhase1_1Routes(mux *http.ServeMux) {
 func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Booking Calendar", "calendar")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
 	q := r.URL.Query()
+	horizon := q.Get("horizon")
+	if horizon == "" {
+		horizon = q.Get("view")
+	}
+	if horizon == "" {
+		horizon = base.Workspace.CalendarHorizon
+	}
+	grouping := q.Get("grouping")
+	if grouping == "" {
+		grouping = base.Workspace.CalendarGrouping
+	}
+	unitTypeID := parseOptionalUUID(q.Get("unit_type_id"))
+	unitTypeFilter := q.Get("unit_type_id")
+	channelCode := q.Get("channel_code")
+	status := q.Get("status")
+	activeSavedViewID := ""
+	if sv, ok := findSavedView(base.Workspace, domain.SavedViewScreenCalendar, q.Get("saved_view")); ok {
+		activeSavedViewID = sv.ID
+		if !q.Has("horizon") && !q.Has("view") && sv.Filters["horizon"] != "" {
+			horizon = sv.Filters["horizon"]
+		}
+		if !q.Has("grouping") && sv.Filters["grouping"] != "" {
+			grouping = sv.Filters["grouping"]
+		}
+		if !q.Has("unit_type_id") && sv.Filters["unit_type_id"] != "" {
+			if uid := parseOptionalUUID(sv.Filters["unit_type_id"]); uid != nil {
+				unitTypeID = uid
+				unitTypeFilter = sv.Filters["unit_type_id"]
+			}
+		}
+		if !q.Has("channel_code") && sv.Filters["channel_code"] != "" {
+			channelCode = sv.Filters["channel_code"]
+		}
+		if !q.Has("status") && sv.Filters["status"] != "" {
+			status = sv.Filters["status"]
+		}
+	}
+
 	cq := service.CalendarQuery{
 		PropertyID:  base.Property.ID,
 		View:        q.Get("view"),
-		UnitTypeID:  parseOptionalUUID(q.Get("unit_type_id")),
-		ChannelCode: q.Get("channel_code"),
-		Status:      q.Get("status"),
+		Horizon:     horizon,
+		Grouping:    grouping,
+		UnitTypeID:  unitTypeID,
+		ChannelCode: channelCode,
+		Status:      status,
 	}
 	if sRaw := q.Get("start_date"); sRaw != "" {
 		if d, err := domain.ParseDate(sRaw); err == nil {
@@ -69,21 +114,33 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 
 	cal, err := h.svc.GetCalendarView(r.Context(), actor, cq)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load calendar")
+		h.renderDomainError(w, err, "Calendar Unavailable", "Unable to load booking calendar.")
 		return
 	}
 
 	var prevStart, nextStart time.Time
-	switch cal.View {
-	case "day":
+	switch cal.Horizon {
+	case domain.HorizonDay:
 		prevStart = cal.StartDate.AddDate(0, 0, -1)
 		nextStart = cal.StartDate.AddDate(0, 0, 1)
-	case "week":
+	case domain.Horizon7Days:
 		prevStart = cal.StartDate.AddDate(0, 0, -7)
 		nextStart = cal.StartDate.AddDate(0, 0, 7)
+	case domain.Horizon14Days:
+		prevStart = cal.StartDate.AddDate(0, 0, -14)
+		nextStart = cal.StartDate.AddDate(0, 0, 14)
+	case domain.Horizon30Days:
+		prevStart = cal.StartDate.AddDate(0, 0, -30)
+		nextStart = cal.StartDate.AddDate(0, 0, 30)
 	default:
 		prevStart = cal.StartDate.AddDate(0, -1, 0)
 		nextStart = cal.StartDate.AddDate(0, 1, 0)
+	}
+
+	base.ViewControls = viewControlMeta{
+		FilterHorizon:     cal.Horizon,
+		FilterGrouping:    cal.Grouping,
+		ActiveSavedViewID: activeSavedViewID,
 	}
 
 	h.renderPage(w, "calendar.html", struct {
@@ -99,9 +156,9 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 		Calendar:          cal,
 		PrevStart:         domain.FormatDate(prevStart),
 		NextStart:         domain.FormatDate(nextStart),
-		FilterUnitTypeID:  q.Get("unit_type_id"),
-		FilterChannelCode: strings.ToUpper(strings.TrimSpace(q.Get("channel_code"))),
-		FilterStatus:      strings.ToUpper(strings.TrimSpace(q.Get("status"))),
+		FilterUnitTypeID:  unitTypeFilter,
+		FilterChannelCode: strings.ToUpper(strings.TrimSpace(channelCode)),
+		FilterStatus:      strings.ToUpper(strings.TrimSpace(status)),
 	})
 }
 
@@ -110,14 +167,40 @@ func (h *Handler) handleCalendarGet(w http.ResponseWriter, r *http.Request, acto
 func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservations", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 
 	q := r.URL.Query()
+	status := q.Get("status")
+	channelCode := q.Get("channel_code")
+	sortKey := base.Workspace.ReservationsSort
+	if norm, ok := domain.IsAllowedReservationsSort(q.Get("sort"), false); ok {
+		sortKey = norm
+	}
+	rawPageSize := q.Get("page_size")
+	activeSavedViewID := ""
+	if sv, ok := findSavedView(base.Workspace, domain.SavedViewScreenReservations, q.Get("saved_view")); ok {
+		activeSavedViewID = sv.ID
+		if !q.Has("status") && sv.Filters["status"] != "" {
+			status = sv.Filters["status"]
+		}
+		if !q.Has("channel_code") && sv.Filters["channel_code"] != "" {
+			channelCode = sv.Filters["channel_code"]
+		}
+		if !q.Has("sort") && sv.Filters["sort"] != "" {
+			if norm, ok := domain.IsAllowedReservationsSort(sv.Filters["sort"], false); ok {
+				sortKey = norm
+			}
+		}
+		if rawPageSize == "" && sv.Filters["page_size"] != "" {
+			rawPageSize = sv.Filters["page_size"]
+		}
+	}
+
 	filter := postgres.ReservationFilter{
-		Status:      q.Get("status"),
-		ChannelCode: q.Get("channel_code"),
+		Status:      status,
+		ChannelCode: channelCode,
 	}
 	if sRaw, eRaw := q.Get("start_date"), q.Get("end_date"); sRaw != "" && eRaw != "" {
 		if sd, err1 := domain.ParseDate(sRaw); err1 == nil {
@@ -130,10 +213,32 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 
 	reservations, err := h.svc.ListReservations(r.Context(), actor, base.Property.ID, filter)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load reservations")
+		h.renderDomainError(w, err, "Reservations Unavailable", "Unable to load reservations.")
 		return
 	}
+	sortReservationsForWorkspace(reservations, sortKey)
+
+	totalCount := len(reservations)
+	page, pageSize := resolvePageParams(rawPageSize, q.Get("page"), base.Workspace.TablePageSize)
+	startIdx, endIdx, totalPages := paginateRange(totalCount, page, pageSize)
+	if page > totalPages {
+		page = totalPages
+	}
+	pagedReservations := reservations[startIdx:endIdx]
+
 	channelsList, _ := h.svc.ListBookingChannels(r.Context(), actor, base.Property.ID, true)
+	base.ViewControls = viewControlMeta{
+		FilterSort:        sortKey,
+		PageSize:          pageSize,
+		Page:              page,
+		TotalCount:        totalCount,
+		TotalPages:        totalPages,
+		HasPrevPage:       page > 1,
+		HasNextPage:       page < totalPages,
+		PrevPage:          page - 1,
+		NextPage:          page + 1,
+		ActiveSavedViewID: activeSavedViewID,
+	}
 
 	h.renderPage(w, "reservations.html", struct {
 		baseView
@@ -146,7 +251,7 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 		FilterEndDate     string
 	}{
 		baseView:     base,
-		Reservations: reservations,
+		Reservations: pagedReservations,
 		Channels:     channelsList,
 		Statuses: []domain.ReservationStatus{
 			domain.ResStatusInquiry,
@@ -157,8 +262,8 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 			domain.ResStatusCancelled,
 			domain.ResStatusNoShow,
 		},
-		FilterStatus:      strings.ToUpper(strings.TrimSpace(q.Get("status"))),
-		FilterChannelCode: strings.ToUpper(strings.TrimSpace(q.Get("channel_code"))),
+		FilterStatus:      strings.ToUpper(strings.TrimSpace(status)),
+		FilterChannelCode: strings.ToUpper(strings.TrimSpace(channelCode)),
 		FilterStartDate:   q.Get("start_date"),
 		FilterEndDate:     q.Get("end_date"),
 	})
@@ -167,7 +272,11 @@ func (h *Handler) handleReservationsListGet(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleReservationNewGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "New Reservation", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Failed to Load Property", "Unable to retrieve property metadata.")
+		h.renderDomainError(w, err, "Failed to Load Property", "Unable to retrieve property metadata.")
+		return
+	}
+	if !base.CanWriteReservations {
+		h.renderError(w, http.StatusForbidden, "Access Denied", "Your administrative role does not have permission to create reservations.")
 		return
 	}
 	allUnits, _ := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
@@ -225,7 +334,7 @@ func (h *Handler) handleReservationNewGet(w http.ResponseWriter, r *http.Request
 func (h *Handler) handleReservationCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "New Reservation", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Failed to Load Property", "Unable to retrieve property metadata.")
+		h.renderDomainError(w, err, "Failed to Load Property", "Unable to retrieve property metadata.")
 		return
 	}
 	arrival, err := domain.ParseDate(r.FormValue("arrival_date"))
@@ -272,12 +381,12 @@ func (h *Handler) handleReservationDetailGet(w http.ResponseWriter, r *http.Requ
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservation Details", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	res, err := h.svc.GetReservation(r.Context(), actor, base.Property.ID, id)
 	if err != nil {
-		h.renderError(w, http.StatusNotFound, "Not Found", "reservation not found")
+		h.renderDomainError(w, err, "Reservation Unavailable", "Unable to load reservation.")
 		return
 	}
 	allUnits, _ := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
@@ -336,7 +445,7 @@ func (h *Handler) handleReservationUpdatePost(w http.ResponseWriter, r *http.Req
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservation Details", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	arrival, err := domain.ParseDate(r.FormValue("arrival_date"))
@@ -384,7 +493,7 @@ func (h *Handler) handleReservationTransitionPost(w http.ResponseWriter, r *http
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservation Details", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	nextStatus := domain.ReservationStatus(r.FormValue("status"))
@@ -414,7 +523,7 @@ func (h *Handler) handleReservationTransitionPost(w http.ResponseWriter, r *http
 func (h *Handler) handleBookingChannelCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Reservations", "reservations")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	ch, err := h.svc.CreateBookingChannel(r.Context(), actor, domain.BookingChannel{
@@ -475,12 +584,12 @@ func (h *Handler) buildBlocksPageData(r *http.Request, actor service.Actor, base
 func (h *Handler) handleBlocksGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	data, err := h.buildBlocksPageData(r, actor, base)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load blockouts")
+		h.renderDomainError(w, err, "Blockouts Unavailable", "Unable to load blockouts.")
 		return
 	}
 	h.renderPage(w, "blocks.html", data)
@@ -517,7 +626,7 @@ func (h *Handler) parseBulkBlockoutForm(r *http.Request, propID uuid.UUID) (doma
 func (h *Handler) handleBlockoutPreviewPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	in, err := h.parseBulkBlockoutForm(r, base.Property.ID)
@@ -532,7 +641,7 @@ func (h *Handler) handleBlockoutPreviewPost(w http.ResponseWriter, r *http.Reque
 	}
 	data, err := h.buildBlocksPageData(r, actor, base)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load blockouts")
+		h.renderDomainError(w, err, "Blockouts Unavailable", "Unable to load blockouts.")
 		return
 	}
 	data.Preview = &preview
@@ -543,7 +652,7 @@ func (h *Handler) handleBlockoutPreviewPost(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleBlockoutBulkPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	in, err := h.parseBulkBlockoutForm(r, base.Property.ID)
@@ -567,7 +676,7 @@ func (h *Handler) handleBlockoutGroupReleasePost(w http.ResponseWriter, r *http.
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	unitIDs := parseUUIDsForm(r.Form["unit_ids"])
@@ -586,7 +695,7 @@ func (h *Handler) handleBlockoutGroupReinstatePost(w http.ResponseWriter, r *htt
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	claimIDs := parseUUIDsForm(r.Form["claim_ids"])
@@ -606,7 +715,7 @@ func (h *Handler) handleBlockoutGroupDatesPost(w http.ResponseWriter, r *http.Re
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Bulk Blockouts", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	sd, err := domain.ParseDate(r.FormValue("start_date"))
@@ -632,13 +741,13 @@ func (h *Handler) handleBlockoutGroupDatesPost(w http.ResponseWriter, r *http.Re
 func (h *Handler) handleReleasesGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	includeCancelled := r.URL.Query().Get("include_cancelled") == "true"
 	rules, err := h.svc.ListReleaseRules(r.Context(), actor, base.Property.ID, includeCancelled)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load release rules")
+		h.renderDomainError(w, err, "Scheduled Releases Unavailable", "Unable to load release rules.")
 		return
 	}
 	units, _ := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
@@ -665,7 +774,7 @@ func (h *Handler) handleReleasesGet(w http.ResponseWriter, r *http.Request, acto
 func (h *Handler) handleReleasesCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	sd, err := domain.ParseDate(r.FormValue("start_date"))
@@ -718,7 +827,7 @@ func (h *Handler) handleReleasesManualPost(w http.ResponseWriter, r *http.Reques
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.ManualReleaseRule(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -736,7 +845,7 @@ func (h *Handler) handleReleasesCancelPost(w http.ResponseWriter, r *http.Reques
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Scheduled Releases", "releases")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.CancelReleaseRule(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -748,23 +857,47 @@ func (h *Handler) handleReleasesCancelPost(w http.ResponseWriter, r *http.Reques
 
 // --- Channel Manager Integrations ---
 
+type channelProviderUIItem struct {
+	service.ChannelProviderView
+	Health service.ChannelHealthSummary
+}
+
 func (h *Handler) handleChannelManagerGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	providers, err := h.svc.ListChannelProviders(r.Context(), actor, base.Property.ID)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load channel integrations")
+		h.renderDomainError(w, err, "Channel Integrations Unavailable", "Unable to load channel integrations.")
 		return
 	}
+	unitTypes, _ := h.svc.ListUnitTypes(r.Context(), actor, base.Property.ID)
+	ratePlans, _ := h.svc.ListRatePlans(r.Context(), actor, base.Property.ID)
+	bookingChannels, _ := h.svc.ListBookingChannels(r.Context(), actor, base.Property.ID, true)
+
+	uiProviders := make([]channelProviderUIItem, 0, len(providers))
+	for _, p := range providers {
+		health, _ := h.svc.GetChannelHealth(r.Context(), actor, base.Property.ID, p.Provider.Code)
+		uiProviders = append(uiProviders, channelProviderUIItem{
+			ChannelProviderView: p,
+			Health:              health,
+		})
+	}
+
 	h.renderPage(w, "channel_manager.html", struct {
 		baseView
-		Providers []service.ChannelProviderView
+		Providers       []channelProviderUIItem
+		UnitTypes       []domain.UnitType
+		RatePlans       []domain.RatePlan
+		BookingChannels []domain.BookingChannel
 	}{
-		baseView:  base,
-		Providers: providers,
+		baseView:        base,
+		Providers:       uiProviders,
+		UnitTypes:       unitTypes,
+		RatePlans:       ratePlans,
+		BookingChannels: bookingChannels,
 	})
 }
 
@@ -772,7 +905,7 @@ func (h *Handler) handleChannelManagerSavePost(w http.ResponseWriter, r *http.Re
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	inputs := make(map[string]string)
@@ -798,7 +931,7 @@ func (h *Handler) handleChannelManagerStatusPost(w http.ResponseWriter, r *http.
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.SetChannelStatus(r.Context(), actor, base.Property.ID, providerCode, channels.ConnectionStatus(r.FormValue("status"))); err != nil {
@@ -812,7 +945,7 @@ func (h *Handler) handleChannelManagerDeletePost(w http.ResponseWriter, r *http.
 	providerCode := r.PathValue("providerCode")
 	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if err := h.svc.DeleteChannelConfig(r.Context(), actor, base.Property.ID, providerCode); err != nil {
@@ -820,6 +953,127 @@ func (h *Handler) handleChannelManagerDeletePost(w http.ResponseWriter, r *http.
 		return
 	}
 	redirectMsg(w, r, "/settings/integrations/channel-manager", "Stored channel credentials removed.")
+}
+
+func (h *Handler) handleChannelManagerVerifyPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
+		return
+	}
+	res, err := h.svc.VerifyChannelConnection(r.Context(), actor, base.Property.ID, providerCode)
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", "Channel connection verified: "+res.AccountName)
+}
+
+func (h *Handler) handleChannelManagerDisconnectPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
+		return
+	}
+	res, err := h.svc.DisconnectChannelConnection(r.Context(), actor, base.Property.ID, providerCode)
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", res.Detail)
+}
+
+func (h *Handler) handleChannelManagerMappingPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
+		return
+	}
+	unitTypeID, err := uuid.Parse(strings.TrimSpace(r.FormValue("unit_type_id")))
+	if err != nil {
+		redirectMsg(w, r, "/settings/integrations/channel-manager", "Valid accommodation type is required.")
+		return
+	}
+	var ratePlanID *uuid.UUID
+	if rpStr := strings.TrimSpace(r.FormValue("rate_plan_id")); rpStr != "" {
+		if id, pErr := uuid.Parse(rpStr); pErr == nil {
+			ratePlanID = &id
+		}
+	}
+	syncAvail := r.FormValue("sync_availability") != ""
+	syncRates := r.FormValue("sync_rates") != ""
+	syncRes := r.FormValue("sync_reservations") != ""
+
+	_, err = h.svc.UpsertChannelListingMapping(r.Context(), actor, service.UpsertChannelMappingInput{
+		PropertyID:         base.Property.ID,
+		ProviderCode:       providerCode,
+		ExternalPropertyID: r.FormValue("external_property_id"),
+		ExternalListingID:  r.FormValue("external_listing_id"),
+		ExternalRatePlanID: r.FormValue("external_rate_plan_id"),
+		ExternalName:       r.FormValue("external_name"),
+		UnitTypeID:         unitTypeID,
+		RatePlanID:         ratePlanID,
+		BookingChannelCode: r.FormValue("booking_channel_code"),
+		Currency:           r.FormValue("currency"),
+		Timezone:           r.FormValue("timezone"),
+		SyncAvailability:   &syncAvail,
+		SyncRates:          &syncRates,
+		SyncReservations:   &syncRes,
+	})
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", "Channel listing mapping saved.")
+}
+
+func (h *Handler) handleChannelManagerMappingDeletePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
+		return
+	}
+	mapID, err := uuid.Parse(r.PathValue("mappingID"))
+	if err != nil {
+		redirectMsg(w, r, "/settings/integrations/channel-manager", "Invalid mapping identifier.")
+		return
+	}
+	if err := h.svc.DeleteChannelListingMapping(r.Context(), actor, base.Property.ID, mapID); err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", "Listing mapping removed.")
+}
+
+func (h *Handler) handleChannelManagerSyncPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	providerCode := r.PathValue("providerCode")
+	base, err := h.buildBaseView(r.Context(), r, actor, "Channel Manager Integrations", "channel-manager")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
+		return
+	}
+	res, err := h.svc.TriggerChannelSync(r.Context(), actor, service.ChannelSyncRequest{
+		PropertyID:       base.Property.ID,
+		ProviderCode:     providerCode,
+		StartDate:        r.FormValue("start_date"),
+		EndDate:          r.FormValue("end_date"),
+		SyncAvailability: r.FormValue("sync_availability") != "",
+		SyncRates:        r.FormValue("sync_rates") != "",
+		PullReservations: r.FormValue("pull_reservations") != "",
+		ConfirmScope:     r.FormValue("confirm_scope") != "",
+	})
+	if err != nil {
+		h.redirectErr(w, r, "/settings/integrations/channel-manager", err)
+		return
+	}
+	msg := "Channel sync job queued."
+	if len(res.BlockedWarnings) > 0 {
+		msg = "Sync queued with capability notice: " + strings.Join(res.BlockedWarnings, "; ")
+	}
+	redirectMsg(w, r, "/settings/integrations/channel-manager", msg)
 }
 
 func parseUUIDsForm(vals []string) []uuid.UUID {

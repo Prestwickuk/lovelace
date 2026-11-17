@@ -10,13 +10,27 @@ import (
 	"github.com/tirbach/tir-bach/internal/domain"
 )
 
-func (s *Store) ListAdminUsers(ctx context.Context) ([]domain.AdminUser, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, property_id, email, full_name, role, password_hash,
-		       is_active, must_rotate_password, last_login_at, version, created_at, updated_at
-		FROM admin_users
-		ORDER BY created_at ASC
-	`)
+func (s *Store) ListAdminUsers(ctx context.Context, propertyID *uuid.UUID) ([]domain.AdminUser, error) {
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if propertyID != nil {
+		rows, err = s.pool.Query(ctx, `
+			SELECT id, property_id, email, full_name, role, password_hash,
+			       is_active, must_rotate_password, last_login_at, version, created_at, updated_at
+			FROM admin_users
+			WHERE property_id = $1
+			ORDER BY created_at ASC
+		`, *propertyID)
+	} else {
+		rows, err = s.pool.Query(ctx, `
+			SELECT id, property_id, email, full_name, role, password_hash,
+			       is_active, must_rotate_password, last_login_at, version, created_at, updated_at
+			FROM admin_users
+			ORDER BY created_at ASC
+		`)
+	}
 	if err != nil {
 		return nil, MapErr(err)
 	}
@@ -227,4 +241,21 @@ func (s *Store) CountRecentFailedLogins(ctx context.Context, email, ip string, w
 		WHERE succeeded = FALSE AND attempted_at >= $3
 	`, ip, email, since).Scan(&byIP, &byEmail)
 	return byIP, byEmail, MapErr(err)
+}
+
+// PruneStaleAuthState deletes aged login_attempts and long-expired/revoked admin_sessions
+// so authentication tables remain bounded over long uptime.
+func (s *Store) PruneStaleAuthState(ctx context.Context, attemptsBefore, sessionsBefore time.Time) (int64, error) {
+	tag1, err := s.pool.Exec(ctx, `DELETE FROM login_attempts WHERE attempted_at < $1`, attemptsBefore)
+	if err != nil {
+		return 0, MapErr(err)
+	}
+	tag2, err := s.pool.Exec(ctx, `
+		DELETE FROM admin_sessions
+		WHERE (expires_at < $1) OR (revoked_at IS NOT NULL AND revoked_at < $1)
+	`, sessionsBefore)
+	if err != nil {
+		return tag1.RowsAffected(), MapErr(err)
+	}
+	return tag1.RowsAffected() + tag2.RowsAffected(), nil
 }

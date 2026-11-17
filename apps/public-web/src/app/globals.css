@@ -88,15 +88,31 @@ a {
 
 .brand-mark {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
   text-decoration: none;
+}
+
+.brand-mark-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-mark-logo {
+  display: block;
+  max-height: 44px;
+  max-width: 140px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
 }
 
 .brand-mark-title {
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   font-size: 1.35rem;
   font-weight: 700;
-  color: var(--brand-forest);
+  color: var(--property-brand, var(--brand-forest));
   line-height: 1.1;
 }
 
@@ -126,6 +142,11 @@ a {
   color: var(--brand-terracotta);
 }
 
+.site-nav a.btn-primary,
+.site-nav a.btn-primary:hover {
+  color: var(--property-brand-on, #ffffff);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -149,21 +170,21 @@ a {
 }
 
 .btn-primary {
-  background: var(--brand-forest);
-  color: #ffffff;
+  background: var(--property-brand, var(--brand-forest));
+  color: var(--property-brand-on, #ffffff);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--brand-forest-hover);
+  background: var(--property-brand-hover, var(--brand-forest-hover));
 }
 
 .btn-accent {
-  background: var(--brand-terracotta);
-  color: #ffffff;
+  background: var(--property-brand-secondary, var(--brand-terracotta));
+  color: var(--property-brand-secondary-on, #ffffff);
 }
 
 .btn-accent:hover:not(:disabled) {
-  background: #80472c;
+  background: var(--property-brand-secondary, #80472c);
 }
 
 .btn-secondary {
@@ -511,5 +532,126 @@ a {
 @media (max-width: 560px) {
   .search-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Guest Portal */
+.portal-header-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.portal-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.portal-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.48rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: #ffffff;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.portal-tab[aria-current="page"],
+.portal-tab-active {
+  background: var(--property-brand, var(--brand-forest));
+  color: var(--property-brand-on, #ffffff);
+  border-color: var(--property-brand, var(--brand-forest));
+}
+
+.portal-badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--bg-tint);
+  color: var(--text-primary);
+}
+
+.portal-badge-ok {
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
+}
+
+.portal-badge-warn {
+  background: var(--status-warn-bg);
+  color: var(--status-warn-fg);
+}
+
+.portal-badge-err {
+  background: var(--status-err-bg);
+  color: var(--status-err-fg);
+}
+
+.portal-booking-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.25rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portal-thread-msg {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-page);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portal-thread-msg-property {
+  background: #f0f5f2;
+  border-color: #c2d9cb;
+}
+
+.portal-party-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .portal-party-grid {
+    grid-template-columns: 1fr;
+  }
+  .site-header-inner {
+    flex-wrap: wrap;
+    padding-block: 0.65rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .btn {
+    transition: none;
   }
 }

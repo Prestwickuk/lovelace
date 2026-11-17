@@ -1,19 +1,40 @@
 import Link from "next/link";
-import type { PublicPropertyView } from "@/lib/types";
+import { buildPropertyBrandCssVars, getPublicLogoSrc } from "@/lib/branding";
+import type { PublicPropertyBranding, PublicPropertyView } from "@/lib/types";
 
 export function SiteHeader({
   propertyName = "Tir Bach Campsite",
   region = "Pembrokeshire, Wales",
+  branding,
+  propertySlug = "tir-bach",
+  portalEnabled = false,
 }: {
   propertyName?: string;
   region?: string;
+  branding?: PublicPropertyBranding;
+  propertySlug?: string;
+  portalEnabled?: boolean;
 }) {
+  const title = branding?.display_name || propertyName;
+  const sub = branding?.region_label || region;
+  const logoSrc = getPublicLogoSrc(branding, propertySlug);
+  const cssVars = buildPropertyBrandCssVars(branding);
+
   return (
-    <header className="site-header">
+    <header className="site-header" style={cssVars}>
       <div className="container site-header-inner">
         <Link href="/" className="brand-mark">
-          <span className="brand-mark-title">{propertyName}</span>
-          <span className="brand-mark-sub">{region}</span>
+          {logoSrc ? (
+            <img
+              src={logoSrc}
+              alt={branding?.logo_alt || `${title} logo`}
+              className="brand-mark-logo"
+            />
+          ) : null}
+          <span className="brand-mark-text">
+            <span className="brand-mark-title">{title}</span>
+            <span className="brand-mark-sub">{sub}</span>
+          </span>
         </Link>
 
         <nav className="site-nav" aria-label="Main navigation">
@@ -21,6 +42,7 @@ export function SiteHeader({
           <Link href="/#facilities">Policies &amp; Stay Info</Link>
           <Link href="/#location">Location</Link>
           <Link href="/lookup">Manage Booking</Link>
+          {portalEnabled ? <Link href="/portal">Guest Portal</Link> : null}
           <Link href="/stays" className="btn btn-primary" style={{ padding: "0.52rem 1rem" }}>
             Book Direct
           </Link>
@@ -75,6 +97,11 @@ export function SiteFooter({ property }: { property?: PublicPropertyView }) {
               <li>
                 <Link href="/lookup">Find My Booking</Link>
               </li>
+              {property?.policy?.guest_portal_enabled ? (
+                <li>
+                  <Link href="/portal">Guest Portal</Link>
+                </li>
+              ) : null}
               <li>
                 <Link href="/terms">Booking Terms &amp; Cancellations</Link>
               </li>

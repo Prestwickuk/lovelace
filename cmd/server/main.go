@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -58,7 +59,7 @@ func main() {
 		"createdb", priv.CanCreateDB,
 		"createrole", priv.CanCreateRole,
 	)
-	if strings.EqualFold(cfg.AppEnv, "production") && (priv.IsSuperuser || priv.CanCreateDB || priv.CanCreateRole) {
+	if cfg.IsProduction() && (priv.IsSuperuser || priv.CanCreateDB || priv.CanCreateRole) {
 		slog.Error("refusing to run in production with privileged database role (SUPERUSER/CREATEDB/CREATEROLE prohibited)", "role", priv.RoleName)
 		os.Exit(1)
 	}
@@ -69,7 +70,7 @@ func main() {
 	}
 
 	if cfg.AutoSeed {
-		if strings.EqualFold(cfg.AppEnv, "production") {
+		if cfg.IsProduction() {
 			slog.Error("TIRBACH_AUTO_SEED cannot be enabled in production")
 			os.Exit(1)
 		}
@@ -92,6 +93,8 @@ func main() {
 	}
 	if rep := svc.Readiness(ctx); rep.Attachments.Status != "ok" {
 		slog.Error("attachment storage readiness check failed; uploads will fail until TIRBACH_ATTACHMENT_DIR is writable", "detail", rep.Attachments.Detail)
+	} else if cfg.IsProduction() && strings.HasPrefix(filepath.Clean(cfg.AttachmentStorageDir), filepath.Clean(os.TempDir())) {
+		slog.Warn("attachment storage is using a volatile temporary directory in production; configure TIRBACH_ATTACHMENT_DIR on persistent storage", "dir", cfg.AttachmentStorageDir)
 	}
 	if !svc.HasEmailProvider() {
 		slog.Warn("no genuine email delivery provider configured; confirmation emails will remain PENDING in outbox")
@@ -106,37 +109,71 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
+		var tickCount uint64
+		runStep := func(timeout time.Duration, fn func(context.Context)) {
+			stepCtx, stepCancel := context.WithTimeout(ctx, timeout)
+			defer stepCancel()
+			fn(stepCtx)
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				workerCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-				if expired, err := svc.SweepExpiredHolds(workerCtx); err != nil {
-					slog.Warn("hold expiry sweep error", "error", err)
-				} else if expired > 0 {
-					slog.Info("expired stale booking holds", "count", expired)
-				}
-				if sent, err := svc.DispatchPendingEmails(workerCtx); err != nil {
-					if errors.Is(err, mailer.ErrProviderUnconfigured) {
-						slog.Debug("skipping email outbox dispatch: no genuine provider configured")
-					} else {
-						slog.Warn("email outbox dispatch error", "error", err)
+				tickCount++
+				runStep(10*time.Second, func(wCtx context.Context) {
+					if expired, err := svc.SweepExpiredHolds(wCtx); err != nil {
+						slog.Warn("hold expiry sweep error", "error", err)
+					} else if expired > 0 {
+						slog.Info("expired stale booking holds", "count", expired)
 					}
-				} else if sent > 0 {
-					slog.Info("dispatched confirmation emails", "count", sent)
+				})
+				runStep(20*time.Second, func(wCtx context.Context) {
+					if sent, err := svc.DispatchPendingEmails(wCtx); err != nil {
+						if errors.Is(err, mailer.ErrProviderUnconfigured) {
+							slog.Debug("skipping email outbox dispatch: no genuine provider configured")
+						} else {
+							slog.Warn("email outbox dispatch error", "error", err)
+						}
+					} else if sent > 0 {
+						slog.Info("dispatched confirmation emails", "count", sent)
+					}
+				})
+				runStep(10*time.Second, func(wCtx context.Context) {
+					if gen, err := svc.SweepDueMaintenanceSchedules(wCtx); err != nil {
+						slog.Warn("preventative maintenance schedule sweep error", "error", err)
+					} else if gen > 0 {
+						slog.Info("generated preventative maintenance requests", "count", gen)
+					}
+				})
+				runStep(10*time.Second, func(wCtx context.Context) {
+					if queued, err := svc.SweepDueCommunicationJobs(wCtx); err != nil {
+						slog.Warn("automated guest communications sweep error", "error", err)
+					} else if queued > 0 {
+						slog.Info("queued automated guest communications", "count", queued)
+					}
+				})
+				runStep(20*time.Second, func(wCtx context.Context) {
+					if synced, err := svc.ProcessPendingChannelSyncJobs(wCtx, 10); err != nil {
+						slog.Warn("channel sync job sweep error", "error", err)
+					} else if synced > 0 {
+						slog.Info("processed channel sync jobs", "count", synced)
+					}
+				})
+				runStep(10*time.Second, func(wCtx context.Context) {
+					if err := svc.PruneExpiredPortalState(wCtx); err != nil {
+						slog.Warn("guest portal credential cleanup error", "error", err)
+					}
+				})
+				if tickCount%120 == 1 {
+					runStep(10*time.Second, func(wCtx context.Context) {
+						if pruned, err := svc.SweepStaleAuthState(wCtx); err != nil {
+							slog.Warn("stale auth state sweep error", "error", err)
+						} else if pruned > 0 {
+							slog.Info("pruned stale auth records", "count", pruned)
+						}
+					})
 				}
-				if gen, err := svc.SweepDueMaintenanceSchedules(workerCtx); err != nil {
-					slog.Warn("preventative maintenance schedule sweep error", "error", err)
-				} else if gen > 0 {
-					slog.Info("generated preventative maintenance requests", "count", gen)
-				}
-				if queued, err := svc.SweepDueCommunicationJobs(workerCtx); err != nil {
-					slog.Warn("automated guest communications sweep error", "error", err)
-				} else if queued > 0 {
-					slog.Info("queued automated guest communications", "count", queued)
-				}
-				cancel()
 			}
 		}
 	}()
@@ -144,6 +181,7 @@ func main() {
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           router,
+		MaxHeaderBytes:    64 << 10,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

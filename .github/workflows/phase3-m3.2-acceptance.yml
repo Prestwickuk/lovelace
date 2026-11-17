@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: phase3-m32-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   acceptance:
     runs-on: ubuntu-latest
@@ -53,9 +60,9 @@ jobs:
 
       - name: Verify formatting, build, and vet
         run: |
-          test -z "$(gofmt -l .)"
-          go build ./...
-          go vet ./...
+          test -z "$(gofmt -l cmd internal migrations)"
+          go build ./cmd/... ./internal/... ./migrations/...
+          go vet ./cmd/... ./internal/... ./migrations/...
 
       - name: Apply all migrations to a fresh PostgreSQL 17 database
         env:
@@ -73,7 +80,7 @@ jobs:
           psql "$MIGRATION_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SELECT 1 FROM audit_logs WHERE resource_id = '30000000-0000-4000-8000-000000000001' AND before_state->>'guest_email' = 'private@example.test'"
 
       - name: Run Go tests with required PostgreSQL integration tests
-        run: go test -count=1 ./...
+        run: go test -count=1 ./cmd/... ./internal/... ./migrations/...
 
       - name: Run race detector with required PostgreSQL integration tests
-        run: go test -count=1 -race ./...
+        run: go test -count=1 -race ./cmd/... ./internal/... ./migrations/...

@@ -301,7 +301,10 @@ func (s *Store) UpdateGuest(ctx context.Context, tx pgx.Tx, g domain.Guest) (dom
 		    updated_by = $15,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE property_id = $1 AND id = $2 AND version = $16 AND status NOT IN ('MERGED', 'ANONYMIZED')
+		WHERE property_id = $1 AND id = $2 AND version = $16
+		  AND status NOT IN ('MERGED', 'ANONYMIZED')
+		  AND anonymized_at IS NULL
+		  AND erasure_requested_at IS NULL
 		RETURNING id, property_id, first_name, last_name, full_name, email, normalized_email,
 		          phone, normalized_phone, preferred_contact_method, preferred_language, status,
 		          address_json, preferences, notes, merged_into_guest_id, merged_at, anonymized_at, erasure_requested_at,
@@ -314,7 +317,10 @@ func (s *Store) UpdateGuest(ctx context.Context, tx pgx.Tx, g domain.Guest) (dom
 	out, err := scanGuestRow(row)
 	if err == pgx.ErrNoRows {
 		if existing, gerr := s.GetGuest(ctx, tx, g.PropertyID, g.ID); gerr == nil {
-			if existing.Status == domain.GuestStatusMerged || existing.Status == domain.GuestStatusAnonymized {
+			if existing.Status == domain.GuestStatusMerged || existing.Status == domain.GuestStatusAnonymized || existing.AnonymizedAt != nil || existing.ErasureRequestedAt != nil {
+				if existing.ErasureRequestedAt != nil && existing.Status != domain.GuestStatusAnonymized {
+					return domain.Guest{}, fmt.Errorf("%w: guest profile has a pending erasure request and is frozen", domain.ErrConflict)
+				}
 				return domain.Guest{}, fmt.Errorf("%w: guest profile is %s and read-only", domain.ErrValidation, existing.Status)
 			}
 			return domain.Guest{}, domain.ErrConflict
@@ -322,6 +328,12 @@ func (s *Store) UpdateGuest(ctx context.Context, tx pgx.Tx, g domain.Guest) (dom
 		return domain.Guest{}, domain.ErrNotFound
 	}
 	return out, MapErr(err)
+}
+
+var sqlLikeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func escapeLikeTerm(s string) string {
+	return sqlLikeEscaper.Replace(s)
 }
 
 func (s *Store) ListGuests(ctx context.Context, propertyID uuid.UUID, f domain.GuestDirectoryFilter, today time.Time) ([]domain.GuestListItem, error) {
@@ -338,8 +350,8 @@ func (s *Store) ListGuests(ctx context.Context, propertyID uuid.UUID, f domain.G
 		offset = 0
 	}
 	q := strings.TrimSpace(f.Query)
-	qLower := strings.ToLower(q)
-	qPhone := domain.NormalizePhone(q)
+	qLower := escapeLikeTerm(strings.ToLower(q))
+	qPhone := escapeLikeTerm(domain.NormalizePhone(q))
 	segment := strings.ToUpper(strings.TrimSpace(f.Segment))
 	statusFilter := strings.ToUpper(strings.TrimSpace(f.Status))
 	todayStr := domain.FormatDate(today)
@@ -395,13 +407,13 @@ func (s *Store) ListGuests(ctx context.Context, propertyID uuid.UUID, f domain.G
 		  AND ($4::text = '' OR g.status = $4)
 		  AND (
 		      $5::text = ''
-		      OR lower(g.full_name) LIKE '%' || $5 || '%'
-		      OR g.normalized_email LIKE '%' || $5 || '%'
-		      OR ($6::text <> '' AND g.normalized_phone LIKE '%' || $6 || '%')
+		      OR lower(g.full_name) LIKE '%' || $5 || '%' ESCAPE '\'
+		      OR g.normalized_email LIKE '%' || $5 || '%' ESCAPE '\'
+		      OR ($6::text <> '' AND g.normalized_phone LIKE '%' || $6 || '%' ESCAPE '\')
 		      OR g.id::text = $7
 		      OR EXISTS (
 		          SELECT 1 FROM reservations r
-		          WHERE r.property_id = $1 AND r.guest_id = g.id AND lower(r.reference) LIKE '%' || $5 || '%'
+		          WHERE r.property_id = $1 AND r.guest_id = g.id AND lower(r.reference) LIKE '%' || $5 || '%' ESCAPE '\'
 		      )
 		  )
 		  AND (
@@ -528,7 +540,7 @@ func (s *Store) ListGuestReservationsByCluster(ctx context.Context, db DBTX, pro
 		       channel_code, lower(stay_range), upper(stay_range),
 		       adults, children, infants, status,
 		       payment_status, total_pence, deposit_pence, amount_paid_pence, balance_due_pence, currency,
-		       occupant_details, internal_notes, cancellation_reason, cancelled_at,
+		       occupant_details, estimated_arrival_time, guest_arrival_notes, internal_notes, cancellation_reason, cancelled_at,
 		       cancellation_requested_at, cancellation_request_note,
 		       created_by, updated_by, version, created_at, updated_at
 		FROM reservations
@@ -797,11 +809,21 @@ func (s *Store) MergeGuests(ctx context.Context, tx pgx.Tx, propertyID, sourceID
 	if err != nil {
 		return domain.Guest{}, domain.GuestMergeEvent{}, err
 	}
-	if source.Status == domain.GuestStatusMerged || source.Status == domain.GuestStatusAnonymized {
-		return domain.Guest{}, domain.GuestMergeEvent{}, fmt.Errorf("%w: source guest is %s and cannot be merged", domain.ErrConflict, source.Status)
+	if source.Status == domain.GuestStatusMerged || source.Status == domain.GuestStatusAnonymized || source.AnonymizedAt != nil || source.ErasureRequestedAt != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, fmt.Errorf("%w: source guest cannot be merged while merged, anonymized, or erasure-pending", domain.ErrConflict)
 	}
-	if target.Status == domain.GuestStatusMerged || target.Status == domain.GuestStatusAnonymized {
-		return domain.Guest{}, domain.GuestMergeEvent{}, fmt.Errorf("%w: target guest is %s and cannot accept merges", domain.ErrConflict, target.Status)
+	if target.Status == domain.GuestStatusMerged || target.Status == domain.GuestStatusAnonymized || target.AnonymizedAt != nil || target.ErasureRequestedAt != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, fmt.Errorf("%w: target guest cannot accept merges while merged, anonymized, or erasure-pending", domain.ErrConflict)
+	}
+	if srcBlocked, bErr := s.lockGuestClusterAndCheckErasureDB(ctx, tx, propertyID, sourceID); bErr != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, bErr
+	} else if srcBlocked {
+		return domain.Guest{}, domain.GuestMergeEvent{}, fmt.Errorf("%w: source guest cluster has an anonymized or erasure-pending member", domain.ErrConflict)
+	}
+	if dstBlocked, bErr := s.lockGuestClusterAndCheckErasureDB(ctx, tx, propertyID, targetID); bErr != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, bErr
+	} else if dstBlocked {
+		return domain.Guest{}, domain.GuestMergeEvent{}, fmt.Errorf("%w: target guest cluster has an anonymized or erasure-pending member", domain.ErrConflict)
 	}
 
 	sourceSnap, _ := json.Marshal(source)
@@ -847,11 +869,18 @@ func (s *Store) MergeGuests(ctx context.Context, tx pgx.Tx, propertyID, sourceID
 	if _, err := tx.Exec(ctx, `UPDATE guests SET merged_into_guest_id = $2 WHERE property_id = $1 AND merged_into_guest_id = $3`, propertyID, targetID, sourceID); err != nil {
 		return domain.Guest{}, domain.GuestMergeEvent{}, MapErr(err)
 	}
+	if _, err := tx.Exec(ctx, `UPDATE guest_portal_challenges SET guest_id = $2 WHERE property_id = $1 AND guest_id = $3`, propertyID, targetID, sourceID); err != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, MapErr(err)
+	}
 
 	// Enrich missing contact metadata onto canonical target without overwriting target values.
 	mergedEmail := target.Email
 	if mergedEmail == "" {
 		mergedEmail = source.Email
+	}
+	mergedNormEmail := domain.NormalizeEmail(mergedEmail)
+	if err := s.reconcileMergedPortalIdentitiesTx(ctx, tx, propertyID, sourceID, targetID, mergedNormEmail); err != nil {
+		return domain.Guest{}, domain.GuestMergeEvent{}, err
 	}
 	mergedPhone := target.Phone
 	if mergedPhone == "" {
@@ -1148,9 +1177,9 @@ const enquirySelectCols = `
 	       e.resolved_at, e.resolved_by, e.resolution_notes, e.closed_at, e.closed_by,
 	       e.version, e.created_by, e.updated_by, e.created_at, e.updated_at
 	FROM guest_enquiries e
-	LEFT JOIN guests g ON g.id = e.guest_id
-	LEFT JOIN reservations r ON r.id = e.reservation_id
-	LEFT JOIN maintenance_requests m ON m.id = e.maintenance_request_id
+	LEFT JOIN guests g ON g.id = e.guest_id AND g.property_id = e.property_id
+	LEFT JOIN reservations r ON r.id = e.reservation_id AND r.property_id = e.property_id
+	LEFT JOIN maintenance_requests m ON m.id = e.maintenance_request_id AND m.property_id = e.property_id
 	LEFT JOIN admin_users au ON au.id = e.assigned_user_id
 `
 
@@ -1180,13 +1209,13 @@ func (s *Store) ListGuestEnquiries(ctx context.Context, db DBTX, propertyID uuid
 		  AND ($6::uuid IS NULL OR e.guest_id = $6)
 		  AND ($7::boolean = FALSE OR e.status NOT IN ('RESOLVED', 'CLOSED'))
 		  AND ($8::boolean = FALSE OR (e.status NOT IN ('RESOLVED', 'CLOSED') AND e.follow_up_at IS NOT NULL AND e.follow_up_at <= NOW()))
-		  AND ($9::text = '' OR lower(e.reference) LIKE '%' || $9 || '%' OR lower(e.subject) LIKE '%' || $9 || '%' OR lower(e.requester_name) LIKE '%' || $9 || '%' OR lower(COALESCE(g.full_name, '')) LIKE '%' || $9 || '%')
+		  AND ($9::text = '' OR lower(e.reference) LIKE '%' || $9 || '%' ESCAPE '\' OR lower(e.subject) LIKE '%' || $9 || '%' ESCAPE '\' OR lower(e.requester_name) LIKE '%' || $9 || '%' ESCAPE '\' OR lower(COALESCE(g.full_name, '')) LIKE '%' || $9 || '%' ESCAPE '\')
 		ORDER BY
 			CASE WHEN e.status IN ('RESOLVED', 'CLOSED') THEN 1 ELSE 0 END ASC,
 			CASE e.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 ELSE 4 END ASC,
 			e.created_at DESC
 		LIMIT $10
-	`, propertyID, st, cat, pri, f.AssignedTo, f.GuestID, f.OpenOnly, f.Overdue, q, sqlLimit)
+	`, propertyID, st, cat, pri, f.AssignedTo, f.GuestID, f.OpenOnly, f.Overdue, escapeLikeTerm(q), sqlLimit)
 	if err != nil {
 		return nil, MapErr(err)
 	}
@@ -1910,24 +1939,27 @@ func (s *Store) ListFailedPropertyEmails(ctx context.Context, propertyID uuid.UU
 }
 
 func (s *Store) RetryFailedOutboxEmail(ctx context.Context, tx pgx.Tx, propertyID, outboxID uuid.UUID) error {
-	guestBlocked, lockErr := s.lockGuestForOutboxTx(ctx, tx, outboxID)
+	guestBlocked, lockErr := s.lockGuestForOutboxTx(ctx, tx, &propertyID, outboxID)
 	if lockErr != nil {
 		return lockErr
 	}
 	var commID *uuid.UUID
-	var curStatus string
+	var curStatus, tpl string
 	var rowGuestBlocked bool
 	err := tx.QueryRow(ctx, `
-		SELECT o.communication_id, o.status,
+		SELECT o.communication_id, o.status, o.template,
 		       COALESCE(g.status = 'ANONYMIZED' OR g.anonymized_at IS NOT NULL OR g.erasure_requested_at IS NOT NULL, FALSE)
 		FROM email_outbox o
 		LEFT JOIN reservations r ON r.property_id = o.property_id AND r.id = o.reservation_id
 		LEFT JOIN guests g ON g.property_id = o.property_id AND g.id = COALESCE(o.guest_id, r.guest_id)
 		WHERE o.property_id = $1 AND o.id = $2
 		FOR UPDATE OF o
-	`, propertyID, outboxID).Scan(&commID, &curStatus, &rowGuestBlocked)
+	`, propertyID, outboxID).Scan(&commID, &curStatus, &tpl, &rowGuestBlocked)
 	if err != nil {
 		return MapErr(err)
+	}
+	if domain.IsPortalSecurityChallengeTemplate(tpl) {
+		return fmt.Errorf("%w: security verification challenge emails cannot be retried; send a fresh portal verification code instead", domain.ErrConflict)
 	}
 	if guestBlocked || rowGuestBlocked || curStatus == domain.OutboxStatusCancelled || curStatus == domain.OutboxStatusCancelRequested {
 		return fmt.Errorf("%w: cannot retry cancelled or anonymized email", domain.ErrConflict)
@@ -1944,7 +1976,7 @@ func (s *Store) RetryFailedOutboxEmail(ctx context.Context, tx pgx.Tx, propertyI
 		return MapErr(err)
 	}
 	if commID != nil {
-		if _, err := tx.Exec(ctx, `UPDATE guest_communications SET delivery_status = 'QUEUED', updated_at = NOW() WHERE id = $1`, *commID); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE guest_communications SET delivery_status = 'QUEUED', updated_at = NOW() WHERE property_id = $1 AND id = $2`, propertyID, *commID); err != nil {
 			return MapErr(err)
 		}
 		evID, err := NewUUID()
@@ -2802,6 +2834,9 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 				}
 			}
 		}
+		if err := s.purgeGuestPortalAndConfirmationAccessTx(ctx, tx, propertyID, clusterIDs, false, nowUTC); err != nil {
+			return domain.Guest{}, 0, err
+		}
 		curGuest, gErr := s.GetGuest(ctx, tx, propertyID, canonicalID)
 		if gErr != nil {
 			return domain.Guest{}, 0, gErr
@@ -2810,6 +2845,9 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 	}
 
 	anonLabel := fmt.Sprintf("Anonymised Guest (%s)", g.ID.String()[:8])
+	if err := s.purgeGuestPortalAndConfirmationAccessTx(ctx, tx, propertyID, clusterIDs, true, nowUTC); err != nil {
+		return domain.Guest{}, 0, err
+	}
 
 	// 1. Scrub canonical guest AND all merged alias rows (merged aliases keep status='MERGED' + link for audit provenance, with anonymized_at set and all PII scrubbed).
 	if _, err := tx.Exec(ctx, `
@@ -2842,6 +2880,8 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 		    guest_email = '',
 		    guest_phone = '',
 		    occupant_details = '',
+		    estimated_arrival_time = '',
+		    guest_arrival_notes = '',
 		    internal_notes = CASE WHEN internal_notes <> '' THEN '[Anonymised]' ELSE '' END,
 		    cancellation_reason = CASE WHEN cancellation_reason <> '' THEN '[Anonymised]' ELSE '' END,
 		    cancellation_request_note = CASE WHEN cancellation_request_note <> '' THEN '[Anonymised]' ELSE '' END,
@@ -3074,6 +3114,33 @@ func (s *Store) PrepareOrAnonymizeGuestAt(ctx context.Context, tx pgx.Tx, proper
 			guest_id = ANY($2)
 			OR reservation_id IN (SELECT id FROM reservations WHERE property_id = $1 AND guest_id = ANY($2))
 		  )
+	`, propertyID, clusterIDs); err != nil {
+		return domain.Guest{}, 0, MapErr(err)
+	}
+
+	// 8b. Scrub auto-generated guest name substrings in housekeeping_tasks.notes and inventory_claims.reason.
+	if _, err := tx.Exec(ctx, `
+		UPDATE housekeeping_tasks ht
+		SET notes = 'Generated automatically on departure of ' || r.reference || ' (Redacted Guest).',
+		    updated_at = NOW()
+		FROM reservations r
+		WHERE ht.property_id = $1
+		  AND r.property_id = $1
+		  AND ht.reservation_id = r.id
+		  AND r.guest_id = ANY($2)
+		  AND ht.notes LIKE 'Generated automatically on departure of %'
+	`, propertyID, clusterIDs); err != nil {
+		return domain.Guest{}, 0, MapErr(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE inventory_claims ic
+		SET reason = 'Reservation ' || r.reference || ' (Redacted Guest)',
+		    updated_at = NOW()
+		FROM reservations r
+		WHERE ic.property_id = $1
+		  AND r.property_id = $1
+		  AND ic.reservation_id = r.id
+		  AND r.guest_id = ANY($2)
 	`, propertyID, clusterIDs); err != nil {
 		return domain.Guest{}, 0, MapErr(err)
 	}

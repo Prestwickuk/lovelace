@@ -34,6 +34,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - backend_net
 
   db-bootstrap:
     image: postgres:17-alpine
@@ -55,6 +57,8 @@ services:
     volumes:
       - ./scripts/postgres/ensure-roles.sh:/usr/local/share/lovelace/ensure-roles.sh:ro
     entrypoint: ["/bin/sh", "/usr/local/share/lovelace/ensure-roles.sh"]
+    networks:
+      - backend_net
 
   migrate:
     build:
@@ -63,12 +67,18 @@ services:
     image: lovelace:phase2
     container_name: tir-bach-migrate
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
     environment:
       MIGRATION_DATABASE_URL: postgres://${LOVELACE_MIGRATOR_USER:-lovelace_migrator}:${LOVELACE_MIGRATOR_PASSWORD:?LOVELACE_MIGRATOR_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-tir_bach}?sslmode=disable
     entrypoint: ["/usr/local/bin/tirbach-migrate"]
+    networks:
+      - backend_net
 
   app:
     build:
@@ -77,6 +87,10 @@ services:
     image: lovelace:phase2
     container_name: tir-bach-app
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -91,6 +105,7 @@ services:
       TIRBACH_AUTO_SEED: "false"
       TIRBACH_PUBLIC_ORIGIN: ${TIRBACH_PUBLIC_ORIGIN:?TIRBACH_PUBLIC_ORIGIN must be explicitly set (e.g. https://book.tirbach.wales)}
       TIRBACH_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:?TIRBACH_PUBLIC_API_SECRET must be set to isolate public API calls to BFF}
+      TIRBACH_GUEST_PORTAL_ENABLED: ${TIRBACH_GUEST_PORTAL_ENABLED:-false}
       TIRBACH_STRIPE_SECRET_KEY: ${TIRBACH_STRIPE_SECRET_KEY:-}
       TIRBACH_STRIPE_WEBHOOK_SECRET: ${TIRBACH_STRIPE_WEBHOOK_SECRET:-}
       TIRBACH_STRIPE_SUCCESS_URL: ${TIRBACH_STRIPE_SUCCESS_URL:-}
@@ -101,12 +116,21 @@ services:
       TIRBACH_SMTP_ADDR: ${TIRBACH_SMTP_ADDR:-}
       TIRBACH_SMTP_USERNAME: ${TIRBACH_SMTP_USERNAME:-}
       TIRBACH_SMTP_PASSWORD: ${TIRBACH_SMTP_PASSWORD:-}
-      TIRBACH_ATTACHMENT_DIR: ${TIRBACH_ATTACHMENT_DIR:-/var/lib/lovelace/attachments}
+      TIRBACH_ATTACHMENT_DIR: /var/lib/lovelace/attachments
       TIRBACH_MAX_ATTACHMENT_BYTES: ${TIRBACH_MAX_ATTACHMENT_BYTES:-10485760}
     volumes:
       - tir_bach_attachments:/var/lib/lovelace/attachments
     ports:
       - "${TIRBACH_BIND_ADDR:-127.0.0.1}:${TIRBACH_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tirbach-server", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    networks:
+      - backend_net
+      - bff_net
 
   # Completely separate public booking frontend (never receives DATABASE_URL or admin secrets).
   public-web:
@@ -116,10 +140,15 @@ services:
     image: lovelace-public-web:phase2
     container_name: tir-bach-public-web
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
     environment:
+      LOVELACE_ENV: ${TIRBACH_ENV:-production}
       LOVELACE_API_BASE_URL: http://app:8080
       LOVELACE_PROPERTY_SLUG: ${LOVELACE_PROPERTY_SLUG:-tir-bach}
       LOVELACE_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:?TIRBACH_PUBLIC_API_SECRET must be set}
@@ -129,6 +158,12 @@ services:
       NEXT_PUBLIC_SITE_URL: ${TIRBACH_PUBLIC_ORIGIN:?TIRBACH_PUBLIC_ORIGIN must be explicitly set (e.g. https://book.tirbach.wales)}
     ports:
       - "${PUBLIC_WEB_BIND_ADDR:-127.0.0.1}:${PUBLIC_WEB_PORT:-3000}:3000"
+    networks:
+      - bff_net
+
+networks:
+  backend_net:
+  bff_net:
 
 volumes:
   tir_bach_pgdata:

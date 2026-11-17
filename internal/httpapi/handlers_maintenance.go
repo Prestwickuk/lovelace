@@ -463,9 +463,12 @@ func (h *Handler) handleUploadMaintenanceAttachment(w http.ResponseWriter, r *ht
 		maxBytes = 10 * 1024 * 1024
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+128*1024)
-	if err := r.ParseMultipartForm(maxBytes + 64*1024); err != nil {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_upload", "upload exceeds limit or malformed multipart form")
 		return
+	}
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -1193,10 +1196,8 @@ func (h *Handler) handleRunMaintenanceSchedules(w http.ResponseWriter, r *http.R
 	var body struct {
 		AsOfDate string `json:"as_of_date"`
 	}
-	if r.ContentLength > 0 {
-		if !decodeJSON(w, r, &body) {
-			return
-		}
+	if !decodeOptionalJSON(w, r, &body) {
+		return
 	}
 	asOf, err := parseOptionalBodyDate(body.AsOfDate)
 	if err != nil {

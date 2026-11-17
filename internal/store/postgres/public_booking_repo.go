@@ -46,6 +46,10 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 	slug = strings.TrimSpace(strings.ToLower(slug))
 	var out domain.PublicPropertyView
 	var p domain.PropertyBookingPolicy
+	var legacyBranding []byte
+	var publicBrandingJSON []byte
+	var hasLogo bool
+	var logoWidth, logoHeight, logoVersion int
 	err := db.QueryRow(ctx, `
 		SELECT prop.id, prop.slug, prop.name, prop.tagline, prop.public_description,
 		       prop.country_code, prop.region, prop.address_line1, prop.address_line2,
@@ -53,31 +57,50 @@ func (s *Store) GetPublicPropertyBySlug(ctx context.Context, db DBTX, slug strin
 		       to_char(prop.check_in_time, 'HH24:MI'), to_char(prop.check_out_time, 'HH24:MI'),
 		       prop.vat_registered, prop.contact_email, prop.contact_phone,
 		       prop.website_url, prop.custom_domain, prop.branding_config,
+		       COALESCE(pbs.public_branding, '{}'::jsonb),
+		       (pbs.logo_storage_key IS NOT NULL AND pbs.logo_storage_key <> ''),
+		       COALESCE(pbs.logo_width, 0),
+		       COALESCE(pbs.logo_height, 0),
+		       COALESCE(pbs.logo_version, 0),
 		       pol.property_id, pol.hold_duration_minutes, pol.deposit_mode,
 		       pol.deposit_percentage, pol.deposit_fixed_pence, pol.balance_due_days_before_arrival,
 		       pol.extra_adult_nightly_pence, pol.child_nightly_pence, pol.infant_nightly_pence,
 		       pol.booking_terms_version, pol.booking_terms_url, pol.privacy_policy_url,
 		       pol.cancellation_policy, pol.quiet_hours, pol.fire_policy, pol.pet_policy, pol.privacy_notice,
-		       pol.stripe_enabled, pol.version, pol.updated_at
+		       pol.stripe_enabled, pol.guest_portal_enabled, pol.version, pol.updated_at
 		FROM properties prop
 		LEFT JOIN property_booking_policies pol ON pol.property_id = prop.id
+		LEFT JOIN property_branding_settings pbs ON pbs.property_id = prop.id
 		WHERE prop.slug = $1 AND prop.public_enabled = TRUE
 	`, slug).Scan(
 		&out.ID, &out.Slug, &out.Name, &out.Tagline, &out.PublicDescription,
 		&out.CountryCode, &out.Region, &out.AddressLine1, &out.AddressLine2,
 		&out.Town, &out.Postcode, &out.Timezone, &out.Currency,
 		&out.CheckInTime, &out.CheckOutTime, &out.VATRegistered,
-		&out.ContactEmail, &out.ContactPhone, &out.WebsiteURL, &out.CustomDomain, &out.Branding,
+		&out.ContactEmail, &out.ContactPhone, &out.WebsiteURL, &out.CustomDomain, &legacyBranding,
+		&publicBrandingJSON, &hasLogo, &logoWidth, &logoHeight, &logoVersion,
 		&p.PropertyID, &p.HoldDurationMinutes, &p.DepositMode,
 		&p.DepositPercentage, &p.DepositFixedPence, &p.BalanceDueDaysBeforeArrival,
 		&p.ExtraAdultNightlyPence, &p.ChildNightlyPence, &p.InfantNightlyPence,
 		&p.BookingTermsVersion, &p.BookingTermsURL, &p.PrivacyPolicyURL,
 		&p.CancellationPolicy, &p.QuietHours, &p.FirePolicy, &p.PetPolicy, &p.PrivacyNotice,
-		&p.StripeEnabled, &p.Version, &p.UpdatedAt,
+		&p.StripeEnabled, &p.GuestPortalEnabled, &p.Version, &p.UpdatedAt,
 	)
 	if err != nil {
 		return domain.PublicPropertyView{}, MapErr(err)
 	}
+	out.Branding = domain.BuildPublicPropertyBranding(
+		out.Slug,
+		out.Name,
+		out.Tagline,
+		out.Region,
+		publicBrandingJSON,
+		legacyBranding,
+		hasLogo,
+		logoWidth,
+		logoHeight,
+		logoVersion,
+	)
 	out.Policy = p
 	return out, nil
 }
@@ -93,7 +116,7 @@ func (s *Store) GetBookingPolicy(ctx context.Context, db DBTX, propertyID uuid.U
 		       extra_adult_nightly_pence, child_nightly_pence, infant_nightly_pence,
 		       booking_terms_version, booking_terms_url, privacy_policy_url,
 		       cancellation_policy, quiet_hours, fire_policy, pet_policy, privacy_notice,
-		       stripe_enabled, version, updated_at
+		       stripe_enabled, guest_portal_enabled, version, updated_at
 		FROM property_booking_policies
 		WHERE property_id = $1
 	`, propertyID).Scan(
@@ -102,7 +125,7 @@ func (s *Store) GetBookingPolicy(ctx context.Context, db DBTX, propertyID uuid.U
 		&p.ExtraAdultNightlyPence, &p.ChildNightlyPence, &p.InfantNightlyPence,
 		&p.BookingTermsVersion, &p.BookingTermsURL, &p.PrivacyPolicyURL,
 		&p.CancellationPolicy, &p.QuietHours, &p.FirePolicy, &p.PetPolicy, &p.PrivacyNotice,
-		&p.StripeEnabled, &p.Version, &p.UpdatedAt,
+		&p.StripeEnabled, &p.GuestPortalEnabled, &p.Version, &p.UpdatedAt,
 	)
 	return p, MapErr(err)
 }
@@ -128,29 +151,30 @@ func (s *Store) UpdateBookingPolicy(ctx context.Context, tx pgx.Tx, p domain.Pro
 		    pet_policy = $16,
 		    privacy_notice = $17,
 		    stripe_enabled = $18,
+		    guest_portal_enabled = $19,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE property_id = $1 AND version = $19
+		WHERE property_id = $1 AND version = $20
 		RETURNING property_id, hold_duration_minutes, deposit_mode,
 		          deposit_percentage, deposit_fixed_pence, balance_due_days_before_arrival,
 		          extra_adult_nightly_pence, child_nightly_pence, infant_nightly_pence,
 		          booking_terms_version, booking_terms_url, privacy_policy_url,
 		          cancellation_policy, quiet_hours, fire_policy, pet_policy, privacy_notice,
-		          stripe_enabled, version, updated_at
+		          stripe_enabled, guest_portal_enabled, version, updated_at
 	`,
 		p.PropertyID, p.HoldDurationMinutes, p.DepositMode,
 		p.DepositPercentage, p.DepositFixedPence, p.BalanceDueDaysBeforeArrival,
 		p.ExtraAdultNightlyPence, p.ChildNightlyPence, p.InfantNightlyPence,
 		p.BookingTermsVersion, p.BookingTermsURL, p.PrivacyPolicyURL,
 		p.CancellationPolicy, p.QuietHours, p.FirePolicy, p.PetPolicy, p.PrivacyNotice,
-		p.StripeEnabled, p.Version,
+		p.StripeEnabled, p.GuestPortalEnabled, p.Version,
 	).Scan(
 		&out.PropertyID, &out.HoldDurationMinutes, &out.DepositMode,
 		&out.DepositPercentage, &out.DepositFixedPence, &out.BalanceDueDaysBeforeArrival,
 		&out.ExtraAdultNightlyPence, &out.ChildNightlyPence, &out.InfantNightlyPence,
 		&out.BookingTermsVersion, &out.BookingTermsURL, &out.PrivacyPolicyURL,
 		&out.CancellationPolicy, &out.QuietHours, &out.FirePolicy, &out.PetPolicy, &out.PrivacyNotice,
-		&out.StripeEnabled, &out.Version, &out.UpdatedAt,
+		&out.StripeEnabled, &out.GuestPortalEnabled, &out.Version, &out.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return domain.PropertyBookingPolicy{}, domain.ErrConflict
@@ -534,11 +558,28 @@ func (s *Store) CreateHoldWithClaim(
 }
 
 func (s *Store) expireHoldsInTx(ctx context.Context, tx pgx.Tx, nowUTC time.Time) (int, error) {
+	// Prune expired unattached pricing quotes so booking_quotes does not grow without bound.
+	_, _ = tx.Exec(ctx, `
+		DELETE FROM booking_quotes
+		WHERE hold_id IS NULL AND reservation_id IS NULL AND expires_at <= $1
+	`, nowUTC)
+
+	// Acquire booking_holds row locks in deterministic ascending ID order with SKIP LOCKED
+	// before touching inventory_claims or payment_attempts, preventing AB-BA deadlocks with ConfirmPaymentAndHold.
 	rows, err := tx.Query(ctx, `
-		UPDATE booking_holds
-		SET status = 'EXPIRED', version = version + 1, updated_at = NOW()
-		WHERE status = 'ACTIVE' AND expires_at <= $1
-		RETURNING id
+		WITH expired AS (
+			SELECT id
+			FROM booking_holds
+			WHERE status = 'ACTIVE' AND expires_at <= $1
+			ORDER BY id ASC
+			LIMIT 200
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE booking_holds h
+		SET status = 'EXPIRED', version = h.version + 1, updated_at = NOW()
+		FROM expired
+		WHERE h.id = expired.id
+		RETURNING h.id
 	`, nowUTC)
 	if err != nil {
 		return 0, MapErr(err)
@@ -620,12 +661,23 @@ func (s *Store) GetBookingHold(ctx context.Context, db DBTX, holdID uuid.UUID) (
 }
 
 func (s *Store) CancelBookingHold(ctx context.Context, tx pgx.Tx, holdID uuid.UUID) (domain.BookingHold, error) {
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE booking_holds
 		SET status = 'CANCELLED', version = version + 1, updated_at = NOW()
 		WHERE id = $1 AND status = 'ACTIVE'
-	`, holdID); err != nil {
+	`, holdID)
+	if err != nil {
 		return domain.BookingHold{}, MapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		cur, gErr := s.GetBookingHold(ctx, tx, holdID)
+		if gErr != nil {
+			return domain.BookingHold{}, gErr
+		}
+		if cur.Status == domain.HoldStatusConfirmed {
+			return domain.BookingHold{}, fmt.Errorf("%w: booking hold is already confirmed", domain.ErrConflict)
+		}
+		return cur, nil
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE inventory_claims
@@ -920,6 +972,21 @@ func (s *Store) ConfirmPaymentAndHold(
 	paidCurrency string,
 	nowUTC time.Time,
 ) (FinalizeHoldConfirmationResult, error) {
+	// Read hold_id first without FOR UPDATE so we always lock booking_holds BEFORE payment_attempts,
+	// matching expireHoldsInTx / InitiatePublicCheckout lock order and eliminating AB-BA deadlocks.
+	var probeHoldID *uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT hold_id FROM payment_attempts WHERE id = $1`, attemptID).Scan(&probeHoldID); err != nil {
+		return FinalizeHoldConfirmationResult{}, MapErr(err)
+	}
+	var hold domain.BookingHold
+	if probeHoldID != nil {
+		var hErr error
+		hold, hErr = s.GetBookingHoldForUpdate(ctx, tx, *probeHoldID)
+		if hErr != nil {
+			return FinalizeHoldConfirmationResult{}, hErr
+		}
+	}
+
 	var att domain.PaymentAttempt
 	err := tx.QueryRow(ctx, `
 		SELECT id, property_id, hold_id, reservation_id, provider, mode,
@@ -955,10 +1022,11 @@ func (s *Store) ConfirmPaymentAndHold(
 		paymentIntentID = att.ProviderPaymentIntentID
 	}
 
-	// Lock hold row
-	hold, err := s.GetBookingHoldForUpdate(ctx, tx, *att.HoldID)
-	if err != nil {
-		return FinalizeHoldConfirmationResult{}, err
+	if hold.ID != *att.HoldID {
+		hold, err = s.GetBookingHoldForUpdate(ctx, tx, *att.HoldID)
+		if err != nil {
+			return FinalizeHoldConfirmationResult{}, err
+		}
 	}
 
 	// Amount/currency validation
@@ -1217,17 +1285,36 @@ func (s *Store) RecordPaymentFailure(ctx context.Context, tx pgx.Tx, attemptID u
 	return MapErr(err)
 }
 
-func (s *Store) RecordRefundOutcome(ctx context.Context, tx pgx.Tx, paymentIntentID, refundID string, amountRefundedPence int64) error {
+type StripeRefundEntry struct {
+	ProviderRefundID string
+	AmountPence      int64
+	Currency         string
+	Status           string // PENDING | SUCCEEDED | FAILED
+	Reason           string
+	OccurredAt       time.Time
+	IdempotencyKey   string
+}
+
+func (s *Store) RecordRefundOutcome(
+	ctx context.Context,
+	tx pgx.Tx,
+	paymentIntentID, chargeID, eventID string,
+	eventOccurredAt time.Time,
+	amountRefundedPence int64,
+	chargeCurrency string,
+	entries []StripeRefundEntry,
+) error {
 	var attID, propID uuid.UUID
 	var resID *uuid.UUID
 	var paidAmt int64
+	var attCur string
 	err := tx.QueryRow(ctx, `
-		SELECT id, property_id, reservation_id, amount_pence
+		SELECT id, property_id, reservation_id, amount_pence, currency
 		FROM payment_attempts
 		WHERE provider_payment_intent_id = $1
 		LIMIT 1
 		FOR UPDATE
-	`, paymentIntentID).Scan(&attID, &propID, &resID, &paidAmt)
+	`, paymentIntentID).Scan(&attID, &propID, &resID, &paidAmt, &attCur)
 	if err == pgx.ErrNoRows {
 		return nil
 	}
@@ -1235,17 +1322,178 @@ func (s *Store) RecordRefundOutcome(ctx context.Context, tx pgx.Tx, paymentInten
 		return MapErr(err)
 	}
 
-	nextAttStatus := domain.AttemptStatusRefunded
-	nextPayStatus := domain.PaymentStatusRefunded
-	if amountRefundedPence > 0 && amountRefundedPence < paidAmt {
+	var payID *uuid.UUID
+	var currentPayStatus string
+	var pID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT id, status
+		FROM payments
+		WHERE payment_attempt_id = $1
+		LIMIT 1
+		FOR UPDATE
+	`, attID).Scan(&pID, &currentPayStatus)
+	if err == nil {
+		payID = &pID
+	} else if err != pgx.ErrNoRows {
+		return MapErr(err)
+	}
+
+	defaultCur := strings.ToUpper(strings.TrimSpace(chargeCurrency))
+	if defaultCur == "" {
+		defaultCur = strings.ToUpper(strings.TrimSpace(attCur))
+	}
+	if defaultCur == "" {
+		defaultCur = "GBP"
+	}
+	if eventOccurredAt.IsZero() {
+		eventOccurredAt = time.Now().UTC()
+	}
+
+	if len(entries) > 0 {
+		for idx, entry := range entries {
+			if entry.AmountPence <= 0 {
+				continue
+			}
+			cur := strings.ToUpper(strings.TrimSpace(entry.Currency))
+			if cur == "" {
+				cur = defaultCur
+			}
+			st := strings.ToUpper(strings.TrimSpace(entry.Status))
+			switch st {
+			case "PENDING", "SUCCEEDED", "FAILED":
+			default:
+				st = "SUCCEEDED"
+			}
+			occAt := entry.OccurredAt.UTC()
+			if occAt.IsZero() {
+				occAt = eventOccurredAt.UTC()
+			}
+			rfIDStr := strings.TrimSpace(entry.ProviderRefundID)
+			idem := strings.TrimSpace(entry.IdempotencyKey)
+			if idem == "" {
+				if rfIDStr != "" {
+					idem = "stripe_refund:" + rfIDStr
+				} else {
+					idem = fmt.Sprintf("stripe_event:%s:%d", eventID, idx)
+				}
+			}
+
+			if rfIDStr != "" {
+				newID, idErr := NewUUID()
+				if idErr != nil {
+					return idErr
+				}
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO refunds (
+						id, property_id, payment_attempt_id, payment_id, reservation_id,
+						provider, provider_refund_id, amount_pence, currency, reason, status,
+						idempotency_key, occurred_at, created_at, updated_at
+					) VALUES (
+						$1, $2, $3, $4, $5,
+						'stripe', $6, $7, $8, $9, $10,
+						$11, $12, $12, NOW()
+					)
+					ON CONFLICT (property_id, provider, provider_refund_id) WHERE provider_refund_id <> ''
+					DO UPDATE SET
+						payment_id = COALESCE(refunds.payment_id, EXCLUDED.payment_id),
+						status = EXCLUDED.status,
+						reason = CASE WHEN EXCLUDED.reason <> '' THEN EXCLUDED.reason ELSE refunds.reason END,
+						occurred_at = EXCLUDED.occurred_at,
+						updated_at = NOW()
+				`, newID, propID, attID, payID, resID, rfIDStr, entry.AmountPence, cur, entry.Reason, st, idem, occAt); err != nil {
+					return MapErr(err)
+				}
+			} else {
+				newID, idErr := NewUUID()
+				if idErr != nil {
+					return idErr
+				}
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO refunds (
+						id, property_id, payment_attempt_id, payment_id, reservation_id,
+						provider, provider_refund_id, amount_pence, currency, reason, status,
+						idempotency_key, occurred_at, created_at, updated_at
+					) VALUES (
+						$1, $2, $3, $4, $5,
+						'stripe', '', $6, $7, $8, $9,
+						$10, $11, $11, NOW()
+					)
+					ON CONFLICT (property_id, idempotency_key) DO NOTHING
+				`, newID, propID, attID, payID, resID, entry.AmountPence, cur, entry.Reason, st, idem, occAt); err != nil {
+					return MapErr(err)
+				}
+			}
+		}
+	} else if amountRefundedPence > 0 && eventID != "" {
+		// Legacy/compact webhook fixture omitting refunds.data[]: persist incremental delta using webhook event timestamp.
+		var existingSucceeded int64
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(amount_pence), 0)::bigint
+			FROM refunds
+			WHERE payment_attempt_id = $1 AND status = 'SUCCEEDED'
+		`, attID).Scan(&existingSucceeded); err != nil {
+			return MapErr(err)
+		}
+		if delta := amountRefundedPence - existingSucceeded; delta > 0 {
+			newID, idErr := NewUUID()
+			if idErr != nil {
+				return idErr
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO refunds (
+					id, property_id, payment_attempt_id, payment_id, reservation_id,
+					provider, provider_refund_id, amount_pence, currency, reason, status,
+					idempotency_key, occurred_at, created_at, updated_at
+				) VALUES (
+					$1, $2, $3, $4, $5,
+					'stripe', '', $6, $7, 'stripe_charge_refunded_webhook', 'SUCCEEDED',
+					$8, $9, $9, NOW()
+				)
+				ON CONFLICT (property_id, idempotency_key) DO NOTHING
+			`, newID, propID, attID, payID, resID, delta, defaultCur, "stripe_event:"+eventID, eventOccurredAt.UTC()); err != nil {
+				return MapErr(err)
+			}
+		}
+	}
+
+	var totalSucceeded int64
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_pence), 0)::bigint
+		FROM refunds
+		WHERE payment_attempt_id = $1 AND status = 'SUCCEEDED'
+	`, attID).Scan(&totalSucceeded); err != nil {
+		return MapErr(err)
+	}
+	effectiveRefunded := totalSucceeded
+	if amountRefundedPence > effectiveRefunded {
+		effectiveRefunded = amountRefundedPence
+	}
+
+	nextAttStatus := domain.AttemptStatusSucceeded
+	nextPayStatus := domain.PaymentStatusPaid
+	if (paidAmt > 0 && effectiveRefunded >= paidAmt) || currentPayStatus == domain.AttemptStatusRefunded {
+		nextAttStatus = domain.AttemptStatusRefunded
+		nextPayStatus = domain.PaymentStatusRefunded
+	} else if effectiveRefunded > 0 {
+		nextAttStatus = domain.AttemptStatusPartiallyRefunded
+		nextPayStatus = domain.PaymentStatusPartiallyRefunded
+	} else if currentPayStatus == domain.AttemptStatusPartiallyRefunded {
 		nextAttStatus = domain.AttemptStatusPartiallyRefunded
 		nextPayStatus = domain.PaymentStatusPartiallyRefunded
 	}
+
 	if _, err := tx.Exec(ctx, `UPDATE payment_attempts SET status = $2, updated_at = NOW() WHERE id = $1`, attID, nextAttStatus); err != nil {
 		return MapErr(err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE payments SET status = $2 WHERE payment_attempt_id = $1`, attID, nextAttStatus); err != nil {
-		return MapErr(err)
+	if payID != nil {
+		if _, err := tx.Exec(ctx, `
+			UPDATE payments
+			SET status = $2,
+			    provider_charge_id = CASE WHEN $3 <> '' AND provider_charge_id = '' THEN $3 ELSE provider_charge_id END
+			WHERE id = $1
+		`, *payID, nextAttStatus, strings.TrimSpace(chargeID)); err != nil {
+			return MapErr(err)
+		}
 	}
 	if resID != nil {
 		if _, err := tx.Exec(ctx, `UPDATE reservations SET payment_status = $2, version = version + 1, updated_at = NOW() WHERE id = $1`, *resID, nextPayStatus); err != nil {
@@ -1466,15 +1714,22 @@ func (s *Store) GetPublicConfirmationByRefAndToken(ctx context.Context, db DBTX,
 }
 
 func (s *Store) RecordCustomerCancellationRequest(ctx context.Context, tx pgx.Tx, propertyID, resID uuid.UUID, note string) (domain.Reservation, error) {
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE reservations
 		SET cancellation_requested_at = COALESCE(cancellation_requested_at, NOW()),
 		    cancellation_request_note = $3,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE property_id = $1 AND id = $2
-	`, propertyID, resID, strings.TrimSpace(note)); err != nil {
+		WHERE property_id = $1 AND id = $2 AND status IN ('PENDING', 'CONFIRMED')
+	`, propertyID, resID, strings.TrimSpace(note))
+	if err != nil {
 		return domain.Reservation{}, MapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		if _, gErr := s.GetReservation(ctx, tx, propertyID, resID); gErr == nil {
+			return domain.Reservation{}, fmt.Errorf("%w: cancellation requests are only permitted for pending or confirmed reservations", domain.ErrConflict)
+		}
+		return domain.Reservation{}, domain.ErrNotFound
 	}
 	return s.GetReservation(ctx, tx, propertyID, resID)
 }
@@ -1543,17 +1798,22 @@ func (s *Store) QueueEmail(ctx context.Context, db DBTX, item domain.EmailOutbox
 			}
 		}
 	}
+	var createdPtr *time.Time
+	if !item.CreatedAt.IsZero() {
+		u := item.CreatedAt.UTC()
+		createdPtr = &u
+	}
 	item.Status = "PENDING"
 	err := db.QueryRow(ctx, `
 		INSERT INTO email_outbox (
 			id, property_id, reservation_id, guest_id, communication_id,
-			recipient_email, template, subject, body_text, body_html, status, next_attempt_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING', $11)
+			recipient_email, template, subject, body_text, body_html, status, next_attempt_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING', $11, COALESCE($12::timestamptz, NOW()))
 		ON CONFLICT (reservation_id, template) WHERE reservation_id IS NOT NULL DO NOTHING
 		RETURNING next_attempt_at, created_at
 	`,
 		item.ID, item.PropertyID, item.ReservationID, item.GuestID, item.CommunicationID, item.RecipientEmail,
-		item.Template, item.Subject, item.BodyText, item.BodyHTML, item.NextAttemptAt,
+		item.Template, item.Subject, item.BodyText, item.BodyHTML, item.NextAttemptAt, createdPtr,
 	).Scan(&item.NextAttemptAt, &item.CreatedAt)
 	if err == pgx.ErrNoRows && item.ReservationID != nil {
 		err = db.QueryRow(ctx, `
@@ -1624,6 +1884,16 @@ func (s *Store) SweepStaleOutboxDispatches(ctx context.Context, nowUTC time.Time
 			    dispatch_fence_epoch = o.dispatch_fence_epoch + 1,
 			    dispatch_outcome = 'WORKER_FENCED',
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE
+			        WHEN o.template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
+			        THEN '[redacted security challenge]'
+			        ELSE o.body_text
+			    END,
+			    body_html = CASE
+			        WHEN o.template IN ('portal_verification', 'portal_step_up', 'portal_email_change_verify')
+			        THEN ''
+			        ELSE o.body_html
+			    END,
 			    last_error = CASE
 			        WHEN EXISTS (
 			            SELECT 1
@@ -1912,12 +2182,12 @@ func (s *Store) BeginOutboxDispatchLease(ctx context.Context, id uuid.UUID, work
 
 		var propID uuid.UUID
 		var resID, guestID, commID, rowToken *uuid.UUID
-		var status, recEmail, cancelReason string
+		var status, recEmail, cancelReason, tpl, bodyText string
 		var rowGuestBlocked bool
-		var evalNow time.Time
+		var createdAt, evalNow time.Time
 		err := tx.QueryRow(ctx, `
 			SELECT o.property_id, o.reservation_id, o.guest_id, o.communication_id,
-			       o.status, o.recipient_email, o.cancel_reason, o.worker_token,
+			       o.status, o.recipient_email, o.cancel_reason, o.template, o.body_text, o.created_at, o.worker_token,
 			       COALESCE(g.status = 'ANONYMIZED' OR g.anonymized_at IS NOT NULL OR g.erasure_requested_at IS NOT NULL, FALSE),
 			       COALESCE($2::timestamptz, clock_timestamp())
 			FROM email_outbox o
@@ -1925,7 +2195,7 @@ func (s *Store) BeginOutboxDispatchLease(ctx context.Context, id uuid.UUID, work
 			LEFT JOIN guests g ON g.property_id = o.property_id AND g.id = COALESCE(o.guest_id, r.guest_id)
 			WHERE o.id = $1
 			FOR UPDATE OF o
-		`, id, nowPtr).Scan(&propID, &resID, &guestID, &commID, &status, &recEmail, &cancelReason, &rowToken, &rowGuestBlocked, &evalNow)
+		`, id, nowPtr).Scan(&propID, &resID, &guestID, &commID, &status, &recEmail, &cancelReason, &tpl, &bodyText, &createdAt, &rowToken, &rowGuestBlocked, &evalNow)
 		if err != nil {
 			return MapErr(err)
 		}
@@ -1998,6 +2268,28 @@ func (s *Store) BeginOutboxDispatchLease(ctx context.Context, id uuid.UUID, work
 			return nil
 		}
 		if status != domain.OutboxStatusProcessing {
+			allowed = false
+			return nil
+		}
+		if domain.IsPortalSecurityChallengeTemplate(tpl) && (bodyText == "[redacted security challenge]" || evalNow.Sub(createdAt) >= domain.PortalChallengeTTL) {
+			reason := cancelReason
+			if reason == "" {
+				reason = "Cancelled pre-dispatch: portal security challenge expired or invalidated"
+			}
+			if _, uErr := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'CANCELLED',
+				    body_text = '[redacted security challenge]',
+				    body_html = '',
+				    cancel_reason = $2,
+				    cancelled_at = COALESCE(cancelled_at, $3),
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, reason, evalNow); uErr != nil {
+				return MapErr(uErr)
+			}
 			allowed = false
 			return nil
 		}
@@ -2170,16 +2462,37 @@ func (s *Store) MarkOutboxEmailsProviderUnconfigured(ctx context.Context, nowUTC
 	return int(tag.RowsAffected()), nil
 }
 
+// RecordAutoRefundSuccess records an automatic refund outcome on both payment_exceptions and payment_attempts.
+func (s *Store) RecordAutoRefundSuccess(ctx context.Context, exceptionID, attemptID uuid.UUID, refundID string) error {
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			UPDATE payment_exceptions
+			SET status = 'AUTO_REFUNDED', resolution_notes = $2, resolved_at = NOW(), updated_at = NOW()
+			WHERE id = $1
+		`, exceptionID, "Automatic refund issued: "+refundID); err != nil {
+			return MapErr(err)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE payment_attempts
+			SET status = 'REFUNDED', updated_at = NOW()
+			WHERE id = $1
+		`, attemptID); err != nil {
+			return MapErr(err)
+		}
+		return nil
+	})
+}
+
 // lockGuestForOutboxTx locks the canonical guest cluster in ascending UUID order BEFORE locking email_outbox
 // so outbox completion/dispatch workers and guest anonymisation never deadlock on opposite lock orders.
-func (s *Store) lockGuestForOutboxTx(ctx context.Context, tx pgx.Tx, outboxID uuid.UUID) (bool, error) {
+func (s *Store) lockGuestForOutboxTx(ctx context.Context, tx pgx.Tx, propertyID *uuid.UUID, outboxID uuid.UUID) (bool, error) {
 	var probePropID uuid.UUID
 	var probeGuestID, probeResID *uuid.UUID
 	if err := tx.QueryRow(ctx, `
 		SELECT o.property_id, o.guest_id, o.reservation_id
 		FROM email_outbox o
-		WHERE o.id = $1
-	`, outboxID).Scan(&probePropID, &probeGuestID, &probeResID); err != nil {
+		WHERE o.id = $1 AND ($2::uuid IS NULL OR o.property_id = $2)
+	`, outboxID, propertyID).Scan(&probePropID, &probeGuestID, &probeResID); err != nil {
 		return false, MapErr(err)
 	}
 	targetGuestID := uuid.Nil
@@ -2225,6 +2538,7 @@ type outboxLeaseSnapshot struct {
 	Subject         string
 	BodyText        string
 	BodyHTML        string
+	CreatedAt       time.Time
 	FenceEpoch      int64
 	FencedAt        *time.Time
 	LeaseExpiresAt  *time.Time
@@ -2243,7 +2557,7 @@ func (s *Store) lockAndVerifyOutboxLeaseTx(
 	fenceEpoch int64,
 	nowUTC time.Time,
 ) (outboxLeaseSnapshot, error) {
-	guestBlocked, lockErr := s.lockGuestForOutboxTx(ctx, tx, id)
+	guestBlocked, lockErr := s.lockGuestForOutboxTx(ctx, tx, nil, id)
 	if lockErr != nil {
 		return outboxLeaseSnapshot{}, lockErr
 	}
@@ -2256,7 +2570,7 @@ func (s *Store) lockAndVerifyOutboxLeaseTx(
 	var rowGuestBlocked bool
 	err := tx.QueryRow(ctx, `
 		SELECT o.property_id, o.reservation_id, o.guest_id, o.communication_id, o.worker_token,
-		       o.status, o.cancel_reason, o.attempts, o.recipient_email, o.template, o.subject, o.body_text, o.body_html,
+		       o.status, o.cancel_reason, o.attempts, o.recipient_email, o.template, o.subject, o.body_text, o.body_html, o.created_at,
 		       o.dispatch_fence_epoch, o.dispatch_fenced_at, o.dispatch_lease_expires_at,
 		       COALESCE(g.status = 'ANONYMIZED' OR g.anonymized_at IS NOT NULL OR g.erasure_requested_at IS NOT NULL, FALSE),
 		       COALESCE($2::timestamptz, clock_timestamp())
@@ -2267,7 +2581,7 @@ func (s *Store) lockAndVerifyOutboxLeaseTx(
 		FOR UPDATE OF o
 	`, id, nowPtr).Scan(
 		&snap.PropertyID, &snap.ReservationID, &snap.GuestID, &snap.CommunicationID, &snap.WorkerToken,
-		&snap.Status, &snap.CancelReason, &snap.Attempts, &snap.RecipientEmail, &snap.Template, &snap.Subject, &snap.BodyText, &snap.BodyHTML,
+		&snap.Status, &snap.CancelReason, &snap.Attempts, &snap.RecipientEmail, &snap.Template, &snap.Subject, &snap.BodyText, &snap.BodyHTML, &snap.CreatedAt,
 		&snap.FenceEpoch, &snap.FencedAt, &snap.LeaseExpiresAt,
 		&rowGuestBlocked, &snap.EvalNow,
 	)
@@ -2322,6 +2636,7 @@ func (s *Store) MarkOutboxEmailSentWithLeaseAt(ctx context.Context, id uuid.UUID
 		bodyText := snap.BodyText
 		bodyHTML := snap.BodyHTML
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(tpl)
 		concurrentAnon := snap.Status == domain.OutboxStatusCancelRequested || snap.GuestBlocked
 		if concurrentAnon {
 			if _, err := tx.Exec(ctx, `
@@ -2337,6 +2652,26 @@ func (s *Store) MarkOutboxEmailSentWithLeaseAt(ctx context.Context, id uuid.UUID
 				    recipient_email = '[redacted]',
 				    subject = '[Anonymised Email]',
 				    body_text = '[redacted by GDPR erasure]',
+				    body_html = '',
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, effectiveSentAt); err != nil {
+				return MapErr(err)
+			}
+		} else if isPortalChallenge {
+			if _, err := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'SENT',
+				    attempts = attempts + 1,
+				    sent_at = $2,
+				    dispatch_outcome = 'PROVIDER_ACCEPTED',
+				    dispatch_fenced_at = $2,
+				    dispatch_fence_epoch = dispatch_fence_epoch + 1,
+				    dispatch_lease_expires_at = NULL,
+				    last_error = '',
+				    body_text = '[redacted security challenge]',
 				    body_html = '',
 				    locked_at = NULL,
 				    worker_token = NULL,
@@ -2363,6 +2698,12 @@ func (s *Store) MarkOutboxEmailSentWithLeaseAt(ctx context.Context, id uuid.UUID
 			`, id, effectiveSentAt); err != nil {
 				return MapErr(err)
 			}
+		}
+
+		// Security challenge emails never enter guest_communications so staff with comms:read
+		// cannot view single-use portal verification codes or magic-link tokens.
+		if isPortalChallenge && commID == nil {
+			return nil
 		}
 
 		// Ensure Phase 2 booking confirmations / direct outbox emails appear on the guest timeline cleanly.
@@ -2482,6 +2823,7 @@ func (s *Store) MarkOutboxDispatchUnknownWithLeaseAt(ctx context.Context, id uui
 		if snap.GuestBlocked || snap.Status == domain.OutboxStatusCancelRequested {
 			safeErr = sanitizeOutboxErrorForAnon(errMsg, false)
 		}
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET status = 'DISPATCH_UNKNOWN',
@@ -2491,11 +2833,13 @@ func (s *Store) MarkOutboxDispatchUnknownWithLeaseAt(ctx context.Context, id uui
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
 			    last_error = $3,
+			    body_text = CASE WHEN $4 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $4 THEN '' ELSE body_html END,
 			    locked_at = NULL,
 			    worker_token = NULL,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, effectiveAt, safeErr); err != nil {
+		`, id, effectiveAt, safeErr, isPortalChallenge); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -2573,6 +2917,35 @@ func (s *Store) MarkOutboxDispatchTerminatedBeforeSendWithLeaseAt(ctx context.Co
 			return nil
 		}
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
+		if isPortalChallenge && (snap.BodyText == "[redacted security challenge]" || effectiveAt.Sub(snap.CreatedAt) >= domain.PortalChallengeTTL) {
+			cReason := snap.CancelReason
+			if cReason == "" {
+				cReason = "Portal security challenge expired or invalidated; retry suppressed"
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'CANCELLED',
+				    attempts = attempts + 1,
+				    dispatch_outcome = 'TERMINATED_BEFORE_SEND',
+				    dispatch_fenced_at = $2,
+				    dispatch_fence_epoch = dispatch_fence_epoch + 1,
+				    dispatch_lease_expires_at = NULL,
+				    last_error = $3,
+				    body_text = '[redacted security challenge]',
+				    body_html = '',
+				    cancel_reason = $4,
+				    cancelled_at = COALESCE(cancelled_at, $2),
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, effectiveAt, reason, cReason); err != nil {
+				return MapErr(err)
+			}
+			return nil
+		}
+
 		nextStatus := domain.OutboxStatusPending
 		outcome := ""
 		var fencedAt *time.Time
@@ -2581,6 +2954,7 @@ func (s *Store) MarkOutboxDispatchTerminatedBeforeSendWithLeaseAt(ctx context.Co
 			outcome = "TERMINATED_BEFORE_SEND"
 			fencedAt = &effectiveAt
 		}
+		scrubChallengeBody := isPortalChallenge && nextStatus == domain.OutboxStatusFailed
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET attempts = attempts + 1,
@@ -2591,11 +2965,13 @@ func (s *Store) MarkOutboxDispatchTerminatedBeforeSendWithLeaseAt(ctx context.Co
 			    dispatch_fenced_at = $6,
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE WHEN $7 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $7 THEN '' ELSE body_html END,
 			    locked_at = NULL,
 			    worker_token = NULL,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, reason, effectiveRetry, nextStatus, outcome, fencedAt); err != nil {
+		`, id, reason, effectiveRetry, nextStatus, outcome, fencedAt, scrubChallengeBody); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -2683,6 +3059,35 @@ func (s *Store) MarkOutboxEmailRetryWithLeaseAt(ctx context.Context, id uuid.UUI
 			return nil
 		}
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
+		if isPortalChallenge && (snap.BodyText == "[redacted security challenge]" || effectiveNow.Sub(snap.CreatedAt) >= domain.PortalChallengeTTL) {
+			cReason := snap.CancelReason
+			if cReason == "" {
+				cReason = "Portal security challenge expired or invalidated; retry suppressed"
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE email_outbox
+				SET status = 'CANCELLED',
+				    attempts = attempts + 1,
+				    dispatch_outcome = 'PRE_SUBMIT_FAILED',
+				    dispatch_fenced_at = $2,
+				    dispatch_fence_epoch = dispatch_fence_epoch + 1,
+				    dispatch_lease_expires_at = NULL,
+				    last_error = $3,
+				    body_text = '[redacted security challenge]',
+				    body_html = '',
+				    cancel_reason = $4,
+				    cancelled_at = COALESCE(cancelled_at, $2),
+				    locked_at = NULL,
+				    worker_token = NULL,
+				    updated_at = NOW()
+				WHERE id = $1
+			`, id, effectiveNow, errMsg, cReason); err != nil {
+				return MapErr(err)
+			}
+			return nil
+		}
+
 		nextStatus := domain.OutboxStatusPending
 		outcome := ""
 		var fencedAt *time.Time
@@ -2695,6 +3100,7 @@ func (s *Store) MarkOutboxEmailRetryWithLeaseAt(ctx context.Context, id uuid.UUI
 		if nextRetry.IsZero() {
 			effectiveRetry = effectiveNow.Add(2 * time.Minute)
 		}
+		scrubChallengeBody := isPortalChallenge && nextStatus == domain.OutboxStatusFailed
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET attempts = attempts + 1,
@@ -2707,9 +3113,11 @@ func (s *Store) MarkOutboxEmailRetryWithLeaseAt(ctx context.Context, id uuid.UUI
 			    dispatch_fenced_at = $6,
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE WHEN $7 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $7 THEN '' ELSE body_html END,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, errMsg, effectiveRetry, nextStatus, outcome, fencedAt); err != nil {
+		`, id, errMsg, effectiveRetry, nextStatus, outcome, fencedAt, scrubChallengeBody); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -2799,6 +3207,7 @@ func (s *Store) MarkOutboxEmailPermanentFailureWithLeaseAt(ctx context.Context, 
 			return nil
 		}
 
+		isPortalChallenge := domain.IsPortalSecurityChallengeTemplate(snap.Template)
 		if _, err := tx.Exec(ctx, `
 			UPDATE email_outbox
 			SET attempts = attempts + 1,
@@ -2810,9 +3219,11 @@ func (s *Store) MarkOutboxEmailPermanentFailureWithLeaseAt(ctx context.Context, 
 			    dispatch_fenced_at = $3,
 			    dispatch_fence_epoch = dispatch_fence_epoch + 1,
 			    dispatch_lease_expires_at = NULL,
+			    body_text = CASE WHEN $4 THEN '[redacted security challenge]' ELSE body_text END,
+			    body_html = CASE WHEN $4 THEN '' ELSE body_html END,
 			    updated_at = NOW()
 			WHERE id = $1
-		`, id, errMsg, effectiveNow); err != nil {
+		`, id, errMsg, effectiveNow, isPortalChallenge); err != nil {
 			return MapErr(err)
 		}
 		if snap.CommunicationID != nil {
@@ -2906,7 +3317,7 @@ func (s *Store) ReconcileUnknownOutboxDispatch(ctx context.Context, tx pgx.Tx, p
 		})
 	}
 
-	if _, lockErr := s.lockGuestForOutboxTx(ctx, tx, params.OutboxID); lockErr != nil {
+	if _, lockErr := s.lockGuestForOutboxTx(ctx, tx, &params.PropertyID, params.OutboxID); lockErr != nil {
 		return domain.EmailOutboxItem{}, lockErr
 	}
 	var atPtr *time.Time
@@ -2969,6 +3380,9 @@ func (s *Store) ReconcileUnknownOutboxDispatch(ctx context.Context, tx pgx.Tx, p
 			res.RecipientEmail = "[redacted]"
 			res.Subject = "[Anonymised Email]"
 			res.BodyText = "[redacted by GDPR erasure]"
+			res.BodyHTML = ""
+		} else if domain.IsPortalSecurityChallengeTemplate(res.Template) {
+			res.BodyText = "[redacted security challenge]"
 			res.BodyHTML = ""
 		}
 		res.LastError = lastErr
@@ -3035,6 +3449,9 @@ func (s *Store) ReconcileUnknownOutboxDispatch(ctx context.Context, tx pgx.Tx, p
 			res.CancelledAt = &at
 			res.CancelReason = "Reconciled after unknown dispatch: cancelled without re-send"
 			lastErr = "[redacted on anonymisation: reconciled unknown dispatch]"
+		} else if domain.IsPortalSecurityChallengeTemplate(res.Template) {
+			res.BodyText = "[redacted security challenge]"
+			res.BodyHTML = ""
 		}
 		res.Status = targetStatus
 		res.LastError = lastErr
@@ -3112,6 +3529,17 @@ func (s *Store) CountActiveStripeEnabledProperties(ctx context.Context) (int, er
 		FROM properties prop
 		JOIN property_booking_policies pol ON pol.property_id = prop.id
 		WHERE prop.public_enabled = TRUE AND pol.stripe_enabled = TRUE
+	`).Scan(&count)
+	return count, MapErr(err)
+}
+
+func (s *Store) CountActivePortalEnabledProperties(ctx context.Context) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM properties prop
+		JOIN property_booking_policies pol ON pol.property_id = prop.id
+		WHERE prop.public_enabled = TRUE AND pol.guest_portal_enabled = TRUE
 	`).Scan(&count)
 	return count, MapErr(err)
 }

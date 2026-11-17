@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -320,6 +321,35 @@ func (s *Store) UpdateUnit(ctx context.Context, tx pgx.Tx, u domain.Unit) (domai
 }
 
 func (s *Store) ArchiveUnit(ctx context.Context, tx pgx.Tx, propertyID, id uuid.UUID) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT TRUE
+		FROM units
+		WHERE property_id = $1 AND id = $2 AND archived_at IS NULL
+		FOR UPDATE
+	`, propertyID, id).Scan(&exists); err != nil {
+		if err == pgx.ErrNoRows {
+			return domain.ErrNotFound
+		}
+		return MapErr(err)
+	}
+	var hasActiveBookings bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM inventory_claims
+			WHERE property_id = $1
+			  AND unit_id = $2
+			  AND status = 'ACTIVE'
+			  AND claim_type IN ('RESERVATION', 'PENDING_RESERVATION', 'HOLD')
+			  AND upper(claim_range) > CURRENT_DATE
+		)
+	`, propertyID, id).Scan(&hasActiveBookings); err != nil {
+		return MapErr(err)
+	}
+	if hasActiveBookings {
+		return fmt.Errorf("%w: cannot archive unit with active or upcoming reservations or holds", domain.ErrConflict)
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE units
 		SET archived_at = NOW(), status = 'retired', updated_at = NOW(), version = version + 1

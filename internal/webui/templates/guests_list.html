@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="page-header">
   <div>
-    <h1>Guest Directory</h1>
-    <p class="subtitle">Search returning guests, upcoming stays, preferences, open enquiries, and consent status.</p>
+    <h1>{{.PropertyTerms.GuestSingular}} Directory</h1>
+    <p class="subtitle">Search returning {{.PropertyTerms.GuestPlural}}, upcoming stays, preferences, open enquiries, and consent status.</p>
   </div>
   <div class="inline-row">
     {{if gt .DuplicateCount 0}}
@@ -15,8 +15,10 @@
 
 <div class="card mb-3">
   <form method="get" action="/guests" class="inline-row filter-row">
-    <input type="text" name="q" value="{{.Filter.Query}}" placeholder="Search name, email, phone, booking ref, or ID" class="w-search">
-    <select name="segment">
+    <label for="guest_q" class="sr-only">Search guests</label>
+    <input id="guest_q" type="text" name="q" value="{{.Filter.Query}}" placeholder="Search name, email, phone, booking ref, or ID" class="w-search">
+    <label for="guest_segment" class="sr-only">Guest segment</label>
+    <select id="guest_segment" name="segment" class="input-auto">
       <option value="ALL" {{if or (eq .Filter.Segment "") (eq .Filter.Segment "ALL")}}selected{{end}}>All Active Guests</option>
       <option value="RETURNING" {{if eq .Filter.Segment "RETURNING"}}selected{{end}}>Returning Guests</option>
       <option value="NEW" {{if eq .Filter.Segment "NEW"}}selected{{end}}>New / First-Time</option>
@@ -25,66 +27,118 @@
       <option value="UNRESOLVED_COMPLAINTS" {{if eq .Filter.Segment "UNRESOLVED_COMPLAINTS"}}selected{{end}}>Unresolved Complaints</option>
       <option value="OPTED_IN" {{if eq .Filter.Segment "OPTED_IN"}}selected{{end}}>Marketing Opted-In</option>
     </select>
-    <label class="inline-row"><input type="checkbox" name="include_all" value="1" {{if .Filter.IncludeAll}}checked{{end}}> Include merged / anonymized</label>
+    <label for="guest_sort" class="sr-only">Sort guests</label>
+    <select id="guest_sort" name="sort" class="input-auto">
+      <option value="name_asc" {{if or (eq .ViewControls.FilterSort "name_asc") (eq .ViewControls.FilterSort "")}}selected{{end}}>Sort: Name (A–Z)</option>
+      <option value="stays_desc" {{if eq .ViewControls.FilterSort "stays_desc"}}selected{{end}}>Sort: Completed Stays</option>
+      <option value="recent_stay_desc" {{if eq .ViewControls.FilterSort "recent_stay_desc"}}selected{{end}}>Sort: Recent Stay</option>
+    </select>
+    <label for="guest_page_size" class="sr-only">Rows per page</label>
+    <select id="guest_page_size" name="page_size" class="input-auto">
+      <option value="10" {{if eq .ViewControls.PageSize 10}}selected{{end}}>10 / page</option>
+      <option value="25" {{if or (eq .ViewControls.PageSize 25) (eq .ViewControls.PageSize 0)}}selected{{end}}>25 / page</option>
+      <option value="50" {{if eq .ViewControls.PageSize 50}}selected{{end}}>50 / page</option>
+      <option value="100" {{if eq .ViewControls.PageSize 100}}selected{{end}}>100 / page</option>
+    </select>
+    <label class="inline-check"><input type="checkbox" name="include_all" value="1" {{if .Filter.IncludeAll}}checked{{end}}> Include merged / anonymized</label>
     <button type="submit" class="btn btn-primary btn-sm">Filter</button>
     {{if or .Filter.Query .Filter.Segment .Filter.IncludeAll}}
     <a href="/guests" class="btn btn-secondary btn-sm">Reset</a>
     {{end}}
   </form>
+
+  {{$guestViews := savedViewsFor .Workspace "guests"}}
+  <div class="saved-views-bar">
+    <div class="saved-views-list">
+      <span class="subtitle">Saved Views:</span>
+      {{range $guestViews}}
+      <a href="{{savedViewURL .}}" class="btn btn-sm {{if eq .ID $.ViewControls.ActiveSavedViewID}}btn-primary{{else}}btn-secondary{{end}}">{{.Name}}</a>
+      {{else}}
+      <span class="subtitle">None saved yet</span>
+      {{end}}
+    </div>
+    {{if not .Actor.MustRotatePassword}}
+    <form method="post" action="/account/preferences/views" class="inline-row">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.Property.ID}}">
+      <input type="hidden" name="screen" value="guests">
+      <input type="hidden" name="return_to" value="/guests">
+      <input type="hidden" name="segment" value="{{.Filter.Segment}}">
+      <input type="hidden" name="include_all" value="{{if .Filter.IncludeAll}}1{{else}}0{{end}}">
+      <input type="hidden" name="sort" value="{{.ViewControls.FilterSort}}">
+      <input type="hidden" name="page_size" value="{{.ViewControls.PageSize}}">
+      <label for="guests_saved_view_name" class="sr-only">Saved guest view name</label>
+      <input id="guests_saved_view_name" name="name" type="text" maxlength="60" placeholder="Save current view as…" class="input-auto" required>
+      <button type="submit" class="btn btn-secondary btn-sm">Save View</button>
+    </form>
+    {{end}}
+  </div>
 </div>
 
 <div class="card mb-3">
   {{if .Guests}}
-  <table>
-    <thead>
-      <tr>
-        <th>Guest</th>
-        <th>Contact</th>
-        <th>Stay History</th>
-        <th>Next / Last Stay</th>
-        <th>Open Items</th>
-        <th>Marketing</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Guests}}
-      <tr>
-        <td>
-          <strong><a href="/guests/{{.ID}}">{{.FullName}}</a></strong><br>
-          {{if .IsReturningGuest}}<span class="badge badge-ok">Returning Guest</span>{{else}}<span class="badge badge-muted">New</span>{{end}}
-          {{if eq (printf "%s" .Status) "VIP"}}<span class="badge badge-info">VIP</span>{{end}}
-          {{if eq (printf "%s" .Status) "DO_NOT_CONTACT"}}<span class="badge badge-warn">Do Not Contact</span>{{end}}
-          {{if eq (printf "%s" .Status) "MERGED"}}<span class="badge badge-muted">Merged</span>{{end}}
-          {{if eq (printf "%s" .Status) "ANONYMIZED"}}<span class="badge badge-muted">Anonymised</span>{{end}}
-        </td>
-        <td>
-          {{if .Email}}<span class="mono">{{.Email}}</span><br>{{end}}
-          {{if .Phone}}<span class="mono">{{.Phone}}</span>{{end}}
-        </td>
-        <td>
-          <strong>{{.CompletedStays}}</strong> completed stay(s)<br>
-          <small>{{.TotalBookings}} total booking(s){{if gt .CancelledBookings 0}} · {{.CancelledBookings}} cancelled{{end}}</small>
-        </td>
-        <td class="mono">
-          {{if .NextArrivalDate}}Next: {{formatDate .NextArrivalDate}}<br>{{end}}
-          {{if .LastStayDate}}Last: {{formatDate .LastStayDate}}{{else}}—{{end}}
-        </td>
-        <td>
-          {{if gt .OpenComplaintsCount 0}}<span class="badge badge-err">{{.OpenComplaintsCount}} Complaint</span>{{end}}
-          {{if gt .OpenEnquiriesCount 0}}<span class="badge badge-warn">{{.OpenEnquiriesCount}} Enquiry</span>{{end}}
-          {{if and (eq .OpenComplaintsCount 0) (eq .OpenEnquiriesCount 0)}}—{{end}}
-        </td>
-        <td>
-          {{if eq .MarketingConsentState "GRANTED"}}<span class="badge badge-ok">Opted In</span>{{else if eq .MarketingConsentState "WITHDRAWN"}}<span class="badge badge-warn">Withdrawn</span>{{else}}<span class="badge badge-muted">Not Subscribed</span>{{end}}
-        </td>
-        <td><a href="/guests/{{.ID}}" class="btn btn-secondary btn-sm">Profile</a></td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <caption class="sr-only">Guest directory</caption>
+      <thead>
+        <tr>
+          <th scope="col">Guest</th>
+          <th scope="col">Contact</th>
+          <th scope="col">Stay History</th>
+          <th scope="col">Next / Last Stay</th>
+          <th scope="col">Open Items</th>
+          <th scope="col">Marketing</th>
+          <th scope="col"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Guests}}
+        <tr>
+          <td>
+            <strong><a href="/guests/{{.ID}}">{{.FullName}}</a></strong><br>
+            {{if .IsReturningGuest}}{{template "status_badge" (dict "Class" "badge-ok" "Label" "Returning Guest")}}{{else}}{{template "status_badge" (dict "Class" "badge-muted" "Label" "New")}}{{end}}
+            {{if eq (printf "%s" .Status) "VIP"}}{{template "status_badge" (dict "Class" "badge-info" "Label" "VIP")}}{{end}}
+            {{if eq (printf "%s" .Status) "DO_NOT_CONTACT"}}{{template "status_badge" (dict "Class" "badge-warn" "Label" "Do Not Contact")}}{{end}}
+            {{if eq (printf "%s" .Status) "MERGED"}}{{template "status_badge" (dict "Class" "badge-muted" "Label" "Merged")}}{{end}}
+            {{if eq (printf "%s" .Status) "ANONYMIZED"}}{{template "status_badge" (dict "Class" "badge-muted" "Label" "Anonymised")}}{{end}}
+          </td>
+          <td>
+            {{if .Email}}<span class="mono">{{.Email}}</span><br>{{end}}
+            {{if .Phone}}<span class="mono">{{.Phone}}</span>{{end}}
+          </td>
+          <td>
+            <strong>{{.CompletedStays}}</strong> completed stay(s)<br>
+            <small>{{.TotalBookings}} total booking(s){{if gt .CancelledBookings 0}} · {{.CancelledBookings}} cancelled{{end}}</small>
+          </td>
+          <td class="mono">
+            {{if .NextArrivalDate}}Next: {{formatDate .NextArrivalDate}}<br>{{end}}
+            {{if .LastStayDate}}Last: {{formatDate .LastStayDate}}{{else}}—{{end}}
+          </td>
+          <td>
+            {{if gt .OpenComplaintsCount 0}}{{template "status_badge" (dict "Class" "badge-err" "Label" (printf "%d Complaint" .OpenComplaintsCount))}}{{end}}
+            {{if gt .OpenEnquiriesCount 0}}{{template "status_badge" (dict "Class" "badge-warn" "Label" (printf "%d Enquiry" .OpenEnquiriesCount))}}{{end}}
+            {{if and (eq .OpenComplaintsCount 0) (eq .OpenEnquiriesCount 0)}}—{{end}}
+          </td>
+          <td>
+            {{if eq .MarketingConsentState "GRANTED"}}{{template "status_badge" (dict "Class" "badge-ok" "Label" "Opted In")}}{{else if eq .MarketingConsentState "WITHDRAWN"}}{{template "status_badge" (dict "Class" "badge-warn" "Label" "Withdrawn")}}{{else}}{{template "status_badge" (dict "Class" "badge-muted" "Label" "Not Subscribed")}}{{end}}
+          </td>
+          <td><a href="/guests/{{.ID}}" class="btn btn-secondary btn-sm">Profile</a></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{if gt .ViewControls.TotalPages 1}}
+  <div class="pagination-bar">
+    <span class="subtitle">Page {{.ViewControls.Page}} of {{.ViewControls.TotalPages}} ({{.ViewControls.TotalCount}} guests)</span>
+    <div class="btn-row-gap">
+      {{if .ViewControls.HasPrevPage}}<a class="btn btn-secondary btn-sm" href="/guests?q={{.Filter.Query}}&segment={{.Filter.Segment}}&include_all={{if .Filter.IncludeAll}}1{{else}}0{{end}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.PrevPage}}">← Prev Page</a>{{end}}
+      {{if .ViewControls.HasNextPage}}<a class="btn btn-secondary btn-sm" href="/guests?q={{.Filter.Query}}&segment={{.Filter.Segment}}&include_all={{if .Filter.IncludeAll}}1{{else}}0{{end}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.NextPage}}">Next Page →</a>{{end}}
+    </div>
+  </div>
+  {{end}}
   {{else}}
-  <p class="subtitle">No guest profiles match your current search criteria.</p>
+  {{template "empty_state" (dict "Title" "No matching guests" "Body" "No guest profiles match your current search criteria." "ActionURL" "/guests" "ActionLabel" "Reset filters")}}
   {{end}}
 </div>
 

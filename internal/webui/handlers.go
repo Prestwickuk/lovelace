@@ -17,6 +17,7 @@ type loginViewData struct {
 	Email string
 	Error string
 	Brand branding.PlatformBrand
+	Theme branding.ThemeSelection
 }
 
 func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
@@ -25,10 +26,14 @@ func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.loginTmpl.Execute(w, loginViewData{Brand: h.brand})
+	_ = h.loginTmpl.Execute(w, loginViewData{Brand: h.brand, Theme: h.theme})
 }
 
 func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
+	if !httpx.IsSameOriginBrowserMutation(r, h.cfg) {
+		h.renderError(w, http.StatusForbidden, "Security Check Failed", "Cross-site sign-in submissions are not permitted. Please sign in directly from this page.")
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, httpx.MaxFormBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		h.renderError(w, http.StatusBadRequest, "Invalid Request", "Unable to read the sign-in request.")
@@ -52,11 +57,35 @@ func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 			Email: email,
 			Error: msg,
 			Brand: h.brand,
+			Theme: h.theme,
 		})
 		return
 	}
 	httpx.SetSessionCookie(w, h.cfg, res.SessionToken)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	if res.User.MustRotatePassword {
+		http.Redirect(w, r, "/account?rotate=1", http.StatusSeeOther)
+		return
+	}
+	landing := "/"
+	actor := service.Actor{
+		UserID:     res.User.ID,
+		PropertyID: res.User.PropertyID,
+		Email:      res.User.Email,
+		FullName:   res.User.FullName,
+		Role:       res.User.Role,
+	}
+	var propPtr *uuid.UUID
+	if res.User.PropertyID != nil {
+		pid := *res.User.PropertyID
+		propPtr = &pid
+	} else if props, err := h.svc.ListProperties(r.Context(), actor); err == nil && len(props) > 0 {
+		pid := props[0].ID
+		propPtr = &pid
+	}
+	if ws, err := h.svc.ResolveWorkspace(r.Context(), actor, propPtr); err == nil && ws.DefaultRoute != "" {
+		landing = safeAdminReturnPath(ws.DefaultRoute, "/")
+	}
+	http.Redirect(w, r, landing, http.StatusSeeOther)
 }
 
 func (h *Handler) handleLogoutPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
@@ -72,7 +101,11 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request, actor 
 func (h *Handler) handlePropertyGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Site Settings", "property")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Site Settings Unavailable", "Unable to load property settings.")
+		return
+	}
+	if !base.CanReadProperty {
+		h.renderError(w, http.StatusForbidden, "Access Denied", "Your administrative role does not have permission to view site settings.")
 		return
 	}
 	policy, _ := h.svc.GetBookingPolicy(r.Context(), actor, base.Property.ID)
@@ -91,8 +124,13 @@ func (h *Handler) handlePropertyGet(w http.ResponseWriter, r *http.Request, acto
 func (h *Handler) handleBookingPolicyPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Site Settings", "property")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
+	}
+	existingPolicy, _ := h.svc.GetBookingPolicy(r.Context(), actor, base.Property.ID)
+	guestPortalEnabled := existingPolicy.GuestPortalEnabled
+	if h.cfg.GuestPortalEnabled {
+		guestPortalEnabled = r.FormValue("guest_portal_enabled") == "true"
 	}
 	policy := domain.PropertyBookingPolicy{
 		PropertyID:                  base.Property.ID,
@@ -113,6 +151,7 @@ func (h *Handler) handleBookingPolicyPost(w http.ResponseWriter, r *http.Request
 		PetPolicy:                   r.FormValue("pet_policy"),
 		PrivacyNotice:               r.FormValue("privacy_notice"),
 		StripeEnabled:               r.FormValue("stripe_enabled") == "true",
+		GuestPortalEnabled:          guestPortalEnabled,
 		Version:                     parseIntDefault(r.FormValue("version"), 1),
 	}
 	if _, err := h.svc.UpdateBookingPolicy(r.Context(), actor, policy); err != nil {
@@ -125,7 +164,7 @@ func (h *Handler) handleBookingPolicyPost(w http.ResponseWriter, r *http.Request
 func (h *Handler) handlePropertyPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Site Settings", "property")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	p := base.Property
@@ -158,12 +197,12 @@ func (h *Handler) handlePropertyPost(w http.ResponseWriter, r *http.Request, act
 func (h *Handler) handleUnitTypesGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Unit Types", "unit-types")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Unit Types Unavailable", "Unable to load property.")
 		return
 	}
 	uts, err := h.svc.ListUnitTypes(r.Context(), actor, base.Property.ID)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load unit types")
+		h.renderDomainError(w, err, "Unit Types Unavailable", "Unable to load unit types.")
 		return
 	}
 	var editing *domain.UnitType
@@ -190,7 +229,7 @@ func (h *Handler) handleUnitTypesGet(w http.ResponseWriter, r *http.Request, act
 func (h *Handler) handleUnitTypesCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Unit Types", "unit-types")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	ut := unitTypeFromForm(r, base.Property.ID, uuid.Nil)
@@ -209,7 +248,7 @@ func (h *Handler) handleUnitTypesUpdate(w http.ResponseWriter, r *http.Request, 
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Unit Types", "unit-types")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	ut := unitTypeFromForm(r, base.Property.ID, id)
@@ -229,7 +268,7 @@ func (h *Handler) handleUnitTypesArchive(w http.ResponseWriter, r *http.Request,
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Unit Types", "unit-types")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if err := h.svc.ArchiveUnitType(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -275,13 +314,13 @@ func unitTypeFromForm(r *http.Request, propertyID, id uuid.UUID) domain.UnitType
 func (h *Handler) handleUnitsGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Units & Pitches", "units")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Units Unavailable", "Unable to load property.")
 		return
 	}
 	uts, _ := h.svc.ListUnitTypes(r.Context(), actor, base.Property.ID)
 	units, err := h.svc.ListUnits(r.Context(), actor, base.Property.ID, nil)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load units")
+		h.renderDomainError(w, err, "Units Unavailable", "Unable to load units.")
 		return
 	}
 	var editing *domain.Unit
@@ -306,7 +345,7 @@ func (h *Handler) handleUnitsGet(w http.ResponseWriter, r *http.Request, actor s
 func (h *Handler) handleUnitsCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Units & Pitches", "units")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	utID, _ := uuid.Parse(r.FormValue("unit_type_id"))
@@ -336,7 +375,7 @@ func (h *Handler) handleUnitsUpdate(w http.ResponseWriter, r *http.Request, acto
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Units & Pitches", "units")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	utID, _ := uuid.Parse(r.FormValue("unit_type_id"))
@@ -368,7 +407,7 @@ func (h *Handler) handleUnitsArchive(w http.ResponseWriter, r *http.Request, act
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Units & Pitches", "units")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if err := h.svc.ArchiveUnit(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -383,12 +422,12 @@ func (h *Handler) handleUnitsArchive(w http.ResponseWriter, r *http.Request, act
 func (h *Handler) handleExtrasGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Extras & Add-ons", "extras")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Extras Unavailable", "Unable to load property.")
 		return
 	}
 	extras, err := h.svc.ListExtras(r.Context(), actor, base.Property.ID)
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load extras")
+		h.renderDomainError(w, err, "Extras Unavailable", "Unable to load extras.")
 		return
 	}
 	var editing *domain.Extra
@@ -411,7 +450,7 @@ func (h *Handler) handleExtrasGet(w http.ResponseWriter, r *http.Request, actor 
 func (h *Handler) handleExtrasCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Extras & Add-ons", "extras")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	ex := domain.Extra{
@@ -441,7 +480,7 @@ func (h *Handler) handleExtrasUpdate(w http.ResponseWriter, r *http.Request, act
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Extras & Add-ons", "extras")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	ex := domain.Extra{
@@ -473,7 +512,7 @@ func (h *Handler) handleExtrasArchive(w http.ResponseWriter, r *http.Request, ac
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Extras & Add-ons", "extras")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if err := h.svc.ArchiveExtra(r.Context(), actor, base.Property.ID, id); err != nil {

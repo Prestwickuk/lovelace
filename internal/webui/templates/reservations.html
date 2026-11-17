@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="page-header">
   <div>
-    <h1>Reservations</h1>
-    <p class="subtitle">Administrative reservation ledger (manual bookings, occupancy enforcement &amp; lifecycle tracking; payments deferred to Phase 2).</p>
+    <h1>{{if eq .PropertyTerms.StayLabel "Reservation"}}Reservations{{else}}{{.PropertyTerms.StayLabel}}s{{end}}</h1>
+    <p class="subtitle">Administrative {{.PropertyTerms.StayLabel}} ledger (manual bookings, occupancy enforcement &amp; lifecycle tracking; payments deferred to Phase 2).</p>
   </div>
   {{if .CanWriteReservations}}
   <a href="/reservations/new" class="btn btn-primary">+ Create Manual Reservation</a>
@@ -38,26 +38,71 @@
       <input id="end_date" name="end_date" type="date" value="{{.FilterEndDate}}">
     </div>
     <div class="field">
-      <label>&nbsp;</label>
+      <label for="sort">Sort</label>
+      <select id="sort" name="sort">
+        <option value="stay_asc" {{if or (eq .ViewControls.FilterSort "stay_asc") (eq .ViewControls.FilterSort "")}}selected{{end}}>Arrival Date (Earliest First)</option>
+        <option value="stay_desc" {{if eq .ViewControls.FilterSort "stay_desc"}}selected{{end}}>Arrival Date (Latest First)</option>
+        <option value="created_desc" {{if eq .ViewControls.FilterSort "created_desc"}}selected{{end}}>Recently Created</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="page_size">Rows / Page</label>
+      <select id="page_size" name="page_size">
+        <option value="10" {{if eq .ViewControls.PageSize 10}}selected{{end}}>10</option>
+        <option value="25" {{if or (eq .ViewControls.PageSize 25) (eq .ViewControls.PageSize 0)}}selected{{end}}>25</option>
+        <option value="50" {{if eq .ViewControls.PageSize 50}}selected{{end}}>50</option>
+        <option value="100" {{if eq .ViewControls.PageSize 100}}selected{{end}}>100</option>
+      </select>
+    </div>
+    <div class="field field-actions">
       <button type="submit" class="btn btn-secondary">Filter Reservations</button>
     </div>
   </form>
+
+  {{$resViews := savedViewsFor .Workspace "reservations"}}
+  <div class="saved-views-bar">
+    <div class="saved-views-list">
+      <span class="subtitle">Saved Views:</span>
+      {{range $resViews}}
+      <a href="{{savedViewURL .}}" class="btn btn-sm {{if eq .ID $.ViewControls.ActiveSavedViewID}}btn-primary{{else}}btn-secondary{{end}}">{{.Name}}</a>
+      {{else}}
+      <span class="subtitle">None saved yet</span>
+      {{end}}
+    </div>
+    {{if not .Actor.MustRotatePassword}}
+    <form method="post" action="/account/preferences/views" class="inline-row">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.Property.ID}}">
+      <input type="hidden" name="screen" value="reservations">
+      <input type="hidden" name="return_to" value="/reservations">
+      <input type="hidden" name="status" value="{{.FilterStatus}}">
+      <input type="hidden" name="channel_code" value="{{.FilterChannelCode}}">
+      <input type="hidden" name="sort" value="{{.ViewControls.FilterSort}}">
+      <input type="hidden" name="page_size" value="{{.ViewControls.PageSize}}">
+      <label for="res_saved_view_name" class="sr-only">Saved reservation view name</label>
+      <input id="res_saved_view_name" name="name" type="text" maxlength="60" placeholder="Save current view as…" class="input-auto" required>
+      <button type="submit" class="btn btn-secondary btn-sm">Save View</button>
+    </form>
+    {{end}}
+  </div>
 </div>
 
 <div class="card">
-  <h2>Reservation List</h2>
+  <h2>Reservation List ({{.ViewControls.TotalCount}})</h2>
+  {{if .Reservations}}
   <div class="table-wrap">
     <table>
+      <caption class="sr-only">Administrative reservation list</caption>
       <thead>
         <tr>
-          <th>Reference</th>
-          <th>Guest</th>
-          <th>Stay [Arrival → Departure)</th>
-          <th>Units</th>
-          <th>Party</th>
-          <th>Channel</th>
-          <th>Status</th>
-          <th>Action</th>
+          <th scope="col">Reference</th>
+          <th scope="col">Guest</th>
+          <th scope="col">Stay [Arrival → Departure)</th>
+          <th scope="col">Units</th>
+          <th scope="col">Party</th>
+          <th scope="col">Channel</th>
+          <th scope="col">Status</th>
+          <th scope="col">Action</th>
         </tr>
       </thead>
       <tbody>
@@ -76,21 +121,31 @@
           </td>
           <td>{{.Adults}}A / {{.Children}}C / {{.Infants}}I</td>
           <td><span class="badge badge-info">{{.ChannelCode}}</span></td>
-          <td><span class="badge {{statusClass (printf "%s" .Status)}}">{{.Status}}</span></td>
+          <td>{{template "status_badge" (dict "Class" (statusClass (printf "%s" .Status)) "Label" (printf "%s" .Status))}}</td>
           <td><a href="/reservations/{{.ID}}" class="btn btn-secondary btn-sm">View / Manage</a></td>
         </tr>
-        {{else}}
-        <tr><td colspan="8">No reservations matched the current filters.</td></tr>
         {{end}}
       </tbody>
     </table>
   </div>
+  {{if gt .ViewControls.TotalPages 1}}
+  <div class="pagination-bar">
+    <span class="subtitle">Page {{.ViewControls.Page}} of {{.ViewControls.TotalPages}} ({{.ViewControls.TotalCount}} total)</span>
+    <div class="btn-row-gap">
+      {{if .ViewControls.HasPrevPage}}<a class="btn btn-secondary btn-sm" href="/reservations?status={{.FilterStatus}}&channel_code={{.FilterChannelCode}}&start_date={{.FilterStartDate}}&end_date={{.FilterEndDate}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.PrevPage}}">← Prev Page</a>{{end}}
+      {{if .ViewControls.HasNextPage}}<a class="btn btn-secondary btn-sm" href="/reservations?status={{.FilterStatus}}&channel_code={{.FilterChannelCode}}&start_date={{.FilterStartDate}}&end_date={{.FilterEndDate}}&sort={{.ViewControls.FilterSort}}&page_size={{.ViewControls.PageSize}}&page={{.ViewControls.NextPage}}">Next Page →</a>{{end}}
+    </div>
+  </div>
+  {{end}}
+  {{else}}
+  {{template "empty_state" (dict "Title" "No matching reservations" "Body" "No reservations matched the current filters." "ActionURL" "/reservations" "ActionLabel" "Clear filters")}}
+  {{end}}
 </div>
 
 {{if .CanWriteReservations}}
 <div class="card">
   <h2>Booking Sources / Channels</h2>
-  <p class="subtitle">Extensible booking-source classifications (external API sync remains Phase 4).</p>
+  <p class="subtitle">Extensible booking-source classifications managed per property.</p>
   <div class="days-row mb-2">
     {{range .Channels}}
     <span class="badge badge-muted">{{.Code}} ({{.Name}})</span>
@@ -115,8 +170,7 @@
         <option value="other">Other</option>
       </select>
     </div>
-    <div class="field">
-      <label>&nbsp;</label>
+    <div class="field field-actions">
       <button type="submit" class="btn btn-secondary">Add Booking Channel</button>
     </div>
   </form>

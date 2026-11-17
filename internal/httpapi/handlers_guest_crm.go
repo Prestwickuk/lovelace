@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -32,6 +31,8 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/consent", h.requireAuth(true, h.handleRecordGuestConsent))
 	mux.HandleFunc("GET /api/v1/properties/{propertyID}/guests/{guestID}/export", h.requireAuth(false, h.handleExportGuestData))
 	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/anonymize", h.requireAuth(true, h.handleAnonymizeGuest))
+	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/portal/send-verification", h.requireAuth(true, h.handleSendGuestPortalVerification))
+	mux.HandleFunc("POST /api/v1/properties/{propertyID}/guests/{guestID}/portal/revoke-sessions", h.requireAuth(true, h.handleRevokeGuestPortalSessions))
 
 	// Guest enquiries, special requests & complaints.
 	mux.HandleFunc("GET /api/v1/properties/{propertyID}/enquiries", h.requireAuth(false, h.handleListGuestEnquiries))
@@ -62,7 +63,8 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 }
 
 func (h *Handler) handleEmailDeliveryWebhook(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 256*1024))
+	r.Body = http.MaxBytesReader(w, r.Body, 256*1024)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "failed to read webhook payload")
 		return
@@ -351,7 +353,9 @@ func (h *Handler) handleAnonymizeGuest(w http.ResponseWriter, r *http.Request, a
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if !decodeOptionalJSON(w, r, &body) {
+		return
+	}
 	out, err := h.svc.AnonymizeGuest(r.Context(), actor, propID, guestID, body.Reason)
 	if err != nil {
 		writeDomainError(w, err)
@@ -672,7 +676,9 @@ func (h *Handler) handlePreviewTemplate(w http.ResponseWriter, r *http.Request, 
 		ReservationID *uuid.UUID `json:"reservation_id"`
 		EnquiryID     *uuid.UUID `json:"enquiry_id"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if !decodeOptionalJSON(w, r, &body) {
+		return
+	}
 	subj, txt, htm, err := h.svc.PreviewCommunicationTemplateWithEnquiry(r.Context(), actor, propID, templateID, body.GuestID, body.ReservationID, body.EnquiryID)
 	if err != nil {
 		writeDomainError(w, err)
@@ -781,4 +787,41 @@ func (h *Handler) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) handleSendGuestPortalVerification(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, ok := parseUUIDParam(w, r, "propertyID")
+	if !ok {
+		return
+	}
+	guestID, ok := parseUUIDParam(w, r, "guestID")
+	if !ok {
+		return
+	}
+	if err := h.svc.SendGuestPortalVerification(r.Context(), actor, propID, guestID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status": "queued",
+	})
+}
+
+func (h *Handler) handleRevokeGuestPortalSessions(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, ok := parseUUIDParam(w, r, "propertyID")
+	if !ok {
+		return
+	}
+	guestID, ok := parseUUIDParam(w, r, "guestID")
+	if !ok {
+		return
+	}
+	revoked, err := h.svc.RevokeGuestPortalSessions(r.Context(), actor, propID, guestID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"revoked_count": revoked,
+	})
 }

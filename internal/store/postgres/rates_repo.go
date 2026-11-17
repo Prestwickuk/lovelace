@@ -51,6 +51,9 @@ func (s *Store) GetRatePlan(ctx context.Context, db DBTX, propertyID, id uuid.UU
 
 func (s *Store) CreateRatePlan(ctx context.Context, tx pgx.Tx, rp domain.RatePlan) (domain.RatePlan, error) {
 	if rp.IsDefault {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM properties WHERE id = $1 FOR UPDATE`, rp.PropertyID); err != nil {
+			return domain.RatePlan{}, MapErr(err)
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE rate_plans SET is_default = FALSE, updated_at = NOW(), version = version + 1
 			WHERE property_id = $1 AND is_default = TRUE AND archived_at IS NULL
@@ -70,6 +73,9 @@ func (s *Store) CreateRatePlan(ctx context.Context, tx pgx.Tx, rp domain.RatePla
 
 func (s *Store) UpdateRatePlan(ctx context.Context, tx pgx.Tx, rp domain.RatePlan) (domain.RatePlan, error) {
 	if rp.IsDefault {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM properties WHERE id = $1 FOR UPDATE`, rp.PropertyID); err != nil {
+			return domain.RatePlan{}, MapErr(err)
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE rate_plans SET is_default = FALSE, updated_at = NOW(), version = version + 1
 			WHERE property_id = $1 AND id <> $2 AND is_default = TRUE AND archived_at IS NULL
@@ -114,8 +120,8 @@ func (s *Store) ListRateRules(ctx context.Context, propertyID uuid.UUID, ratePla
 		       rr.nightly_rate_pence, rr.min_nights_override, rr.priority, rr.is_active,
 		       rr.version, rr.archived_at, rr.created_at, rr.updated_at
 		FROM rate_rules rr
-		JOIN rate_plans rp ON rp.id = rr.rate_plan_id
-		JOIN unit_types ut ON ut.id = rr.unit_type_id
+		JOIN rate_plans rp ON rp.id = rr.rate_plan_id AND rp.property_id = rr.property_id
+		JOIN unit_types ut ON ut.id = rr.unit_type_id AND ut.property_id = rr.property_id
 		WHERE rr.property_id = $1
 		  AND rr.archived_at IS NULL
 		  AND ($2::uuid IS NULL OR rr.rate_plan_id = $2)
@@ -148,8 +154,8 @@ func (s *Store) GetRateRule(ctx context.Context, db DBTX, propertyID, id uuid.UU
 		       rr.nightly_rate_pence, rr.min_nights_override, rr.priority, rr.is_active,
 		       rr.version, rr.archived_at, rr.created_at, rr.updated_at
 		FROM rate_rules rr
-		JOIN rate_plans rp ON rp.id = rr.rate_plan_id
-		JOIN unit_types ut ON ut.id = rr.unit_type_id
+		JOIN rate_plans rp ON rp.id = rr.rate_plan_id AND rp.property_id = rr.property_id
+		JOIN unit_types ut ON ut.id = rr.unit_type_id AND ut.property_id = rr.property_id
 		WHERE rr.property_id = $1 AND rr.id = $2 AND rr.archived_at IS NULL
 	`, propertyID, id)
 	rr, err := scanRateRule(row)
@@ -173,8 +179,8 @@ func (s *Store) CreateRateRule(ctx context.Context, tx pgx.Tx, rr domain.RateRul
 		       i.nightly_rate_pence, i.min_nights_override, i.priority, i.is_active,
 		       i.version, i.archived_at, i.created_at, i.updated_at
 		FROM inserted i
-		JOIN rate_plans rp ON rp.id = i.rate_plan_id
-		JOIN unit_types ut ON ut.id = i.unit_type_id
+		JOIN rate_plans rp ON rp.id = i.rate_plan_id AND rp.property_id = i.property_id
+		JOIN unit_types ut ON ut.id = i.unit_type_id AND ut.property_id = i.property_id
 	`,
 		rr.ID, rr.PropertyID, rr.RatePlanID, rr.UnitTypeID, rr.Name,
 		domain.FormatDate(rr.StartDate), domain.FormatDate(rr.EndDate),
@@ -207,8 +213,8 @@ func (s *Store) UpdateRateRule(ctx context.Context, tx pgx.Tx, rr domain.RateRul
 		       u.nightly_rate_pence, u.min_nights_override, u.priority, u.is_active,
 		       u.version, u.archived_at, u.created_at, u.updated_at
 		FROM updated u
-		JOIN rate_plans rp ON rp.id = u.rate_plan_id
-		JOIN unit_types ut ON ut.id = u.unit_type_id
+		JOIN rate_plans rp ON rp.id = u.rate_plan_id AND rp.property_id = u.property_id
+		JOIN unit_types ut ON ut.id = u.unit_type_id AND ut.property_id = u.property_id
 	`,
 		rr.ID, rr.PropertyID, rr.RatePlanID, rr.UnitTypeID, rr.Name,
 		domain.FormatDate(rr.StartDate), domain.FormatDate(rr.EndDate),

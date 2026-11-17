@@ -1,0 +1,61 @@
+import { NextRequest, NextResponse } from "next/server";
+import { handlePortalBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
+import { getPropertySlug } from "@/lib/lovelace-api";
+import {
+  assertNoQuerySecrets,
+  assertSameOriginMutation,
+  callLovelacePortal,
+  clearPortalNonceCookie,
+  enforcePortalBffRateLimit,
+  PORTAL_NONCE_COOKIE,
+  setPortalSessionCookie,
+} from "@/lib/portal-bff";
+import type { PortalSessionView } from "@/lib/types";
+
+export async function POST(req: NextRequest) {
+  const limited = enforcePortalBffRateLimit(req, "portal-auth-verify", 15);
+  if (limited) return limited;
+
+  try {
+    assertNoQuerySecrets(req);
+    assertSameOriginMutation(req);
+    const body = await parseJsonObject<{
+      email?: string;
+      code?: string;
+      magic_token?: string;
+      booking_reference?: string;
+    }>(req);
+    const browserNonce = (req.cookies.get(PORTAL_NONCE_COOKIE)?.value || "").trim();
+
+    const upstream = await callLovelacePortal<{
+      session_token: string;
+      session: PortalSessionView;
+    }>(
+      req,
+      "/auth/verify",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          property_slug: getPropertySlug(),
+          purpose: "LOGIN",
+          email: body.email || "",
+          code: body.code || "",
+          magic_token: body.magic_token || "",
+          browser_nonce: browserNonce,
+          booking_reference: body.booking_reference || "",
+        }),
+      },
+      { requireSession: false, requireCsrf: false },
+    );
+
+    const res = NextResponse.json(
+      { session: upstream.session },
+      { status: 200, headers: PRIVATE_NO_STORE_HEADERS },
+    );
+    setPortalSessionCookie(res, upstream.session_token, upstream.session.scope_type);
+    clearPortalNonceCookie(res);
+    return res;
+  } catch (err) {
+    return handlePortalBffError(err);
+  }
+}

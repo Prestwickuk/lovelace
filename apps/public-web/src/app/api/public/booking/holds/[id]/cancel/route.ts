@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cancelPublicHold } from "@/lib/lovelace-api";
-import { handleBffError } from "@/lib/bff-response";
+import { handleBffError, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
 import { checkBffRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function POST(
@@ -13,7 +13,7 @@ export async function POST(
   try {
     const { id } = await context.params;
     const res = await cancelPublicHold(id, rl.clientIp);
-    return NextResponse.json(res);
+    return NextResponse.json(res, { headers: PRIVATE_NO_STORE_HEADERS });
   } catch (err) {
     return handleBffError(err);
   }

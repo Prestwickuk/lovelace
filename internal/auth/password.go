@@ -16,13 +16,30 @@ import (
 )
 
 const (
-	MinPasswordLength = 12
-	argonTime         = 3
-	argonMemoryKiB    = 64 * 1024
-	argonThreads      = 1
-	argonKeyLen       = 32
-	argonSaltLen      = 16
+	MinPasswordLength      = 12
+	MaxPasswordBytes       = 256
+	maxVerifyPasswordBytes = 1024
+	argonTime              = 3
+	argonMemoryKiB         = 64 * 1024
+	argonThreads           = 1
+	argonKeyLen            = 32
+	argonSaltLen           = 16
+
+	minArgonMemoryKiB = 8 * 1024
+	maxArgonMemoryKiB = 256 * 1024
+	minArgonTime      = 1
+	maxArgonTime      = 16
+	minArgonThreads   = 1
+	maxArgonThreads   = 16
+	minArgonSaltLen   = 16
+	maxArgonSaltLen   = 64
+	minArgonKeyLen    = 16
+	maxArgonKeyLen    = 64
 )
+
+// argonSem bounds concurrent Argon2id derivations across the process so unauthenticated
+// login floods cannot exhaust host memory (8 * 64 MiB = 512 MiB typical ceiling).
+var argonSem = make(chan struct{}, 8)
 
 // ValidatePasswordPolicy enforces minimum password strength rules.
 func ValidatePasswordPolicy(password string) error {
@@ -31,7 +48,7 @@ func ValidatePasswordPolicy(password string) error {
 			"password": fmt.Sprintf("must be at least %d characters", MinPasswordLength),
 		})
 	}
-	if len(password) > 256 {
+	if len(password) > MaxPasswordBytes {
 		return domain.NewValidationError(map[string]string{
 			"password": "must not exceed 256 bytes",
 		})
@@ -48,7 +65,9 @@ func HashPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate password salt: %w", err)
 	}
+	argonSem <- struct{}{}
 	hash := argon2.IDKey([]byte(password), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
+	<-argonSem
 	return fmt.Sprintf(
 		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version,
@@ -62,6 +81,9 @@ func HashPassword(password string) (string, error) {
 
 // VerifyPassword verifies a plaintext password against a stored Argon2id PHC hash in constant time.
 func VerifyPassword(password, encodedHash string) (bool, error) {
+	if len(password) > maxVerifyPasswordBytes {
+		return false, errors.New("password exceeds maximum verification length")
+	}
 	parts := strings.Split(encodedHash, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false, errors.New("unsupported password hash format")
@@ -88,17 +110,34 @@ func VerifyPassword(password, encodedHash string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if mem < minArgonMemoryKiB || mem > maxArgonMemoryKiB {
+		return false, errors.New("argon2 memory parameter out of safe bounds")
+	}
+	if iters < minArgonTime || iters > maxArgonTime {
+		return false, errors.New("argon2 time parameter out of safe bounds")
+	}
+	if threads < minArgonThreads || threads > maxArgonThreads {
+		return false, errors.New("argon2 parallelism parameter out of safe bounds")
+	}
 
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
 		return false, err
 	}
+	if len(salt) < minArgonSaltLen || len(salt) > maxArgonSaltLen {
+		return false, errors.New("argon2 salt length out of safe bounds")
+	}
 	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
 		return false, err
 	}
+	if len(expectedHash) < minArgonKeyLen || len(expectedHash) > maxArgonKeyLen {
+		return false, errors.New("argon2 key length out of safe bounds")
+	}
 
+	argonSem <- struct{}{}
 	computed := argon2.IDKey([]byte(password), salt, uint32(iters), uint32(mem), uint8(threads), uint32(len(expectedHash)))
+	<-argonSem
 	return subtle.ConstantTimeCompare(computed, expectedHash) == 1, nil
 }
 

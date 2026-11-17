@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,7 +25,7 @@ type LoginResult struct {
 
 func (s *Service) Login(ctx context.Context, email, password, ip, userAgent, requestID string) (LoginResult, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
-	if email == "" || password == "" {
+	if email == "" || len(email) > 254 || password == "" || len(password) > auth.MaxPasswordBytes {
 		return LoginResult{}, domain.ErrUnauthorized
 	}
 
@@ -148,11 +149,24 @@ func (s *Service) Logout(ctx context.Context, actor Actor) error {
 	})
 }
 
+// effectiveActorPropertyScope returns the authoritative property scope of an actor by checking
+// their persisted admin_users record first (falling back to actor.PropertyID only for synthetic actors).
+// Global owner_admin accounts (admin_users.property_id IS NULL) return nil.
+func (s *Service) effectiveActorPropertyScope(ctx context.Context, db postgres.DBTX, actor Actor) *uuid.UUID {
+	if actor.UserID != uuid.Nil {
+		if u, err := s.store.GetAdminUserByID(ctx, db, actor.UserID); err == nil {
+			return u.PropertyID
+		}
+	}
+	return actor.PropertyID
+}
+
 func (s *Service) ListUsers(ctx context.Context, actor Actor) ([]domain.AdminUser, error) {
 	if err := s.requirePerm(actor, auth.PermUsersManage); err != nil {
 		return nil, err
 	}
-	return s.store.ListAdminUsers(ctx)
+	scopePropID := s.effectiveActorPropertyScope(ctx, nil, actor)
+	return s.store.ListAdminUsers(ctx, scopePropID)
 }
 
 type CreateUserInput struct {
@@ -167,6 +181,12 @@ type CreateUserInput struct {
 func (s *Service) CreateUser(ctx context.Context, actor Actor, in CreateUserInput) (domain.AdminUser, error) {
 	if err := s.requirePerm(actor, auth.PermUsersManage); err != nil {
 		return domain.AdminUser{}, err
+	}
+	// Property-scoped owner_admin accounts cannot create global users or users in another property.
+	if scopePropID := s.effectiveActorPropertyScope(ctx, nil, actor); scopePropID != nil {
+		if in.PropertyID == nil || *in.PropertyID != *scopePropID {
+			return domain.AdminUser{}, domain.ErrForbidden
+		}
 	}
 	u := domain.AdminUser{
 		PropertyID:         in.PropertyID,
@@ -207,7 +227,7 @@ type UpdateUserInput struct {
 	FullName           string
 	Role               domain.Role
 	IsActive           bool
-	MustRotatePassword bool
+	MustRotatePassword *bool
 	Version            int
 }
 
@@ -232,11 +252,24 @@ func (s *Service) UpdateUser(ctx context.Context, actor Actor, in UpdateUserInpu
 		if err != nil {
 			return err
 		}
+		// Property-scoped owner_admin accounts cannot modify global or cross-property users.
+		if scopePropID := s.effectiveActorPropertyScope(ctx, tx, actor); scopePropID != nil {
+			if before.PropertyID == nil || *before.PropertyID != *scopePropID {
+				return domain.ErrForbidden
+			}
+		}
+		if actor.UserID == in.ID && in.Role != before.Role {
+			return domain.NewValidationError(map[string]string{
+				"role": "cannot change your own administrative role",
+			})
+		}
 		next := before
 		next.FullName = strings.TrimSpace(in.FullName)
 		next.Role = in.Role
 		next.IsActive = in.IsActive
-		next.MustRotatePassword = in.MustRotatePassword
+		if in.MustRotatePassword != nil {
+			next.MustRotatePassword = *in.MustRotatePassword
+		}
 		next.Version = in.Version
 
 		updated, err = s.store.UpdateAdminUser(ctx, tx, next)
@@ -252,6 +285,17 @@ func (s *Service) UpdateUser(ctx context.Context, actor Actor, in UpdateUserInpu
 		return s.recordAudit(ctx, tx, actor, updated.PropertyID, "admin_user.updated", "admin_user", updated.ID.String(), auditAdminUserSnapshot(before), auditAdminUserSnapshot(updated))
 	})
 	return updated, err
+}
+
+// SweepStaleAuthState prunes aged login_attempts and long-expired/revoked admin_sessions.
+func (s *Service) SweepStaleAuthState(ctx context.Context) (int64, error) {
+	now := s.nowUTC()
+	attemptRetention := 7 * 24 * time.Hour
+	if s.cfg.LoginWindow*2 > attemptRetention {
+		attemptRetention = s.cfg.LoginWindow * 2
+	}
+	sessionRetention := 30 * 24 * time.Hour
+	return s.store.PruneStaleAuthState(ctx, now.Add(-attemptRetention), now.Add(-sessionRetention))
 }
 
 func (s *Service) ChangeOwnPassword(ctx context.Context, actor Actor, currentPassword, newPassword string) (LoginResult, error) {

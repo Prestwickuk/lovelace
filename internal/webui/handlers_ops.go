@@ -17,10 +17,14 @@ import (
 func (h *Handler) handleRatesGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Rates & Preview", "rates")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
-	plans, _ := h.svc.ListRatePlans(r.Context(), actor, base.Property.ID)
+	plans, pErr := h.svc.ListRatePlans(r.Context(), actor, base.Property.ID)
+	if pErr != nil {
+		h.renderDomainError(w, pErr, "Access Denied", "Unable to load rate plans.")
+		return
+	}
 	uts, _ := h.svc.ListUnitTypes(r.Context(), actor, base.Property.ID)
 	rules, _ := h.svc.ListRateRules(r.Context(), actor, base.Property.ID, nil, nil)
 
@@ -84,7 +88,7 @@ func (h *Handler) handleRatesGet(w http.ResponseWriter, r *http.Request, actor s
 func (h *Handler) handleRatePlanCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Rates", "rates")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	rp := domain.RatePlan{
@@ -106,7 +110,7 @@ func (h *Handler) handleRatePlanCreate(w http.ResponseWriter, r *http.Request, a
 func (h *Handler) handleRateRuleCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Rates", "rates")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	planID, _ := uuid.Parse(r.FormValue("rate_plan_id"))
@@ -159,7 +163,7 @@ func (h *Handler) handleRateRuleArchive(w http.ResponseWriter, r *http.Request, 
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Rates", "rates")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if err := h.svc.ArchiveRateRule(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -174,7 +178,7 @@ func (h *Handler) handleRateRuleArchive(w http.ResponseWriter, r *http.Request, 
 func (h *Handler) handleBlocksCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Availability Blocks", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	unitID, _ := uuid.Parse(r.FormValue("unit_id"))
@@ -211,7 +215,7 @@ func (h *Handler) handleBlocksRelease(w http.ResponseWriter, r *http.Request, ac
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Availability Blocks", "blocks")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	if _, err := h.svc.ReleaseAvailabilityBlock(r.Context(), actor, base.Property.ID, id); err != nil {
@@ -226,7 +230,7 @@ func (h *Handler) handleBlocksRelease(w http.ResponseWriter, r *http.Request, ac
 func (h *Handler) handleUsersGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Admin Users", "users")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	users, err := h.svc.ListUsers(r.Context(), actor)
@@ -246,16 +250,17 @@ func (h *Handler) handleUsersGet(w http.ResponseWriter, r *http.Request, actor s
 func (h *Handler) handleUsersCreate(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Admin Users", "users")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	propID := base.Property.ID
 	_, err = h.svc.CreateUser(r.Context(), actor, service.CreateUserInput{
-		PropertyID: &propID,
-		Email:      r.FormValue("email"),
-		FullName:   r.FormValue("full_name"),
-		Role:       domain.Role(r.FormValue("role")),
-		Password:   r.FormValue("password"),
+		PropertyID:         &propID,
+		Email:              r.FormValue("email"),
+		FullName:           r.FormValue("full_name"),
+		Role:               domain.Role(r.FormValue("role")),
+		Password:           r.FormValue("password"),
+		MustRotatePassword: r.FormValue("must_rotate_password") == "true",
 	})
 	if err != nil {
 		h.redirectErr(w, r, "/users", err)
@@ -270,12 +275,18 @@ func (h *Handler) handleUsersUpdate(w http.ResponseWriter, r *http.Request, acto
 		h.renderError(w, http.StatusBadRequest, "Invalid Request", "invalid id")
 		return
 	}
+	var mustRotate *bool
+	if r.FormValue("must_rotate_password_present") == "1" {
+		v := r.FormValue("must_rotate_password") == "true"
+		mustRotate = &v
+	}
 	_, err = h.svc.UpdateUser(r.Context(), actor, service.UpdateUserInput{
-		ID:       id,
-		FullName: r.FormValue("full_name"),
-		Role:     domain.Role(r.FormValue("role")),
-		IsActive: r.FormValue("is_active") == "true",
-		Version:  parseIntDefault(r.FormValue("version"), 1),
+		ID:                 id,
+		FullName:           r.FormValue("full_name"),
+		Role:               domain.Role(r.FormValue("role")),
+		IsActive:           r.FormValue("is_active") == "true",
+		MustRotatePassword: mustRotate,
+		Version:            parseIntDefault(r.FormValue("version"), 1),
 	})
 	if err != nil {
 		h.redirectErr(w, r, "/users", err)
@@ -287,10 +298,10 @@ func (h *Handler) handleUsersUpdate(w http.ResponseWriter, r *http.Request, acto
 func (h *Handler) handleAccountGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
-	h.renderPage(w, "account.html", base)
+	h.renderAccountPage(w, actor, base)
 }
 
 func (h *Handler) handleAccountPasswordPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
@@ -308,7 +319,7 @@ func (h *Handler) handleAccountPasswordPost(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleAuditGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Audit Log", "audit")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	resType := r.URL.Query().Get("resource_type")

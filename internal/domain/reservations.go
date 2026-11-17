@@ -168,6 +168,8 @@ type Reservation struct {
 	BalanceDuePence         int64             `json:"balance_due_pence"`
 	Currency                string            `json:"currency,omitempty"`
 	OccupantDetails         string            `json:"occupant_details,omitempty"`
+	EstimatedArrivalTime    string            `json:"estimated_arrival_time,omitempty"`
+	GuestArrivalNotes       string            `json:"guest_arrival_notes,omitempty"`
 	InternalNotes           string            `json:"internal_notes"`
 	CancellationReason      string            `json:"cancellation_reason,omitempty"`
 	CancelledAt             *time.Time        `json:"cancelled_at,omitempty"`

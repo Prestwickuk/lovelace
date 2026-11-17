@@ -443,7 +443,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 	}
 	var savedConn channels.ChannelConnection
 	_ = json.Unmarshal(rawJSON, &savedConn)
-	if savedConn.Status != channels.StatusCredentialsSaved || savedConn.HasLiveAdapter || savedConn.CredentialHints["refresh_token"] != "••••9988" {
+	if savedConn.Status != channels.StatusCredentialsSaved || !savedConn.HasLiveAdapter || savedConn.CredentialHints["refresh_token"] != "••••9988" {
 		t.Fatalf("unexpected channel connection payload: %+v", savedConn)
 	}
 

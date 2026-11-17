@@ -1,0 +1,38 @@
+{{define "html_attrs"}}lang="en" data-theme="{{if .Theme.Mode}}{{.Theme.Mode}}{{else}}system{{end}}" data-accent="{{if .Theme.Accent}}{{.Theme.Accent}}{{else}}teal{{end}}" data-contrast="{{if .Theme.Contrast}}{{.Theme.Contrast}}{{else}}standard{{end}}" data-motion="{{if .Theme.Motion}}{{.Theme.Motion}}{{else}}system{{end}}" data-density="{{if .Theme.Density}}{{.Theme.Density}}{{else}}comfortable{{end}}" data-text-scale="{{if .Theme.TextScale}}{{.Theme.TextScale}}{{else}}default{{end}}"{{end}}
+
+{{define "head_assets"}}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="{{.Brand.FullName}}">
+  <meta name="theme-color" content="{{.Brand.Palette.CoastalTeal}}">
+  <link rel="icon" type="image/png" href="{{.Brand.Assets.Favicon}}">
+  <link rel="stylesheet" href="/static/app.css">
+{{end}}
+
+{{define "page_header"}}
+<div class="page-header">
+  <div>
+    <h1>{{index . "Title"}}</h1>
+    {{if index . "Subtitle"}}<p class="subtitle">{{index . "Subtitle"}}</p>{{end}}
+  </div>
+  {{if index . "ActionURL"}}
+  <div class="page-header-actions">
+    <a href="{{index . "ActionURL"}}" class="btn {{if index . "ActionClass"}}{{index . "ActionClass"}}{{else}}btn-primary{{end}}">{{index . "ActionLabel"}}</a>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "status_badge"}}<span class="badge {{index . "Class"}}"><span aria-hidden="true">{{statusGlyph (index . "Class")}}</span> {{index . "Label"}}</span>{{end}}
+
+{{define "empty_state"}}
+<div class="empty-state" role="status">
+  <p class="empty-state-title">{{index . "Title"}}</p>
+  {{if index . "Body"}}<p class="empty-state-body">{{index . "Body"}}</p>{{else if index . "Message"}}<p class="empty-state-body">{{index . "Message"}}</p>{{end}}
+  {{if index . "ActionURL"}}
+  <div class="mt-2">
+    <a href="{{index . "ActionURL"}}" class="btn btn-secondary btn-sm">{{index . "ActionLabel"}}</a>
+  </div>
+  {{end}}
+</div>
+{{end}}

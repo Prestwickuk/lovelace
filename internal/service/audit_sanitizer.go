@@ -33,6 +33,8 @@ const (
 	ruleSHA256
 	ruleCode
 	ruleCodeOrEmpty
+	ruleOpaqueID
+	ruleOpaqueIDOrEmpty
 	ruleIntRange
 	ruleIntOrNullRange
 	ruleIntAuditLogID
@@ -63,6 +65,9 @@ var (
 	reAuditTimezone     = regexp.MustCompile(`^[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}$`)
 	reAuditSHA256       = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 	reAuditCode         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,63}$`)
+	reAuditOpaqueID     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}$`)
+	reAuditHexDigest    = regexp.MustCompile(`^[0-9a-fA-F]{16,64}$`)
+	reAuditHasHexAlpha  = regexp.MustCompile(`[a-fA-F]`)
 	reAuditInt          = regexp.MustCompile(`^-?[0-9]{1,12}$`)
 	reAuditDigits7Plus  = regexp.MustCompile(`^[0-9]{7,}$`)
 	reAuditUKPhoneRun   = regexp.MustCompile(`0[1-35-9][0-9._:/-]{7,}`)
@@ -137,11 +142,16 @@ var auditEnumSets = map[string]map[string]bool{
 	"reservation_changed_field": {
 		"guest_name": true, "guest_email": true, "guest_phone": true, "occupant_details": true,
 		"stay_dates": true, "party_size": true, "channel_code": true, "status": true,
-		"financials": true, "internal_notes": true,
+		"financials": true, "internal_notes": true, "arrival_details": true,
 	},
 	"dismissal_reason_category": {
+		"NOT_DUPLICATE": true, "DISTINCT_PEOPLE": true, "SHARED_CONTACT": true,
+		"HOUSEHOLD": true, "CORPORATE": true, "ANONYMISED": true,
 		"DIFFERENT_PEOPLE": true, "FAMILY_SAME_ADDRESS": true, "CORPORATE_SHARED": true,
 		"TEST_OR_STAFF": true, "OTHER": true,
+	},
+	"consent_status": {
+		"GRANTED": true, "WITHDRAWN": true,
 	},
 	"interaction_type": {
 		"EMAIL_OUTBOUND": true, "EMAIL_INBOUND": true, "PHONE_CALL": true, "IN_PERSON": true,
@@ -167,7 +177,16 @@ var auditEnumSets = map[string]map[string]bool{
 		"LOW": true, "NORMAL": true, "HIGH": true, "URGENT": true,
 	},
 	"enquiry_source": {
-		"PHONE": true, "IN_PERSON": true, "EMAIL": true, "WEB": true, "ADMIN": true,
+		"PHONE": true, "IN_PERSON": true, "EMAIL": true, "WEB": true, "ADMIN": true, "PORTAL": true,
+	},
+	"portal_identity_status": {
+		"ACTIVE": true, "SUSPENDED": true,
+	},
+	"portal_challenge_purpose": {
+		"LOGIN": true, "VERIFY_EMAIL": true, "STEP_UP": true,
+	},
+	"portal_session_scope": {
+		"BOOKING": true, "ACCOUNT": true,
 	},
 	"note_category": {
 		"GENERAL": true, "BOOKING": true, "PREFERENCE": true, "CUSTOMER_SERVICE": true, "OPERATIONAL": true,
@@ -212,7 +231,7 @@ var auditEnumSets = map[string]map[string]bool{
 		"": true, "PASSED": true, "FAILED": true,
 	},
 	"maint_entry_type": {
-		"WORK_STARTED": true, "DIAGNOSIS": true, "PERFORMED": true, "PARTS_USED": true,
+		"WORK_STARTED": true, "DIAGNOSIS": true, "WORK_PERFORMED": true, "PERFORMED": true, "PARTS_USED": true,
 		"ADDITIONAL_WORK": true, "DELAY_REASON": true, "CONTRACTOR_NOTE": true,
 		"COMPLETION_NOTE": true, "GENERAL_NOTE": true, "REOPENED": true,
 	},
@@ -222,9 +241,40 @@ var auditEnumSets = map[string]map[string]bool{
 	"deposit_mode": {
 		"FULL": true, "PERCENTAGE": true, "FIXED": true,
 	},
+	"branding_action": {
+		"updated": true, "logo_uploaded": true, "logo_deleted": true,
+	},
+	"branding_logo_mime": {
+		"image/png": true, "image/jpeg": true, "image/webp": true,
+	},
 	"outbox_status": {
 		"PENDING": true, "PROCESSING": true, "DISPATCHING": true, "DISPATCH_UNKNOWN": true,
 		"CANCEL_REQUESTED": true, "CANCELLED": true, "SENT": true, "FAILED": true,
+	},
+	"channel_ownership_mode": {
+		"LOVELACE_ARI_PROVIDER_BOOKINGS": true, "READ_ONLY_IMPORT": true,
+	},
+	"channel_job_type": {
+		"VERIFY_CONNECTION": true, "DISCOVER_LISTINGS": true, "PUSH_AVAILABILITY": true,
+		"PUSH_RATES": true, "PULL_RESERVATIONS": true, "PROCESS_WEBHOOK_EVENT": true,
+	},
+	"channel_job_status": {
+		"PENDING": true, "RUNNING": true, "SUCCEEDED": true,
+		"FAILED_RETRYABLE": true, "FAILED_TERMINAL": true, "CANCELLED": true,
+	},
+	"channel_import_status": {
+		"IMPORTED": true, "UPDATED": true, "CANCELLED": true,
+		"CONFLICT_OVERBOOKED": true, "UNMAPPED": true, "FAILED": true,
+	},
+	"channel_webhook_status": {
+		"RECEIVED": true, "QUEUED": true, "PROCESSED": true,
+		"CONFLICT": true, "IGNORED": true, "FAILED": true,
+	},
+	"report_export_type": {
+		"booking_line_items": true, "payment_ledger": true, "refund_ledger": true,
+	},
+	"report_export_format": {
+		"csv": true, "json": true,
 	},
 }
 
@@ -244,42 +294,44 @@ var auditMovedCountsAllowedKeys = map[string]bool{
 }
 
 var (
-	rRedacted = auditFieldRule{kind: ruleBoolTrue}
-	rBool     = auditFieldRule{kind: ruleBool}
-	rUUID     = auditFieldRule{kind: ruleUUID}
-	rUUIDNull = auditFieldRule{kind: ruleUUIDOrNull}
-	rUUIDArr  = auditFieldRule{kind: ruleUUIDArray}
-	rTS       = auditFieldRule{kind: ruleTimestamp}
-	rTSNull   = auditFieldRule{kind: ruleTimestampOrNull}
-	rDateTS   = auditFieldRule{kind: ruleDateOrTimestamp}
-	rDateTSN  = auditFieldRule{kind: ruleDateOrTimestampOrNull}
-	rTimeHHMM = auditFieldRule{kind: ruleTimeHHMM}
-	rCurrency = auditFieldRule{kind: ruleCurrency}
-	rCountry  = auditFieldRule{kind: ruleCountryCode}
-	rLocale   = auditFieldRule{kind: ruleLocaleOrEmpty}
-	rTZ       = auditFieldRule{kind: ruleTimezone}
-	rSHA256   = auditFieldRule{kind: ruleSHA256}
-	rCode     = auditFieldRule{kind: ruleCode}
-	rCodeOpt  = auditFieldRule{kind: ruleCodeOrEmpty}
-	rVersion  = auditFieldRule{kind: ruleIntRange, min: 0, max: 100000}
-	rCount    = auditFieldRule{kind: ruleIntRange, min: 0, max: 100000}
-	rParty    = auditFieldRule{kind: ruleIntRange, min: 0, max: 100}
-	rDays365  = auditFieldRule{kind: ruleIntRange, min: 0, max: 365}
-	rDays1_36 = auditFieldRule{kind: ruleIntRange, min: 1, max: 365}
-	rDays1_3N = auditFieldRule{kind: ruleIntOrNullRange, min: 1, max: 365}
-	rNights   = auditFieldRule{kind: ruleIntRange, min: 0, max: 3650}
-	rRetDays  = auditFieldRule{kind: ruleIntRange, min: 1, max: 36500}
-	rPence    = auditFieldRule{kind: ruleIntRange, min: 0, max: 50000000}
-	rBPS      = auditFieldRule{kind: ruleIntRange, min: 0, max: 10000}
-	rPct      = auditFieldRule{kind: ruleIntRange, min: 0, max: 100}
-	rSort     = auditFieldRule{kind: ruleIntRange, min: 0, max: 10000}
-	rHoldMin  = auditFieldRule{kind: ruleIntRange, min: 1, max: 10080}
-	rOffHours = auditFieldRule{kind: ruleIntRange, min: -720, max: 720}
-	rHourNull = auditFieldRule{kind: ruleIntOrNullRange, min: 0, max: 23}
-	rAnchor   = auditFieldRule{kind: ruleIntRange, min: 0, max: 31}
-	rDOWMask  = auditFieldRule{kind: ruleIntRange, min: 0, max: 127}
-	rSizeByte = auditFieldRule{kind: ruleIntRange, min: 0, max: 52428800}
-	rAuditID  = auditFieldRule{kind: ruleIntAuditLogID, min: 1, max: 100000000}
+	rRedacted  = auditFieldRule{kind: ruleBoolTrue}
+	rBool      = auditFieldRule{kind: ruleBool}
+	rUUID      = auditFieldRule{kind: ruleUUID}
+	rUUIDNull  = auditFieldRule{kind: ruleUUIDOrNull}
+	rUUIDArr   = auditFieldRule{kind: ruleUUIDArray}
+	rTS        = auditFieldRule{kind: ruleTimestamp}
+	rTSNull    = auditFieldRule{kind: ruleTimestampOrNull}
+	rDateTS    = auditFieldRule{kind: ruleDateOrTimestamp}
+	rDateTSN   = auditFieldRule{kind: ruleDateOrTimestampOrNull}
+	rTimeHHMM  = auditFieldRule{kind: ruleTimeHHMM}
+	rCurrency  = auditFieldRule{kind: ruleCurrency}
+	rCountry   = auditFieldRule{kind: ruleCountryCode}
+	rLocale    = auditFieldRule{kind: ruleLocaleOrEmpty}
+	rTZ        = auditFieldRule{kind: ruleTimezone}
+	rSHA256    = auditFieldRule{kind: ruleSHA256}
+	rCode      = auditFieldRule{kind: ruleCode}
+	rCodeOpt   = auditFieldRule{kind: ruleCodeOrEmpty}
+	rOpaqueID  = auditFieldRule{kind: ruleOpaqueID}
+	rOpaqueOpt = auditFieldRule{kind: ruleOpaqueIDOrEmpty}
+	rVersion   = auditFieldRule{kind: ruleIntRange, min: 0, max: 100000}
+	rCount     = auditFieldRule{kind: ruleIntRange, min: 0, max: 100000}
+	rParty     = auditFieldRule{kind: ruleIntRange, min: 0, max: 100}
+	rDays365   = auditFieldRule{kind: ruleIntRange, min: 0, max: 365}
+	rDays1_36  = auditFieldRule{kind: ruleIntRange, min: 1, max: 365}
+	rDays1_3N  = auditFieldRule{kind: ruleIntOrNullRange, min: 1, max: 365}
+	rNights    = auditFieldRule{kind: ruleIntRange, min: 0, max: 3650}
+	rRetDays   = auditFieldRule{kind: ruleIntRange, min: 1, max: 36500}
+	rPence     = auditFieldRule{kind: ruleIntRange, min: 0, max: 50000000}
+	rBPS       = auditFieldRule{kind: ruleIntRange, min: 0, max: 10000}
+	rPct       = auditFieldRule{kind: ruleIntRange, min: 0, max: 100}
+	rSort      = auditFieldRule{kind: ruleIntRange, min: 0, max: 10000}
+	rHoldMin   = auditFieldRule{kind: ruleIntRange, min: 1, max: 10080}
+	rOffHours  = auditFieldRule{kind: ruleIntRange, min: -720, max: 720}
+	rHourNull  = auditFieldRule{kind: ruleIntOrNullRange, min: 0, max: 23}
+	rAnchor    = auditFieldRule{kind: ruleIntRange, min: 0, max: 31}
+	rDOWMask   = auditFieldRule{kind: ruleIntRange, min: 0, max: 127}
+	rSizeByte  = auditFieldRule{kind: ruleIntRange, min: 0, max: 52428800}
+	rAuditID   = auditFieldRule{kind: ruleIntAuditLogID, min: 1, max: 100000000}
 )
 
 func rEnum(name string) auditFieldRule    { return auditFieldRule{kind: ruleEnum, enumName: name} }
@@ -308,7 +360,7 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 	},
 	"audit_log": {
 		"redacted": rRedacted, "redaction_id": rUUID, "target_audit_log_id": rAuditID,
-		"target_resource_type": rEnum("resource_type"), "target_resource_id": rCode,
+		"target_resource_type": rEnum("resource_type"), "target_resource_id": rOpaqueID,
 		"redacted_at": rTS,
 	},
 	"availability_block": {
@@ -355,7 +407,39 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 	"channel_connection": {
 		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "provider_code": rCode,
 		"auth_method": rCode, "status": rCode, "has_credentials": rBool, "has_live_adapter": rBool,
-		"credentials_updated_at": rTSNull, "version": rVersion, "created_at": rTS, "updated_at": rTS,
+		"credentials_updated_at": rTSNull, "token_expires_at": rTSNull,
+		"last_verified_at": rTSNull, "last_synced_at": rTSNull, "last_sync_error_code": rCodeOpt,
+		"version": rVersion, "created_at": rTS, "updated_at": rTS,
+	},
+	"channel_external_reservation": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"listing_mapping_id": rUUIDNull, "provider_code": rCode,
+		"external_reservation_id": rOpaqueID, "external_revision": rOpaqueOpt,
+		"reservation_id": rUUIDNull, "import_status": rEnum("channel_import_status"),
+		"created_at": rTS, "updated_at": rTS,
+	},
+	"channel_listing_mapping": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"provider_code": rCode, "external_property_id": rOpaqueOpt, "external_listing_id": rOpaqueID,
+		"external_rate_plan_id": rOpaqueOpt, "unit_type_id": rUUID, "unit_id": rUUIDNull,
+		"rate_plan_id": rUUIDNull, "booking_channel_code": rCode, "currency": rCurrency,
+		"timezone": rTZ, "sync_availability": rBool, "sync_rates": rBool,
+		"sync_reservations": rBool, "ownership_mode": rEnum("channel_ownership_mode"),
+		"is_active": rBool, "version": rVersion, "created_at": rTS, "updated_at": rTS,
+	},
+	"channel_sync_job": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"listing_mapping_id": rUUIDNull, "provider_code": rCode,
+		"job_type": rEnum("channel_job_type"), "status": rEnum("channel_job_status"),
+		"attempts": rCount, "max_attempts": rCount, "fence_epoch": rCount,
+		"last_error_code": rCodeOpt, "started_at": rTSNull, "completed_at": rTSNull,
+		"created_at": rTS, "updated_at": rTS,
+	},
+	"channel_webhook_event": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "channel_connection_id": rUUID,
+		"provider_code": rCode, "external_event_id": rOpaqueID, "event_type": rCode,
+		"signature_verified": rBool, "status": rEnum("channel_webhook_status"),
+		"received_at": rTS, "processed_at": rTSNull,
 	},
 	"communication_automation_rule": {
 		"redacted": rRedacted, "id": rUUID, "property_id": rUUID,
@@ -403,13 +487,25 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"guest_a_id": rUUID, "guest_b_id": rUUID, "reason_category": rEnum("dismissal_reason_category"),
 		"source_guest_id": rUUID, "target_guest_id": rUUID, "merge_event_id": rUUID,
 		"moved_counts": {kind: ruleObjMovedCounts}, "consent_record_id": rUUID,
-		"consent_type": rCodeOpt, "method": rCodeOpt, "source": rCodeOpt,
+		"consent_type": rCodeOpt, "consent_status": rEnum("consent_status"), "method": rCodeOpt, "source": rCodeOpt,
 		"policy_version": rCodeOpt, "occurred_at": rTS, "pending_dispatches": rCount,
-		"requested_guest_id": rUUID,
+		"requested_guest_id": rUUID, "enquiry_id": rUUIDNull,
+	},
+	"guest_portal_identity": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID, "guest_id": rUUID,
+		"status": rEnum("portal_identity_status"), "purpose": rEnum("portal_challenge_purpose"),
+		"challenge_id": rUUIDNull, "sessions_revoked": rCount, "version": rVersion,
+		"email_verified_at": rTSNull, "created_at": rTS, "updated_at": rTS,
+	},
+	"guest_portal_session": {
+		"redacted": rRedacted, "id": rUUID, "session_id": rUUID, "property_id": rUUID,
+		"portal_identity_id": rUUIDNull, "scoped_reservation_id": rUUIDNull,
+		"scope_type": rEnum("portal_session_scope"), "revoked_count": rCount,
+		"idle_expires_at": rTS, "absolute_expires_at": rTS, "revoked_at": rTSNull, "created_at": rTS,
 	},
 	"guest_communication": {
 		"redacted": rRedacted, "id": rUUID, "communication_id": rUUID, "property_id": rUUID,
-		"guest_id": rUUID, "reservation_id": rUUIDNull, "enquiry_id": rUUIDNull,
+		"guest_id": rUUIDNull, "reservation_id": rUUIDNull, "enquiry_id": rUUIDNull,
 		"interaction_type": rEnum("interaction_type"), "direction": rEnum("comm_direction"),
 		"template_id": rUUIDNull, "template_version_id": rUUIDNull, "rule_id": rUUIDNull,
 		"trigger_event": rEnum("trigger_event_or_empty"), "email_outbox_id": rUUIDNull, "outbox_id": rUUIDNull,
@@ -506,8 +602,16 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"resolved_by": rUUIDNull, "resolved_at": rTSNull, "created_at": rTS,
 	},
 	"payment_webhook_event": {
-		"redacted": rRedacted, "event_id": rCode, "event_type": rCode,
+		"redacted": rRedacted, "event_id": rOpaqueID, "event_type": rCode,
 		"event_livemode": rBool, "expected_livemode": rBool, "environment": rCode, "payment_attempt": rCodeOpt,
+	},
+	"property_branding": {
+		"redacted": rRedacted, "property_id": rUUID, "action": rEnum("branding_action"),
+		"schema_version": rCount, "version": rVersion,
+		"has_custom_palette": rBool, "has_terminology_overrides": rBool, "has_logo": rBool,
+		"logo_content_type": rEnum("branding_logo_mime"), "logo_size_bytes": rSizeByte,
+		"logo_sha256": rSHA256, "logo_version": rCount,
+		"created_at": rTS, "updated_at": rTS,
 	},
 	"property": {
 		"redacted": rRedacted, "id": rUUID, "slug": rCode, "country_code": rCountry,
@@ -520,7 +624,7 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"deposit_fixed_pence": rPence, "balance_due_days_before_arrival": rDays365,
 		"extra_adult_nightly_pence": rPence, "child_nightly_pence": rPence,
 		"infant_nightly_pence": rPence, "booking_terms_version": rCodeOpt,
-		"stripe_enabled": rBool, "version": rVersion, "updated_at": rTS,
+		"stripe_enabled": rBool, "guest_portal_enabled": rBool, "version": rVersion, "updated_at": rTS,
 	},
 	"property_retention_policy": {
 		"redacted": rRedacted, "property_id": rUUID, "enquiry_retention_days": rRetDays,
@@ -539,6 +643,12 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"days_of_week": rDOWMask, "nightly_rate_pence": rPence, "min_nights_override": rDays1_3N,
 		"priority": rSort, "is_active": rBool, "version": rVersion, "archived_at": rTSNull,
 		"created_at": rTS, "updated_at": rTS,
+	},
+	"report_export": {
+		"redacted": rRedacted, "id": rUUID, "property_id": rUUID,
+		"export_type": rEnum("report_export_type"), "format": rEnum("report_export_format"),
+		"start_date": rDateTS, "end_date": rDateTS, "currency": rCodeOpt,
+		"row_count": rCount, "created_at": rTS,
 	},
 	"reservation": {
 		"redacted": rRedacted, "id": rUUID, "reservation_id": rUUID, "property_id": rUUID,
@@ -782,6 +892,12 @@ func validateAndFilterAuditValue(v any, rule auditFieldRule) (any, bool, bool) {
 	case ruleCodeOrEmpty:
 		s, ok := validateAuditString(v, 64)
 		return s, ok && isSafeAuditCode(s, true), false
+	case ruleOpaqueID:
+		s, ok := validateAuditString(v, 128)
+		return s, ok && isSafeAuditOpaqueID(s, false), false
+	case ruleOpaqueIDOrEmpty:
+		s, ok := validateAuditString(v, 128)
+		return s, ok && isSafeAuditOpaqueID(s, true), false
 	case ruleIntRange, ruleIntAuditLogID:
 		n, ok := validateAuditIntRange(v, rule.min, rule.max)
 		return n, ok, false
@@ -927,6 +1043,22 @@ func isSafeAuditCode(val string, allowEmpty bool) bool {
 	}
 	compact := reAuditCodeStripper.Replace(val)
 	if reAuditDigits7Plus.MatchString(compact) || reAuditUKPhoneRun.MatchString(val) || reAuditDigitRun9.MatchString(val) {
+		return false
+	}
+	return true
+}
+
+func isSafeAuditOpaqueID(val string, allowEmpty bool) bool {
+	if val == "" {
+		return allowEmpty
+	}
+	if len(val) > 128 || !reAuditOpaqueID.MatchString(val) || strings.Contains(val, "@") {
+		return false
+	}
+	if reAuditHexDigest.MatchString(val) && reAuditHasHexAlpha.MatchString(val) {
+		return true
+	}
+	if reAuditUKPhoneRun.MatchString(val) || domain.ContainsPII(val) {
 		return false
 	}
 	return true
@@ -1157,7 +1289,7 @@ func auditConsentSnapshot(c domain.GuestConsentRecord) map[string]any {
 		"consent_record_id": c.ID,
 		"guest_id":          c.GuestID,
 		"consent_type":      c.ConsentType,
-		"status":            c.Status,
+		"consent_status":    c.Status,
 		"method":            c.Method,
 		"source":            c.Source,
 		"policy_version":    c.PolicyVersion,

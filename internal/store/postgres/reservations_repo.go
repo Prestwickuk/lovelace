@@ -78,6 +78,8 @@ func (s *Store) FindOrCreateGuest(ctx context.Context, tx pgx.Tx, propertyID uui
 			FROM guests
 			WHERE property_id = $1
 			  AND status NOT IN ('MERGED', 'ANONYMIZED')
+			  AND anonymized_at IS NULL
+			  AND erasure_requested_at IS NULL
 			  AND (normalized_email = $2 OR LOWER(email) = $2)
 			ORDER BY created_at ASC
 			LIMIT 1
@@ -149,7 +151,7 @@ func (s *Store) ListReservations(ctx context.Context, propertyID uuid.UUID, f Re
 		       channel_code, lower(stay_range), upper(stay_range),
 		       adults, children, infants, status,
 		       payment_status, total_pence, deposit_pence, amount_paid_pence, balance_due_pence, currency,
-		       occupant_details, internal_notes, cancellation_reason, cancelled_at,
+		       occupant_details, estimated_arrival_time, guest_arrival_notes, internal_notes, cancellation_reason, cancelled_at,
 		       cancellation_requested_at, cancellation_request_note,
 		       created_by, updated_by, version, created_at, updated_at
 		FROM reservations
@@ -201,7 +203,7 @@ func (s *Store) GetReservation(ctx context.Context, db DBTX, propertyID, id uuid
 		       channel_code, lower(stay_range), upper(stay_range),
 		       adults, children, infants, status,
 		       payment_status, total_pence, deposit_pence, amount_paid_pence, balance_due_pence, currency,
-		       occupant_details, internal_notes, cancellation_reason, cancelled_at,
+		       occupant_details, estimated_arrival_time, guest_arrival_notes, internal_notes, cancellation_reason, cancelled_at,
 		       cancellation_requested_at, cancellation_request_note,
 		       created_by, updated_by, version, created_at, updated_at
 		FROM reservations
@@ -255,7 +257,8 @@ func (s *Store) CreateReservation(ctx context.Context, tx pgx.Tx, r domain.Reser
 func (s *Store) UpdateReservation(ctx context.Context, tx pgx.Tx, r domain.Reservation) (domain.Reservation, error) {
 	tag, err := tx.Exec(ctx, `
 		UPDATE reservations
-		SET guest_name = $3,
+		SET guest_id = CASE WHEN $16::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN guest_id ELSE $16 END,
+		    guest_name = $3,
 		    guest_email = $4,
 		    guest_phone = $5,
 		    channel_code = $6,
@@ -272,7 +275,7 @@ func (s *Store) UpdateReservation(ctx context.Context, tx pgx.Tx, r domain.Reser
 	`,
 		r.PropertyID, r.ID, r.GuestName, r.GuestEmail, r.GuestPhone,
 		r.ChannelCode, domain.FormatDate(r.ArrivalDate), domain.FormatDate(r.DepartureDate),
-		r.Adults, r.Children, r.Infants, r.OccupantDetails, r.InternalNotes, r.UpdatedBy, r.Version,
+		r.Adults, r.Children, r.Infants, r.OccupantDetails, r.InternalNotes, r.UpdatedBy, r.Version, r.GuestID,
 	)
 	if err != nil {
 		return domain.Reservation{}, MapErr(err)
@@ -317,6 +320,10 @@ func (s *Store) TransitionReservationStatusWithTasks(
 		now := time.Now().UTC()
 		cancelledAt = now
 	}
+	var updatedBy *uuid.UUID
+	if actorID != uuid.Nil {
+		updatedBy = &actorID
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE reservations
 		SET status = $3,
@@ -326,7 +333,7 @@ func (s *Store) TransitionReservationStatusWithTasks(
 		    version = version + 1,
 		    updated_at = NOW()
 		WHERE property_id = $1 AND id = $2 AND version = $7
-	`, propertyID, id, string(nextStatus), strings.TrimSpace(reason), cancelledAt, actorID, version)
+	`, propertyID, id, string(nextStatus), strings.TrimSpace(reason), cancelledAt, updatedBy, version)
 	if err != nil {
 		return domain.Reservation{}, nil, MapErr(err)
 	}
@@ -356,7 +363,7 @@ func (s *Store) TransitionReservationStatusWithTasks(
 			UPDATE inventory_claims
 			SET status = $3, released_at = NOW(), released_by = $4, updated_at = NOW()
 			WHERE property_id = $1 AND reservation_id = $2 AND status = 'ACTIVE'
-		`, propertyID, id, claimStatus, actorID); err != nil {
+		`, propertyID, id, claimStatus, updatedBy); err != nil {
 			return domain.Reservation{}, nil, MapErr(err)
 		}
 		if nextStatus != domain.ResStatusCheckedOut {
@@ -838,7 +845,7 @@ func scanReservation(r scannable) (domain.Reservation, error) {
 		&res.ChannelCode, &res.ArrivalDate, &res.DepartureDate,
 		&res.Adults, &res.Children, &res.Infants, &status,
 		&res.PaymentStatus, &res.TotalPence, &res.DepositPence, &res.AmountPaidPence, &res.BalanceDuePence, &res.Currency,
-		&res.OccupantDetails, &res.InternalNotes, &res.CancellationReason, &res.CancelledAt,
+		&res.OccupantDetails, &res.EstimatedArrivalTime, &res.GuestArrivalNotes, &res.InternalNotes, &res.CancellationReason, &res.CancelledAt,
 		&res.CancellationRequestedAt, &res.CancellationRequestNote,
 		&res.CreatedBy, &res.UpdatedBy, &res.Version, &res.CreatedAt, &res.UpdatedAt,
 	)

@@ -39,7 +39,7 @@ func (s *Service) GetOperationsCentre(
 	if err != nil {
 		loc = time.UTC
 	}
-	nowLocal := time.Now().In(loc)
+	nowLocal := s.nowUTC().In(loc)
 	todayDate := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, time.UTC)
 
 	selectedDate := todayDate
@@ -69,6 +69,9 @@ func (s *Service) GetOperationsCentre(
 	}
 	canReadReservations := auth.HasPermission(actor.Role, auth.PermReservationsRead)
 	canWriteReservations := auth.HasPermission(actor.Role, auth.PermReservationsWrite)
+	canReadGuests := auth.HasPermission(actor.Role, auth.PermGuestsRead)
+	canReadGuestNotes := auth.HasPermission(actor.Role, auth.PermGuestsNotes)
+	canReadRates := auth.HasPermission(actor.Role, auth.PermRatesRead)
 	var payExceptions []domain.PaymentException
 	var payAnomalies []postgres.OperationsPaymentAnomalyRow
 	if canReadReservations {
@@ -169,16 +172,16 @@ func (s *Service) GetOperationsCentre(
 		}
 
 		var reasons []string
-		if r.CancellationRequestedAt != nil && r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow {
+		if canReadReservations && r.CancellationRequestedAt != nil && r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow {
 			reasons = append(reasons, "Cancellation requested")
 		}
-		if r.PaymentStatus == "FAILED" {
+		if canReadReservations && r.PaymentStatus == "FAILED" {
 			reasons = append(reasons, "Payment failed")
-		} else if r.BalanceDuePence > 0 && (r.PaymentStatus == "UNPAID" || r.PaymentStatus == "PARTIALLY_PAID") &&
+		} else if canReadReservations && r.BalanceDuePence > 0 && (r.PaymentStatus == "UNPAID" || r.PaymentStatus == "PARTIALLY_PAID") &&
 			r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow && r.Status != domain.ResStatusInquiry {
 			reasons = append(reasons, "Balance due")
 		}
-		if st.SpecialRequests != "" || strings.TrimSpace(r.InternalNotes) != "" {
+		if ((canReadReservations || canReadGuests) && st.SpecialRequests != "") || (canReadGuestNotes && strings.TrimSpace(r.InternalNotes) != "") {
 			reasons = append(reasons, "Guest note / request")
 		}
 		if r.ArrivalDate.Equal(selectedDate) && hasUnreadyUnit && r.Status == domain.ResStatusConfirmed {
@@ -189,7 +192,7 @@ func (s *Service) GetOperationsCentre(
 		}
 		if r.Status == domain.ResStatusConfirmed && r.ArrivalDate.Before(todayDate) {
 			reasons = append(reasons, "Missed arrival")
-		} else if r.Status == domain.ResStatusPending && r.ArrivalDate.Before(todayDate) {
+		} else if canReadReservations && r.Status == domain.ResStatusPending && r.ArrivalDate.Before(todayDate) {
 			reasons = append(reasons, "Unconfirmed provisional reservation past arrival date")
 		}
 
@@ -227,6 +230,22 @@ func (s *Service) GetOperationsCentre(
 			AttentionReason:         strings.Join(reasons, " · "),
 			Version:                 r.Version,
 		}
+		if !canReadGuestNotes {
+			item.InternalNotes = ""
+		}
+		if !canReadReservations && !canReadGuests {
+			item.GuestEmail = ""
+			item.GuestPhone = ""
+			item.SpecialRequests = ""
+			item.CancellationRequestedAt = nil
+			item.CancellationRequestNote = ""
+		}
+		if !canReadReservations && !canReadRates {
+			item.PaymentStatus = ""
+			item.TotalPence = 0
+			item.AmountPaidPence = 0
+			item.BalanceDuePence = 0
+		}
 
 		isActiveStatus := r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow
 		if r.ArrivalDate.Equal(selectedDate) {
@@ -234,10 +253,12 @@ func (s *Service) GetOperationsCentre(
 			case domain.ResStatusConfirmed, domain.ResStatusCheckedIn:
 				arrivals = append(arrivals, item)
 			case domain.ResStatusPending:
-				pendingArrivals = append(pendingArrivals, item)
+				if canReadReservations {
+					pendingArrivals = append(pendingArrivals, item)
+				}
 			}
 		}
-		if r.Status == domain.ResStatusInquiry && !r.ArrivalDate.Before(selectedDate.AddDate(0, 0, -7)) && !r.ArrivalDate.After(selectedDate.AddDate(0, 0, 14)) {
+		if canReadReservations && r.Status == domain.ResStatusInquiry && !r.ArrivalDate.Before(selectedDate.AddDate(0, 0, -7)) && !r.ArrivalDate.After(selectedDate.AddDate(0, 0, 14)) {
 			inquiries = append(inquiries, item)
 		}
 		if isActiveStatus && r.DepartureDate.Equal(selectedDate) && (r.Status == domain.ResStatusCheckedIn || r.Status == domain.ResStatusCheckedOut || r.Status == domain.ResStatusConfirmed) {
@@ -246,7 +267,7 @@ func (s *Service) GetOperationsCentre(
 		if !r.ArrivalDate.After(selectedDate) && r.DepartureDate.After(selectedDate) && (r.Status == domain.ResStatusCheckedIn || (!selectedDate.Equal(todayDate) && r.Status == domain.ResStatusConfirmed)) {
 			inHouse = append(inHouse, item)
 		}
-		if item.RequiresAttention && !seenAttentionGuest[r.ID] && r.Status != domain.ResStatusInquiry && (r.ArrivalDate.Equal(selectedDate) || r.DepartureDate.Equal(selectedDate) || (!r.ArrivalDate.After(selectedDate) && r.DepartureDate.After(selectedDate)) || r.CancellationRequestedAt != nil || r.PaymentStatus == "FAILED") {
+		if item.RequiresAttention && !seenAttentionGuest[r.ID] && r.Status != domain.ResStatusInquiry && (r.ArrivalDate.Equal(selectedDate) || r.DepartureDate.Equal(selectedDate) || (!r.ArrivalDate.After(selectedDate) && r.DepartureDate.After(selectedDate)) || (canReadReservations && (r.CancellationRequestedAt != nil || r.PaymentStatus == "FAILED"))) {
 			seenAttentionGuest[r.ID] = true
 			attentionGuests = append(attentionGuests, item)
 		}
@@ -338,6 +359,10 @@ func (s *Service) GetOperationsCentre(
 			departingUnitSeen[ru.UnitID] = true
 			arr, hasNextArr := arrivalsByUnit[ru.UnitID]
 			sameDay := hasNextArr && arr.ReservationID != r.ID
+			depBal := r.BalanceDuePence
+			if !canReadReservations && !canReadRates {
+				depBal = 0
+			}
 			board.GuestDeparting = append(board.GuestDeparting, domain.OpsChangeoverDepartingCard{
 				ReservationID:        r.ID,
 				ReservationReference: r.Reference,
@@ -351,7 +376,7 @@ func (s *Service) GetOperationsCentre(
 				SameDayArrival:       sameDay,
 				NextArrivalGuest:     arr.GuestName,
 				NextArrivalRef:       arr.Reference,
-				BalanceDuePence:      r.BalanceDuePence,
+				BalanceDuePence:      depBal,
 				Currency:             firstNonEmpty(r.Currency, prop.Currency),
 				LateDeparture:        r.DepartureDate.Before(todayDate) || (r.DepartureDate.Equal(todayDate) && lateClockOut),
 				ReservationVersion:   r.Version,
@@ -574,9 +599,13 @@ func (s *Service) GetOperationsCentre(
 	for _, st := range stays {
 		r := st.Reservation
 		resURL := "/reservations/" + r.ID.String()
+		opsStayURL := resURL
+		if !canReadReservations {
+			opsStayURL = "#changeover-board"
+		}
 		curr := firstNonEmpty(r.Currency, prop.Currency)
 
-		if r.CancellationRequestedAt != nil && r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow {
+		if canReadReservations && r.CancellationRequestedAt != nil && r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow {
 			attention = append(attention, domain.OpsAttentionItem{
 				Severity:      domain.SeverityUrgent,
 				Category:      "CANCELLATION_REQUEST",
@@ -587,7 +616,7 @@ func (s *Service) GetOperationsCentre(
 				ReservationID: &r.ID,
 			})
 		}
-		if r.PaymentStatus == "FAILED" && r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow {
+		if canReadReservations && r.PaymentStatus == "FAILED" && r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow {
 			attention = append(attention, domain.OpsAttentionItem{
 				Severity:      domain.SeverityUrgent,
 				Category:      "FAILED_PAYMENT",
@@ -607,7 +636,7 @@ func (s *Service) GetOperationsCentre(
 				Title:         fmt.Sprintf("Late departure · %s (%s)", r.Reference, r.GuestName),
 				Detail:        fmt.Sprintf("Due out %s at %s; guest still checked in.", domain.FormatDate(r.DepartureDate), prop.CheckOutTime),
 				ActionLabel:   "Check out / view",
-				ActionURL:     resURL,
+				ActionURL:     opsStayURL,
 				ReservationID: &r.ID,
 			})
 		}
@@ -618,7 +647,7 @@ func (s *Service) GetOperationsCentre(
 				Title:         fmt.Sprintf("Missed / overdue arrival · %s (%s)", r.Reference, r.GuestName),
 				Detail:        fmt.Sprintf("Confirmed arrival %s has not checked in yet.", domain.FormatDate(r.ArrivalDate)),
 				ActionLabel:   "Check in or No-Show",
-				ActionURL:     resURL,
+				ActionURL:     opsStayURL,
 				ReservationID: &r.ID,
 			})
 		}
@@ -638,7 +667,7 @@ func (s *Service) GetOperationsCentre(
 				}
 			}
 		}
-		if r.BalanceDuePence > 0 && (r.PaymentStatus == "UNPAID" || r.PaymentStatus == "PARTIALLY_PAID") &&
+		if canReadReservations && r.BalanceDuePence > 0 && (r.PaymentStatus == "UNPAID" || r.PaymentStatus == "PARTIALLY_PAID") &&
 			r.Status != domain.ResStatusCancelled && r.Status != domain.ResStatusNoShow && r.Status != domain.ResStatusInquiry {
 			attention = append(attention, domain.OpsAttentionItem{
 				Severity:      domain.SeverityMedium,
@@ -652,7 +681,7 @@ func (s *Service) GetOperationsCentre(
 				Currency:      curr,
 			})
 		}
-		if r.Status == domain.ResStatusPending && !r.ArrivalDate.After(selectedDate.AddDate(0, 0, 7)) {
+		if canReadReservations && r.Status == domain.ResStatusPending && !r.ArrivalDate.After(selectedDate.AddDate(0, 0, 7)) {
 			sev := domain.SeverityMedium
 			if !r.ArrivalDate.After(selectedDate) {
 				sev = domain.SeverityHigh
@@ -667,7 +696,7 @@ func (s *Service) GetOperationsCentre(
 				ReservationID: &r.ID,
 			})
 		}
-		if r.Status == domain.ResStatusInquiry && !r.ArrivalDate.Before(selectedDate.AddDate(0, 0, -7)) && !r.ArrivalDate.After(selectedDate.AddDate(0, 0, 14)) {
+		if canReadReservations && r.Status == domain.ResStatusInquiry && !r.ArrivalDate.Before(selectedDate.AddDate(0, 0, -7)) && !r.ArrivalDate.After(selectedDate.AddDate(0, 0, 14)) {
 			attention = append(attention, domain.OpsAttentionItem{
 				Severity:      domain.SeverityMedium,
 				Category:      "INQUIRY_FOLLOW_UP",

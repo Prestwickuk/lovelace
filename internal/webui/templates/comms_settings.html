@@ -9,22 +9,23 @@
 {{if .FailedEmails}}
 <div class="card mb-3" id="failed-emails">
   <h2>Failed / Bounced Emails Requiring Attention ({{len .FailedEmails}})</h2>
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>Template</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Last Error</th><th></th></tr></thead>
+    <thead><tr><th scope="col">Template</th><th scope="col">Recipient</th><th scope="col">Subject</th><th scope="col">Status</th><th scope="col">Last Error</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {{range .FailedEmails}}
       <tr>
         <td class="mono">{{.Template}}</td>
         <td class="mono">{{.Recipient}}</td>
         <td>{{.Subject}}</td>
-        <td><span class="badge badge-err">{{.Status}}</span> ({{.Attempts}} attempts)</td>
+        <td>{{template "status_badge" (dict "Class" "badge-err" "Label" .Status)}} ({{.Attempts}} attempts)</td>
         <td><small>{{.LastError}}</small></td>
         <td>
           {{if eq .Status "DISPATCH_UNKNOWN"}}
             {{if $.CanReconcileComms}}
-            <form method="post" action="/communications/outbox/{{.OutboxID}}/reconcile" style="display:flex;flex-direction:column;gap:4px;min-width:260px;">
+            <form method="post" action="/communications/outbox/{{.OutboxID}}/reconcile" class="inline-reconcile-form">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <select name="resolution" required>
+              <select name="resolution" aria-label="Dispatch resolution" required>
                 <option value="CONFIRMED_SENT">Confirm Sent (Provider Accepted)</option>
                 <option value="CONFIRMED_FAILED">Confirm Failed (Verified Non-Delivery)</option>
                 <option value="CANCEL">Cancel Without Re-Send (Verified Non-Delivery)</option>
@@ -56,6 +57,7 @@
       {{end}}
     </tbody>
   </table>
+  </div>
 </div>
 {{end}}
 

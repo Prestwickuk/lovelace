@@ -21,12 +21,12 @@ export LOVELACE_BOOTSTRAP_DB="$DB_NAME"
 export LOVELACE_BOOTSTRAP_MIGRATOR_USER="$MIGRATOR_USER"
 export LOVELACE_BOOTSTRAP_APP_USER="$APP_USER"
 
-PGHOST_ARGS=""
+set -- -X -q -v ON_ERROR_STOP=1
 if [ -n "${PGHOST:-}" ]; then
-  PGHOST_ARGS="-h ${PGHOST} -p ${PGPORT:-5432}"
+  set -- "$@" -h "$PGHOST" -p "${PGPORT:-5432}"
 fi
 
-psql -X -q -v ON_ERROR_STOP=1 $PGHOST_ARGS \
+psql "$@" \
   -U "$BOOTSTRAP_USER" \
   -d "$DB_NAME" <<'SQL'
 \getenv db_name LOVELACE_BOOTSTRAP_DB
@@ -132,8 +132,25 @@ BEGIN
     EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', v_app);
 
     IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.schema_migrations FROM PUBLIC';
         EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.schema_migrations FROM %I', v_app);
         EXECUTE format('GRANT SELECT ON TABLE public.schema_migrations TO %I', v_app);
+    END IF;
+    IF to_regclass('public.property_branding_settings') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.property_branding_settings FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.property_branding_settings TO %I', v_app);
+    END IF;
+    IF to_regclass('public.guest_portal_identities') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.guest_portal_identities FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.guest_portal_identities TO %I', v_app);
+    END IF;
+    IF to_regclass('public.guest_portal_challenges') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.guest_portal_challenges FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.guest_portal_challenges TO %I', v_app);
+    END IF;
+    IF to_regclass('public.guest_portal_sessions') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.guest_portal_sessions FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.guest_portal_sessions TO %I', v_app);
     END IF;
 
     -- Harden append-only audit and redaction overlay privileges idempotently across reruns.
@@ -160,6 +177,14 @@ BEGIN
     END IF;
     IF to_regclass('public.guest_consent_records_effective') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT ON TABLE public.guest_consent_records_effective TO %I', v_app);
+    END IF;
+    IF to_regclass('public.unit_status_history') IS NOT NULL THEN
+        EXECUTE format('REVOKE ALL ON TABLE public.unit_status_history FROM PUBLIC, %I', v_app);
+        EXECUTE format('GRANT SELECT, INSERT ON TABLE public.unit_status_history TO %I', v_app);
+    END IF;
+    IF to_regclass('public.inventory_history_gaps') IS NOT NULL THEN
+        EXECUTE format('REVOKE ALL ON TABLE public.inventory_history_gaps FROM PUBLIC, %I', v_app);
+        EXECUTE format('GRANT SELECT ON TABLE public.inventory_history_gaps TO %I', v_app);
     END IF;
     IF to_regprocedure('public.redact_audit_log_entry(uuid,bigint,jsonb,jsonb,jsonb,text,uuid)') IS NOT NULL THEN
         EXECUTE 'REVOKE ALL ON FUNCTION public.redact_audit_log_entry(UUID, BIGINT, JSONB, JSONB, JSONB, TEXT, UUID) FROM PUBLIC';

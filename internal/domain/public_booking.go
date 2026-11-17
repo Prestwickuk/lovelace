@@ -3,13 +3,15 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/tirbach/tir-bach/internal/branding"
 )
 
 const (
@@ -61,6 +63,7 @@ type PropertyBookingPolicy struct {
 	PetPolicy                   string    `json:"pet_policy"`
 	PrivacyNotice               string    `json:"privacy_notice"`
 	StripeEnabled               bool      `json:"stripe_enabled"`
+	GuestPortalEnabled          bool      `json:"guest_portal_enabled"`
 	Version                     int       `json:"version"`
 	UpdatedAt                   time.Time `json:"updated_at"`
 }
@@ -100,28 +103,28 @@ type UnitTypeImage struct {
 
 // PublicPropertyView exposes strictly safe property and branding metadata to the public web frontend.
 type PublicPropertyView struct {
-	ID                uuid.UUID             `json:"id"`
-	Slug              string                `json:"slug"`
-	Name              string                `json:"name"`
-	Tagline           string                `json:"tagline"`
-	PublicDescription string                `json:"public_description"`
-	CountryCode       string                `json:"country_code"`
-	Region            string                `json:"region"`
-	AddressLine1      string                `json:"address_line1,omitempty"`
-	AddressLine2      string                `json:"address_line2,omitempty"`
-	Town              string                `json:"town"`
-	Postcode          string                `json:"postcode"`
-	Timezone          string                `json:"timezone"`
-	Currency          string                `json:"currency"`
-	CheckInTime       string                `json:"check_in_time"`
-	CheckOutTime      string                `json:"check_out_time"`
-	VATRegistered     bool                  `json:"vat_registered"`
-	ContactEmail      string                `json:"contact_email"`
-	ContactPhone      string                `json:"contact_phone"`
-	WebsiteURL        string                `json:"website_url,omitempty"`
-	CustomDomain      string                `json:"custom_domain,omitempty"`
-	Branding          json.RawMessage       `json:"branding"`
-	Policy            PropertyBookingPolicy `json:"policy"`
+	ID                uuid.UUID                       `json:"id"`
+	Slug              string                          `json:"slug"`
+	Name              string                          `json:"name"`
+	Tagline           string                          `json:"tagline"`
+	PublicDescription string                          `json:"public_description"`
+	CountryCode       string                          `json:"country_code"`
+	Region            string                          `json:"region"`
+	AddressLine1      string                          `json:"address_line1,omitempty"`
+	AddressLine2      string                          `json:"address_line2,omitempty"`
+	Town              string                          `json:"town"`
+	Postcode          string                          `json:"postcode"`
+	Timezone          string                          `json:"timezone"`
+	Currency          string                          `json:"currency"`
+	CheckInTime       string                          `json:"check_in_time"`
+	CheckOutTime      string                          `json:"check_out_time"`
+	VATRegistered     bool                            `json:"vat_registered"`
+	ContactEmail      string                          `json:"contact_email"`
+	ContactPhone      string                          `json:"contact_phone"`
+	WebsiteURL        string                          `json:"website_url,omitempty"`
+	CustomDomain      string                          `json:"custom_domain,omitempty"`
+	Branding          branding.PublicPropertyBranding `json:"branding"`
+	Policy            PropertyBookingPolicy           `json:"policy"`
 }
 
 // PublicUnitTypeView exposes customer-facing accommodation details without internal operational notes or unit IDs.
@@ -521,7 +524,13 @@ func ComputePublicQuote(
 
 	var taxTotal int64
 	var taxLines []TaxLine
-	for bps, taxable := range taxByRate {
+	sortedRates := make([]int, 0, len(taxByRate))
+	for bps := range taxByRate {
+		sortedRates = append(sortedRates, bps)
+	}
+	sort.Ints(sortedRates)
+	for _, bps := range sortedRates {
+		taxable := taxByRate[bps]
 		taxAmt := (taxable*int64(bps) + 5000) / 10000
 		taxTotal += taxAmt
 		taxLines = append(taxLines, TaxLine{
@@ -538,8 +547,14 @@ func ComputePublicQuote(
 	var balanceDueDateStr string
 	if balanceDue > 0 {
 		dueDate := startDate.AddDate(0, 0, -policy.BalanceDueDaysBeforeArrival)
-		if dueDate.Before(nowUTC) {
-			// Arrival is inside balance window: collect full payment at checkout.
+		loc, tzErr := time.LoadLocation(strings.TrimSpace(prop.Timezone))
+		if tzErr != nil {
+			loc = time.UTC
+		}
+		nowLocal := nowUTC.In(loc)
+		todayDate := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, time.UTC)
+		if !dueDate.After(todayDate) {
+			// Arrival is on or inside balance window: collect full payment at checkout.
 			depositDue = grandTotal
 			balanceDue = 0
 		} else {
@@ -547,9 +562,13 @@ func ComputePublicQuote(
 		}
 	}
 
-	rawHashInput := fmt.Sprintf("%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%d",
-		prop.ID, ut.ID, preview.StartDate, preview.EndDate,
-		adults, children, infants, grandTotal, depositDue, policy.Version, len(extraLines),
+	var extraHashBuf strings.Builder
+	for _, el := range extraLines {
+		fmt.Fprintf(&extraHashBuf, ",%s:%d:%d:%d", el.ExtraID, el.Quantity, el.UnitPence, el.TotalPence)
+	}
+	rawHashInput := fmt.Sprintf("%s|%s|%s|%s|%s|%d|%d|%d|%d|%d|%d|%s",
+		prop.ID, ut.ID, plan.ID, preview.StartDate, preview.EndDate,
+		adults, children, infants, grandTotal, depositDue, policy.Version, extraHashBuf.String(),
 	)
 	sum := sha256.Sum256([]byte(rawHashInput))
 

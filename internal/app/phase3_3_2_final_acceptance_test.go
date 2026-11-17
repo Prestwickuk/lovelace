@@ -324,7 +324,32 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 		"channel_connection": {
 			"id": uid, "property_id": prop.ID.String(), "provider_code": "beds24",
 			"auth_method": "API_KEY", "status": "CONFIGURED", "has_credentials": true,
-			"has_live_adapter": false, "version": 1, "created_at": nowStr, "updated_at": nowStr,
+			"has_live_adapter": true, "version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_external_reservation": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "beds24", "external_reservation_id": "EXT-101",
+			"import_status": "IMPORTED", "created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_listing_mapping": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "beds24", "external_listing_id": "101",
+			"unit_type_id": uid2, "booking_channel_code": "AIRBNB",
+			"currency": "GBP", "timezone": "Europe/London",
+			"sync_availability": true, "sync_rates": true, "sync_reservations": true,
+			"ownership_mode": "LOVELACE_ARI_PROVIDER_BOOKINGS", "is_active": true,
+			"version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_sync_job": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "beds24", "job_type": "PUSH_RATES", "status": "SUCCEEDED",
+			"attempts": 1, "max_attempts": 5, "fence_epoch": 1,
+			"created_at": nowStr, "updated_at": nowStr,
+		},
+		"channel_webhook_event": {
+			"id": uid, "property_id": prop.ID.String(), "channel_connection_id": uid2,
+			"provider_code": "channex", "external_event_id": "evt-1", "event_type": "booking",
+			"signature_verified": true, "status": "QUEUED", "received_at": nowStr,
 		},
 		"communication_automation_rule": {
 			"id": uid, "property_id": prop.ID.String(), "trigger_event": "PRE_ARRIVAL",
@@ -440,6 +465,12 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"extra_adult_nightly_pence": 1500, "child_nightly_pence": 500, "infant_nightly_pence": 0,
 			"booking_terms_version": "v1", "stripe_enabled": false, "version": 1, "updated_at": nowStr,
 		},
+		"property_branding": {
+			"property_id": prop.ID.String(), "action": "logo_uploaded", "schema_version": 1,
+			"version": 2, "has_custom_palette": true, "has_terminology_overrides": true,
+			"has_logo": true, "logo_content_type": "image/png", "logo_size_bytes": 1024,
+			"logo_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "logo_version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
 		"property_retention_policy": {
 			"property_id": prop.ID.String(), "enquiry_retention_days": 365,
 			"inactive_guest_retention_days": 1095, "comms_retention_days": 365,
@@ -455,6 +486,11 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"start_date": "2026-07-01", "end_date": "2026-08-31", "days_of_week": 127,
 			"nightly_rate_pence": 14500, "min_nights_override": 2, "priority": 10,
 			"is_active": true, "version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
+		"report_export": {
+			"id": uid, "property_id": prop.ID.String(), "export_type": "booking_line_items",
+			"format": "csv", "start_date": "2026-07-01", "end_date": "2026-07-08",
+			"currency": "GBP", "row_count": 4, "created_at": nowStr,
 		},
 		"reservation": {
 			"reservation_id": uid, "reference": "TB-2026-0099", "guest_id": uid2,
@@ -477,11 +513,24 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"max_nights": 14, "is_active": true, "is_public_bookable": true, "sort_order": 1,
 			"version": 1, "created_at": nowStr, "updated_at": nowStr,
 		},
+		"guest_portal_identity": {
+			"id": uid, "property_id": prop.ID.String(), "guest_id": uid,
+			"status": "ACTIVE", "purpose": "LOGIN", "challenge_id": uid,
+			"sessions_revoked": 1, "version": 1, "email_verified_at": nowStr,
+			"created_at": nowStr, "updated_at": nowStr,
+		},
+		"guest_portal_session": {
+			"id": uid, "session_id": uid, "property_id": prop.ID.String(),
+			"portal_identity_id": uid, "scoped_reservation_id": nil,
+			"scope_type": "ACCOUNT", "revoked_count": 1,
+			"idle_expires_at": nowStr, "absolute_expires_at": nowStr,
+			"revoked_at": nil, "created_at": nowStr,
+		},
 	}
 
 	supportedTypes := service.SupportedAuditResourceTypes()
-	if len(supportedTypes) != 37 {
-		t.Fatalf("expected 37 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
+	if len(supportedTypes) != 45 {
+		t.Fatalf("expected 45 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
 	}
 
 	for _, rt := range supportedTypes {

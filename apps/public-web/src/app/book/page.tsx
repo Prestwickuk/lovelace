@@ -60,6 +60,9 @@ export default async function BookPage({
       <SiteHeader
         propertyName={detail?.property.name || "Tir Bach Campsite"}
         region={detail?.property.region || "Pembrokeshire, Wales"}
+        branding={detail?.property.branding}
+        propertySlug={detail?.property.slug}
+        portalEnabled={Boolean(detail?.property.policy?.guest_portal_enabled)}
       />
 
       <main className="container section">

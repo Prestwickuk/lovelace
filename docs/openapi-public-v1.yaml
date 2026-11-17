@@ -12,7 +12,11 @@ servers:
 paths:
   /api/public/v1/properties/{slug}:
     get:
-      summary: Get public property configuration, branding, and booking policies
+      summary: Get public property configuration, allowlisted PWE-4 public branding projection, and booking policies
+      description: >
+        Returns strictly projected public property branding (display_name, tagline, region_label,
+        contrast-verified hex tokens, and safe public logo URL). Admin-only branding, terminology
+        overrides, and internal storage keys are never included.
       parameters:
         - name: slug
           in: path
@@ -21,9 +25,23 @@ paths:
             type: string
       responses:
         "200":
-          description: Public property details and booking policy
+          description: Public property details, PublicPropertyBranding projection, and booking policy
         "404":
           description: Property not found or public booking disabled
+  /api/public/v1/properties/{slug}/logo:
+    get:
+      summary: Serve validated public property logo bytes safely from private storage
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Validated PNG, JPEG, or WebP property logo with X-Content-Type-Options nosniff
+        "404":
+          description: Property or uploaded logo not found
   /api/public/v1/accommodation:
     get:
       summary: List publicly bookable accommodation categories and available extras
@@ -84,6 +102,9 @@ paths:
   /api/public/v1/booking/holds/{id}/cancel:
     post:
       summary: Release an active temporary hold explicitly
+      description: >
+        Returns a sanitized BookingHold response with guest contact PII scrubbed.
+        Confirmed holds cannot be cancelled through public hold release (409 conflict).
       parameters:
         - name: id
           in: path
@@ -93,7 +114,9 @@ paths:
             format: uuid
       responses:
         "200":
-          description: Hold cancelled and claim released
+          description: Hold cancelled and claim released (guest PII omitted from response)
+        "409":
+          description: Hold has already been confirmed into a reservation
   /api/public/v1/checkout:
     post:
       summary: Create idempotent single-active payment attempt and Stripe Checkout Session for an active hold
@@ -159,3 +182,398 @@ paths:
       responses:
         "200":
           description: Cancellation applied or cancellation request recorded for review
+  /api/public/v1/properties/{slug}/portal/auth/challenge:
+    post:
+      summary: Initiate passwordless Guest Portal email OTP and browser-bound magic-link challenge
+      description: >
+        Disabled by default (returns 404 when TIRBACH_GUEST_PORTAL_ENABLED=false or property guest_portal_enabled=false).
+        Always returns uniform 202 Accepted without enumerating whether an active guest profile exists.
+        Queues a single-use 6-digit OTP (stored at rest solely as a server-keyed HMAC-SHA256 digest bound to
+        challenge_id, normalized_email, and normalized_otp) and #t=<magic_token> fragment link via email_outbox
+        (15-minute TTL, max 5 attempts) without writing credentials to guest_communications, and scrubs
+        email_outbox body_text upon SENT or expiry.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      responses:
+        "202":
+          description: Uniform challenge initiation acknowledgement and browser_nonce for BFF HttpOnly cookie binding
+        "400":
+          description: Malformed JSON or forbidden URL query-string credential
+        "403":
+          description: Cross-site Origin rejected
+        "404":
+          description: Property not found or Guest Portal disabled
+        "429":
+          description: Per-IP, per-email, or per-booking-reference rate limit exceeded
+  /api/public/v1/properties/{slug}/portal/auth/verify:
+    post:
+      summary: Redeem 6-digit email OTP or browser-bound magic link by POST to mint a Tier B ACCOUNT portal session
+      description: >
+        Also aliased at POST /api/public/v1/properties/{slug}/portal/auth/redeem.
+        Enforces property isolation (D2), corroborating booking_reference when duplicate unmerged active guest rows share
+        an email (D3, 409 duplicate_guest_verification_required), and live canonical guest status checks.
+        Mints a 60m idle / 7d absolute Tier B session (D8) with HMAC-derived CSRF token.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      responses:
+        "200":
+          description: Session token (stored in HttpOnly SameSite=Lax BFF cookie) and PortalSessionView
+        "401":
+          description: Invalid, expired, replayed, or browser-mismatched challenge
+        "404":
+          description: Property not found or Guest Portal disabled
+        "409":
+          description: Ambiguous duplicate guest records require corroborating booking_reference (duplicate_guest_verification_required)
+        "429":
+          description: Rate limit exceeded
+  /api/public/v1/properties/{slug}/portal/auth/booking-token:
+    post:
+      summary: Exchange booking_reference and confirmation_token for a single-booking Tier A BOOKING portal session
+      description: >
+        Scoped strictly to one exact reservation (2h idle / 12h absolute capped by confirmation token expiry, D1 & D8).
+        Cannot elevate to Tier B account, profile, consent, or privacy-rights endpoints.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      responses:
+        "200":
+          description: Single-booking session token and PortalSessionView
+        "401":
+          description: Invalid, revoked, or expired booking token
+        "404":
+          description: Property not found or Guest Portal disabled
+  /api/public/v1/properties/{slug}/portal/auth/session:
+    get:
+      summary: Inspect active Guest Portal session, scope, step-up freshness, and CSRF token
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+      responses:
+        "200":
+          description: Active PortalSessionView with Cache-Control no-store and Referrer-Policy no-referrer
+        "401":
+          description: Session missing, expired, revoked, or guest anonymized/erasure-locked
+        "404":
+          description: Property not found or Guest Portal disabled
+  /api/public/v1/properties/{slug}/portal/auth/logout:
+    post:
+      summary: Revoke current Guest Portal session immediately
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Session revoked
+        "403":
+          description: Missing or invalid CSRF token or Origin
+  /api/public/v1/properties/{slug}/portal/auth/step-up/challenge:
+    post:
+      summary: Send a fresh 6-digit step-up verification code to the active Tier B verified email
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "202":
+          description: Step-up code queued
+        "401":
+          description: Invalid or expired session
+        "403":
+          description: Requires Tier B ACCOUNT session and valid CSRF token
+  /api/public/v1/properties/{slug}/portal/auth/step-up/verify:
+    post:
+      summary: Confirm 6-digit step-up code to refresh step_up_fresh (<= 15m window, D8)
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Updated PortalSessionView with step_up_fresh=true
+        "401":
+          description: Invalid or expired step-up code
+  /api/public/v1/properties/{slug}/portal/bookings:
+    get:
+      summary: List guest-safe booking summaries authorized for the active session
+      description: >
+        Tier A returns only the single scoped reservation; Tier B returns direct reservations and OTA reservations
+        where the guest holds a verified non-proxy email (D4). Never includes internal_notes, guest_notes, or Stripe provider IDs.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+      responses:
+        "200":
+          description: List of PortalBookingSummary items
+        "401":
+          description: Unauthorized
+  /api/public/v1/properties/{slug}/portal/bookings/{reference}:
+    get:
+      summary: Get guest-safe booking detail, arrival info, and direct-booking quote/payment summary
+      description: >
+        OTA bookings omit property tax invoices/quotes and return billing_notice directing billing, changes, and
+        cancellations to the originating OTA channel (D4).
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+        - $ref: "#/components/parameters/BookingReference"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+      responses:
+        "200":
+          description: PortalBookingDetail
+        "404":
+          description: Booking not found on session
+  /api/public/v1/properties/{slug}/portal/bookings/{reference}/arrival:
+    patch:
+      summary: Update estimated arrival time (HH:MM or HH:MM-HH:MM) and guest arrival notes on an eligible direct booking
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+        - $ref: "#/components/parameters/BookingReference"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Updated PortalBookingDetail
+        "403":
+          description: Invalid CSRF or Origin
+        "409":
+          description: OTA-managed booking (ota_managed_booking) or ineligible reservation status
+        "422":
+          description: Invalid arrival window format or notes length
+  /api/public/v1/properties/{slug}/portal/bookings/{reference}/change-request:
+    post:
+      summary: Submit a request-only booking date or party change for staff review
+      description: >
+        Creates a PORTAL-sourced BOOKING guest_enquiry (capped at 3 open change requests per booking).
+        Never mutates reservations, booking_quotes, or inventory_claims directly.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+        - $ref: "#/components/parameters/BookingReference"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "201":
+          description: Created PortalEnquiryView
+        "409":
+          description: OTA-managed booking, ineligible status, or open change-request limit reached
+  /api/public/v1/properties/{slug}/portal/bookings/{reference}/cancel-request:
+    post:
+      summary: Submit a request-only cancellation on an eligible direct booking (D5)
+      description: >
+        Records cancellation_requested_at for staff review without issuing automated refunds or releasing inventory_claims.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+        - $ref: "#/components/parameters/BookingReference"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Updated PortalBookingDetail with cancellation_requested=true
+        "409":
+          description: OTA-managed booking, duplicate cancellation request, or ineligible status
+  /api/public/v1/properties/{slug}/portal/profile:
+    get:
+      summary: Get Tier B guest contact details, preferred language, consent state, and guest-editable stay preferences
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+      responses:
+        "200":
+          description: PortalProfileView (excludes staff-only preference notes and CRM guest_notes)
+        "403":
+          description: Tier A session cannot access profile
+    patch:
+      summary: Update Tier B telephone, preferred contact method, preferred language (en/cy, D10), and stay preferences
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Updated PortalProfileView
+        "409":
+          description: Profile contact edits restricted while DO_NOT_CONTACT is active (D9)
+        "422":
+          description: Validation error
+  /api/public/v1/properties/{slug}/portal/profile/email-change:
+    post:
+      summary: Initiate primary email change requiring fresh (<= 15m) step-up verification (D8)
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "202":
+          description: Uniform verification code acknowledgement sent to pending email
+        "403":
+          description: Fresh step-up verification required (step_up_required) or invalid CSRF
+  /api/public/v1/properties/{slug}/portal/profile/email-change/confirm:
+    post:
+      summary: Confirm 6-digit code sent to pending email, notify previous address, and revoke other portal sessions
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Updated PortalProfileView with verified_email updated
+        "401":
+          description: Invalid or expired pending-email verification code
+  /api/public/v1/properties/{slug}/portal/consent:
+    post:
+      summary: Append GRANTED or WITHDRAWN marketing email consent record (method=PORTAL)
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "200":
+          description: Updated PortalProfileView with append-only consent_history
+        "409":
+          description: Marketing opt-in suppressed when guest has DO_NOT_CONTACT status (D9)
+  /api/public/v1/properties/{slug}/portal/enquiries:
+    get:
+      summary: List guest-visible support enquiries and non-INTERNAL messages
+      description: >
+        Excludes INTERNAL staff messages, masks staff names as "Reservations Team", and excludes tracked
+        SAR/erasure privacy-rights requests while Section 7.2 identity-assurance gates remain open.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+      responses:
+        "200":
+          description: List of PortalEnquiryView items
+    post:
+      summary: Create a guest-visible PORTAL support enquiry (rate-limited <= 10/hour per session)
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "201":
+          description: Created PortalEnquiryView
+        "429":
+          description: Per-session hourly enquiry limit exceeded
+  /api/public/v1/properties/{slug}/portal/enquiries/{id}/messages:
+    post:
+      summary: Append a guest reply to an open non-privacy-rights support enquiry
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "201":
+          description: Updated PortalEnquiryView
+        "404":
+          description: Enquiry not found or excluded privacy-rights request
+        "409":
+          description: Closed enquiries cannot be reopened from the portal
+  /api/public/v1/properties/{slug}/portal/privacy/sar:
+    post:
+      summary: Submit an authenticated, request-only personal data access request for staff review (D6 & Section 7.2)
+      description: >
+        Requires Tier B ACCOUNT session and fresh (<= 15m) step-up verification (D8).
+        Records a tracked request for staff review without calling ExportGuestData or disclosing prior request status/IDs.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "202":
+          description: Uniform PortalPrivacyRequestReceipt
+        "403":
+          description: Fresh step-up verification required (step_up_required) or invalid CSRF
+  /api/public/v1/properties/{slug}/portal/privacy/erasure:
+    post:
+      summary: Submit an authenticated, request-only personal data erasure request for staff review (D7 & Section 7.2)
+      description: >
+        Requires Tier B ACCOUNT session and fresh (<= 15m) step-up verification (D8). Allowed for DO_NOT_CONTACT guests (D9).
+        Withdraws marketing email consent if currently granted and records a tracked request for staff review without
+        executing immediate self-anonymization or disclosing prior request status/IDs.
+      parameters:
+        - $ref: "#/components/parameters/PropertySlug"
+      security:
+        - PublicBFFKey: []
+          GuestPortalSession: []
+          GuestPortalCSRF: []
+      responses:
+        "202":
+          description: Uniform PortalPrivacyRequestReceipt
+        "403":
+          description: Fresh step-up verification required (step_up_required) or invalid CSRF
+components:
+  parameters:
+    PropertySlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+    BookingReference:
+      name: reference
+      in: path
+      required: true
+      schema:
+        type: string
+  securitySchemes:
+    PublicBFFKey:
+      type: apiKey
+      in: header
+      name: X-Lovelace-Public-Key
+    GuestPortalSession:
+      type: apiKey
+      in: header
+      name: X-Guest-Session
+    GuestPortalCSRF:
+      type: apiKey
+      in: header
+      name: X-Guest-CSRF
+  schemas:
+    PortalPrivacyRequestReceipt:
+      type: object
+      required: [accepted, message]
+      properties:
+        accepted:
+          type: boolean
+        message:
+          type: string

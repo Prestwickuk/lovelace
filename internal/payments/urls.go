@@ -51,6 +51,7 @@ func ValidateCheckoutReturnURL(rawURL string, allowedOrigins []string, approvedD
 
 	reqHost := strings.ToLower(u.Hostname())
 	reqHostPort := strings.ToLower(u.Host)
+	reqPort := u.Port()
 	if reqHost == "" {
 		return "", fmt.Errorf("checkout return URL missing hostname")
 	}
@@ -58,14 +59,14 @@ func ValidateCheckoutReturnURL(rawURL string, allowedOrigins []string, approvedD
 		return "", fmt.Errorf("loopback host %q is prohibited in production", reqHost)
 	}
 
-	if !matchesApprovedOriginOrDomain(scheme, reqHost, reqHostPort, allowedOrigins, approvedDomains, isProduction) {
+	if !matchesApprovedOriginOrDomain(scheme, reqHost, reqHostPort, reqPort, allowedOrigins, approvedDomains, isProduction) {
 		return "", fmt.Errorf("checkout return URL host %q does not match approved public origin or property domain", u.Host)
 	}
 
 	return u.String(), nil
 }
 
-func matchesApprovedOriginOrDomain(scheme, reqHost, reqHostPort string, allowedOrigins []string, approvedDomains []string, isProduction bool) bool {
+func matchesApprovedOriginOrDomain(scheme, reqHost, reqHostPort, reqPort string, allowedOrigins []string, approvedDomains []string, isProduction bool) bool {
 	for _, orig := range allowedOrigins {
 		orig = strings.TrimSpace(orig)
 		if orig == "" {
@@ -87,6 +88,7 @@ func matchesApprovedOriginOrDomain(scheme, reqHost, reqHostPort string, allowedO
 		}
 	}
 
+	isStandardPort := reqPort == "" || (scheme == "https" && reqPort == "443") || (scheme == "http" && reqPort == "80")
 	for _, dom := range approvedDomains {
 		dom = strings.TrimSpace(strings.ToLower(dom))
 		if dom == "" {
@@ -98,8 +100,12 @@ func matchesApprovedOriginOrDomain(scheme, reqHost, reqHostPort string, allowedO
 		if strings.ContainsAny(dom, "/\\@? ") {
 			continue
 		}
-		// Exact host or host:port match only — never wildcard/suffix match subdomains.
-		if dom == reqHostPort || dom == reqHost {
+		// Exact host:port match when domain includes explicit port; otherwise bare host matches standard port only.
+		if strings.Contains(dom, ":") {
+			if dom == reqHostPort {
+				return true
+			}
+		} else if isStandardPort && dom == reqHost {
 			return true
 		}
 	}

@@ -84,6 +84,7 @@ services:
       TIRBACH_ADMIN_PASSWORD: ${TIRBACH_ADMIN_PASSWORD:-tirbach-dev-admin-2026}
       TIRBACH_PUBLIC_ORIGIN: http://127.0.0.1:3000
       TIRBACH_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:-dev-public-bff-secret}
+      TIRBACH_GUEST_PORTAL_ENABLED: ${TIRBACH_GUEST_PORTAL_ENABLED:-false}
       TIRBACH_STRIPE_SANDBOX: ${TIRBACH_STRIPE_SANDBOX:-true}
       TIRBACH_STRIPE_SECRET_KEY: ${TIRBACH_STRIPE_SECRET_KEY:-}
       TIRBACH_STRIPE_WEBHOOK_SECRET: ${TIRBACH_STRIPE_WEBHOOK_SECRET:-whsec_sandbox_dev_only}
@@ -107,6 +108,7 @@ services:
       app:
         condition: service_started
     environment:
+      LOVELACE_ENV: development
       LOVELACE_API_BASE_URL: http://app:8080
       LOVELACE_PROPERTY_SLUG: tir-bach
       LOVELACE_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:-dev-public-bff-secret}

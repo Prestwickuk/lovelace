@@ -17,7 +17,32 @@ export interface PropertyBookingPolicy {
   pet_policy?: string;
   privacy_notice?: string;
   stripe_enabled: boolean;
+  guest_portal_enabled?: boolean;
   version: number;
+}
+
+export interface PublicPropertyBranding {
+  schema_version: number;
+  display_name: string;
+  tagline: string;
+  region_label?: string;
+  primary_color: string;
+  primary_on_color: string;
+  primary_hover_color: string;
+  primary_dark_color?: string;
+  primary_dark_on_color?: string;
+  secondary_color: string;
+  secondary_on_color: string;
+  secondary_hover_color?: string;
+  secondary_dark_color?: string;
+  secondary_dark_on_color?: string;
+  has_custom_palette: boolean;
+  has_logo: boolean;
+  logo_url?: string;
+  logo_alt?: string;
+  logo_width?: number;
+  logo_height?: number;
+  logo_version?: number;
 }
 
 export interface PublicPropertyView {
@@ -38,6 +63,7 @@ export interface PublicPropertyView {
   contact_email: string;
   contact_phone: string;
   website_url: string;
+  branding?: PublicPropertyBranding;
   policy: PropertyBookingPolicy;
 }
 
@@ -257,4 +283,161 @@ export interface ApiErrorEnvelope {
     message: string;
     fields?: Record<string, string>;
   };
+}
+
+export type PortalSessionScope = "BOOKING" | "ACCOUNT";
+
+export interface PortalSessionGuestSummary {
+  full_name: string;
+  verified_email: string;
+  pending_email?: string;
+  preferred_language: string;
+  is_do_not_contact: boolean;
+  marketing_consent_state: string;
+}
+
+export interface PortalSessionView {
+  authenticated: boolean;
+  property_slug: string;
+  property_name: string;
+  scope_type: PortalSessionScope;
+  scoped_booking_reference?: string;
+  csrf_token: string;
+  verified_at: string;
+  step_up_fresh: boolean;
+  idle_expires_at: string;
+  absolute_expires_at: string;
+  guest?: PortalSessionGuestSummary;
+}
+
+export interface PortalBookingUnitView {
+  unit_name: string;
+  unit_type_name: string;
+  adults: number;
+  children: number;
+  infants: number;
+}
+
+export interface PortalBookingSummary {
+  reference: string;
+  status: string;
+  channel_code: string;
+  is_ota_managed: boolean;
+  billing_notice?: string;
+  arrival_date: string;
+  departure_date: string;
+  nights: number;
+  check_in_time: string;
+  check_out_time: string;
+  adults: number;
+  children: number;
+  infants: number;
+  units: PortalBookingUnitView[];
+  payment_status?: string;
+  total_pence?: number;
+  deposit_pence?: number;
+  amount_paid_pence?: number;
+  balance_due_pence?: number;
+  currency?: string;
+  estimated_arrival_time?: string;
+  guest_arrival_notes?: string;
+  cancellation_requested: boolean;
+  can_update_arrival: boolean;
+  can_request_change: boolean;
+  can_request_cancel: boolean;
+}
+
+export interface PortalPaymentSummaryView {
+  amount_pence: number;
+  currency: string;
+  status: string;
+  paid_at?: string;
+}
+
+export interface PortalQuoteLineItemView {
+  description: string;
+  quantity: number;
+  unit_pence: number;
+  total_pence: number;
+}
+
+export interface PortalQuoteSummaryView {
+  currency: string;
+  nights: number;
+  subtotal_pence: number;
+  extras_pence: number;
+  tax_pence: number;
+  total_pence: number;
+  deposit_pence: number;
+  balance_pence: number;
+  line_items?: PortalQuoteLineItemView[];
+}
+
+export interface PortalBookingDetail extends PortalBookingSummary {
+  property_name: string;
+  property_slug: string;
+  contact_email: string;
+  contact_phone: string;
+  cancellation_policy: string;
+  quiet_hours?: string;
+  fire_policy?: string;
+  pet_policy?: string;
+  quote?: PortalQuoteSummaryView;
+  payments?: PortalPaymentSummaryView[];
+}
+
+export interface PortalGuestPreferenceView {
+  category: string;
+  preference_key: string;
+  preference_value: string;
+}
+
+export interface PortalConsentEntryView {
+  consent_type: string;
+  status: string;
+  method: string;
+  occurred_at: string;
+}
+
+export interface PortalProfileView {
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  verified_email: string;
+  pending_email?: string;
+  pending_email_expires_at?: string;
+  phone: string;
+  preferred_contact_method: string;
+  preferred_language: string;
+  is_do_not_contact: boolean;
+  marketing_consent_state: string;
+  consent_history: PortalConsentEntryView[];
+  preferences: PortalGuestPreferenceView[];
+}
+
+export interface PortalEnquiryMessageView {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  sender_role: "GUEST" | "PROPERTY";
+  sender_name: string;
+  body: string;
+  created_at: string;
+}
+
+export interface PortalEnquiryView {
+  id: string;
+  reference: string;
+  reservation_reference?: string;
+  category: string;
+  status: string;
+  subject: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  messages?: PortalEnquiryMessageView[];
+}
+
+export interface PortalPrivacyRequestReceipt {
+  accepted: boolean;
+  message: string;
 }

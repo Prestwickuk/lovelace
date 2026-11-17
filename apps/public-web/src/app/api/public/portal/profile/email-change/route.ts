@@ -1,0 +1,38 @@
+import { NextRequest, NextResponse } from "next/server";
+import { handlePortalBffError, parseJsonObject, PRIVATE_NO_STORE_HEADERS } from "@/lib/bff-response";
+import { getPropertySlug } from "@/lib/lovelace-api";
+import {
+  assertNoQuerySecrets,
+  assertSameOriginMutation,
+  callLovelacePortal,
+  enforcePortalBffRateLimit,
+} from "@/lib/portal-bff";
+
+export async function POST(req: NextRequest) {
+  const limited = enforcePortalBffRateLimit(req, "portal-email-change", 10);
+  if (limited) return limited;
+
+  try {
+    assertNoQuerySecrets(req);
+    assertSameOriginMutation(req);
+    const body = await parseJsonObject<{ new_email?: string }>(req);
+    const res = await callLovelacePortal<{ accepted: boolean; message: string }>(
+      req,
+      "/profile/email-change",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          property_slug: getPropertySlug(),
+          new_email: body.new_email || "",
+        }),
+      },
+      { requireSession: true, requireCsrf: true },
+    );
+    return NextResponse.json(res, {
+      status: 202,
+      headers: PRIVATE_NO_STORE_HEADERS,
+    });
+  } catch (err) {
+    return handlePortalBffError(err);
+  }
+}

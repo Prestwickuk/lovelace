@@ -122,7 +122,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 			filename    TEXT PRIMARY KEY,
 			checksum    TEXT NOT NULL,
 			applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)
+		);
+		DO $$
+		BEGIN
+			IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lovelace_app') THEN
+				REVOKE ALL ON TABLE public.schema_migrations FROM lovelace_app;
+				GRANT SELECT ON TABLE public.schema_migrations TO lovelace_app;
+			END IF;
+		END $$;
 	`); err != nil {
 		return fmt.Errorf("ensure schema_migrations table: %w", err)
 	}

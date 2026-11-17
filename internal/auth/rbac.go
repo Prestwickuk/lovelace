@@ -39,6 +39,8 @@ const (
 	PermCommsWrite         Permission = "comms:write"
 	PermCommsReconcile     Permission = "comms:reconcile"
 	PermCommsTemplates     Permission = "comms:templates"
+	PermReportsRead        Permission = "reports:read"
+	PermReportsExport      Permission = "reports:export"
 )
 
 var rolePermissions = map[domain.Role]map[Permission]bool{
@@ -76,6 +78,8 @@ var rolePermissions = map[domain.Role]map[Permission]bool{
 		PermCommsWrite:         true,
 		PermCommsReconcile:     true,
 		PermCommsTemplates:     true,
+		PermReportsRead:        true,
+		PermReportsExport:      true,
 	},
 	domain.RoleManager: {
 		PermPropertyRead:       true,
@@ -109,6 +113,8 @@ var rolePermissions = map[domain.Role]map[Permission]bool{
 		PermCommsWrite:         true,
 		PermCommsReconcile:     true,
 		PermCommsTemplates:     true,
+		PermReportsRead:        true,
+		PermReportsExport:      true,
 	},
 	domain.RoleStaff: {
 		PermPropertyRead:      true,
@@ -157,6 +163,7 @@ var rolePermissions = map[domain.Role]map[Permission]bool{
 		PermOpsRead:          true,
 		PermMaintenanceRead:  true,
 		PermGuestsRead:       true,
+		PermReportsRead:      true,
 	},
 }
 

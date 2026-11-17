@@ -18,8 +18,12 @@ func NewSandboxProvider(publicOrigin string) *SandboxProvider {
 }
 
 func (p *SandboxProvider) CreateCheckoutSession(req CheckoutRequest) (CheckoutSession, error) {
-	sid := "cs_sandbox_" + strings.ReplaceAll(req.PaymentAttemptID, "-", "")[:16]
-	piID := "pi_sandbox_" + strings.ReplaceAll(req.PaymentAttemptID, "-", "")[:16]
+	cleanID := strings.ReplaceAll(req.PaymentAttemptID, "-", "")
+	if len(cleanID) > 16 {
+		cleanID = cleanID[:16]
+	}
+	sid := "cs_sandbox_" + cleanID
+	piID := "pi_sandbox_" + cleanID
 
 	// Only approved non-sensitive display metadata is placed in the local sandbox query string;
 	// post-payment destination routes are derived strictly on the frontend/backend from hold_ref.

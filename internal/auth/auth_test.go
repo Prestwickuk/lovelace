@@ -28,6 +28,26 @@ func TestPasswordHashingAndPolicy(t *testing.T) {
 	if ok {
 		t.Fatal("expected wrong password to fail verification")
 	}
+
+	// Reject dangerous PHC parameters (p=256 uint8 wraparound, oversized m= DoS, tiny salt).
+	badHashes := []string{
+		"$argon2id$v=19$m=65536,t=3,p=256$c29tZXJhbmRvbXNhbHQxNg$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+		"$argon2id$v=19$m=4194304,t=3,p=1$c29tZXJhbmRvbXNhbHQxNg$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+		"$argon2id$v=19$m=65536,t=99,p=1$c29tZXJhbmRvbXNhbHQxNg$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+		"$argon2id$v=19$m=65536,t=3,p=1$c2hvcnQ$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+	}
+	for _, bh := range badHashes {
+		if ok, err := VerifyPassword("pembrokeshire-meadow-2026", bh); err == nil || ok {
+			t.Fatalf("expected dangerous PHC hash %q to fail verification, got ok=%v err=%v", bh, ok, err)
+		}
+	}
+
+	if !ConstantTimeEqual("secret-token-abc", "secret-token-abc") {
+		t.Fatal("expected equal tokens to match")
+	}
+	if ConstantTimeEqual("short", "secret-token-abc") || ConstantTimeEqual("", "") {
+		t.Fatal("expected unequal or empty tokens not to match")
+	}
 }
 
 func TestRBACMatrix(t *testing.T) {

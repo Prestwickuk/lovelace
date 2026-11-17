@@ -34,6 +34,9 @@ export default async function HomePage() {
       <SiteHeader
         propertyName={prop?.name || "Tir Bach Campsite"}
         region={prop?.region || "Pembrokeshire, Wales"}
+        branding={prop?.branding}
+        propertySlug={prop?.slug}
+        portalEnabled={Boolean(prop?.policy?.guest_portal_enabled)}
       />
 
       <main>

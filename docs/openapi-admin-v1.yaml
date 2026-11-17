@@ -72,7 +72,7 @@ paths:
         - $ref: "#/components/parameters/PropertyID"
       responses:
         "200":
-          description: `OpsMaintenanceSummary` counts and alerts
+          description: "`OpsMaintenanceSummary` counts and alerts"
 
   /api/v1/properties/{propertyID}/maintenance:
     get:
@@ -181,7 +181,7 @@ paths:
 
   /api/v1/properties/{propertyID}/maintenance/attachments/{attachmentID}:
     get:
-      summary: Authenticated attachment download with `X-Content-Type-Options: nosniff`
+      summary: "Authenticated attachment download with `X-Content-Type-Options: nosniff`"
       parameters:
         - $ref: "#/components/parameters/PropertyID"
         - name: attachmentID
@@ -354,7 +354,7 @@ paths:
     get:
       summary: List heuristic duplicate guest candidates with scan completeness metadata (`guests:read`)
       parameters: [{ $ref: "#/components/parameters/PropertyID" }]
-      responses: { "200": { description: Candidate duplicate pairs plus scanned_guests, total_active_guests, and is_complete flags } }
+      responses: { "200": { description: "Candidate duplicate pairs plus scanned_guests, total_active_guests, and is_complete flags" } }
 
   /api/v1/properties/{propertyID}/guests/duplicates/dismiss:
     post:
@@ -501,10 +501,10 @@ paths:
         - $ref: "#/components/parameters/PropertyID"
         - $ref: "#/components/parameters/OutboxID"
       responses:
-        "200": { description: Reconciled outbox item with persisted actor, timestamp, decision, reason_code, and evidence }
-        "403": { description: Forbidden (`comms:reconcile` restricted to owner_admin and manager, active account, property scope) }
-        "409": { description: Outbox item is actively DISPATCHING or not in DISPATCH_UNKNOWN state }
-        "422": { description: Invalid resolution, missing failure evidence, or PII detected in reason/evidence fields }
+        "200": { description: "Reconciled outbox item with persisted actor, timestamp, decision, reason_code, and evidence" }
+        "403": { description: "Forbidden (`comms:reconcile` restricted to owner_admin and manager, active account, property scope)" }
+        "409": { description: "Outbox item is actively DISPATCHING or not in DISPATCH_UNKNOWN state" }
+        "422": { description: "Invalid resolution, missing failure evidence, or PII detected in reason/evidence fields" }
 
   /api/v1/properties/{propertyID}/enquiries:
     get:
@@ -600,6 +600,188 @@ paths:
         "200": { description: Updated advisory retention policy }
         "422": { description: Validation error (including auto_anonymize_enabled=true when worker is inactive) }
 
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/verify:
+    post:
+      summary: Verify provider credentials via live probe and promote connection to CONNECTED (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "200": { description: Verified connection with capability matrix }
+        "401": { description: Provider authentication failed }
+        "422": { description: Invalid configuration or unsupported provider }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/disconnect:
+    post:
+      summary: Disconnect provider, attempt remote webhook deletion, clear local encrypted secrets, and report separated webhook cleanup and token revocation statuses (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: Disconnected connection with separated webhook_delete_status (SUPPORTED/BLOCKED/NOT_IMPLEMENTED/NOT_APPLICABLE) and token_revocation_status (NOT_IMPLEMENTED) } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/listings:
+    get:
+      summary: Discover external listings/apartments/room types and rate plans from provider API (`channels:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: External listing catalog } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/health:
+    get:
+      summary: Fetch Phase 4 connection health, capability statuses, mappings, recent sync jobs, external reservations, and conflicts (`channels:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: Provider health summary } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/mappings:
+    get:
+      summary: List property-scoped external listing mappings for provider (`channels:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses: { "200": { description: Mapping list } }
+    put:
+      summary: Create or update property-scoped external listing mapping (`channels:write`, currency & ownership validated)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "200": { description: Saved mapping }
+        "422": { description: Currency/ownership/validation error }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/mappings/{mappingID}:
+    delete:
+      summary: Delete a channel listing mapping (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+        - $ref: "#/components/parameters/MappingID"
+      responses: { "204": { description: Deleted } }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/sync/preview:
+    post:
+      summary: Preview scope and confirmation requirement prior to pushing availability/rates or pulling bookings (`channels:write`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "200": { description: "Sync scope preview (`requires_confirmation`, item counts, blocked capability notes)" }
+        "422": { description: "Blocked capability (e.g. Lodgify availability) or invalid date range" }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/{providerCode}/sync:
+    post:
+      summary: "Enqueue idempotent durable channel sync jobs (`channels:write`; requires `confirm_scope=true` for multi-listing or >14d pushes)"
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - $ref: "#/components/parameters/ProviderCode"
+      responses:
+        "202": { description: "Queued sync jobs" }
+        "422": { description: "Confirmation required, unverified connection, or capability blocked" }
+
+  /api/v1/properties/{propertyID}/integrations/channel-manager/jobs/process:
+    post:
+      summary: Manually trigger bounded leased processing of due channel sync jobs (`channels:write`)
+      parameters: [{ $ref: "#/components/parameters/PropertyID" }]
+      responses: { "200": { description: Processed job count } }
+
+  /api/v1/webhooks/channels/{providerCode}/{connectionID}:
+    post:
+      summary: Public webhook ingress for Beds24/Smoobu/Lodgify/Channex (signature/secret verified; deduplicated & queued; zero session auth)
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderCode"
+        - $ref: "#/components/parameters/ConnectionID"
+      responses:
+        "202": { description: "Verified and queued for asynchronous hydration" }
+        "200": { description: "Deduplicated replay" }
+        "401": { description: "Missing/invalid signature, expired timestamp, or replayed HMAC nonce" }
+
+  /api/v1/properties/{propertyID}/reports/overview:
+    get:
+      summary: Combined Phase 5 executive reporting overview (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+        - { name: horizon_days, in: query, schema: { type: integer, minimum: 1, maximum: 180 } }
+      responses: { "200": { description: "Combined occupancy, revenue, channels, forecast, and retention snapshot" } }
+
+  /api/v1/properties/{propertyID}/reports/occupancy:
+    get:
+      summary: Historical/forward sellable vs. out-of-order vs. occupied unit-night metrics (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: "Daily, monthly, and unit-type occupancy report" } }
+
+  /api/v1/properties/{propertyID}/reports/revenue:
+    get:
+      summary: Per-currency booked accommodation/extras/tax/ADR/RevPAR and local-date cash/refund flows (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+      responses: { "200": { description: Revenue report strictly grouped by currency } }
+
+  /api/v1/properties/{propertyID}/reports/channels:
+    get:
+      summary: Booking-channel performance & Phase 4 unmapped/conflict completeness diagnostics (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+      responses: { "200": { description: Channel comparison rows and completeness notices } }
+
+  /api/v1/properties/{propertyID}/reports/seasons:
+    get:
+      summary: Side-by-side seasonal comparison (peak/shoulder/off_peak/custom) (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: season, in: query, schema: { type: string, enum: [peak, shoulder, off_peak, custom] } }
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: compare_start, in: query, schema: { type: string, format: date } }
+        - { name: compare_end, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: Seasonal comparison report } }
+
+  /api/v1/properties/{propertyID}/reports/forecast:
+    get:
+      summary: Strictly read-only On-The-Books vs. conservative trailing-90d benchmark forecast (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: as_of_date, in: query, schema: { type: string, format: date } }
+        - { name: horizon_days, in: query, schema: { type: integer, minimum: 1, maximum: 180 } }
+      responses: { "200": { description: Forward forecast report } }
+
+  /api/v1/properties/{propertyID}/reports/retention:
+    get:
+      summary: Privacy-safe aggregate repeat-guest analytics over merged_into_guest_id lineage (`reports:read`)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: Aggregate guest retention counts (zero PII or guest IDs) } }
+
+  /api/v1/properties/{propertyID}/reports/accounting-export:
+    get:
+      summary: Repeatable PII-free, formula-safe accounting export (`reports:export`; audited as report.exported)
+      parameters:
+        - $ref: "#/components/parameters/PropertyID"
+        - { name: type, in: query, schema: { type: string, enum: [booking_line_items, payment_ledger, refund_ledger] } }
+        - { name: format, in: query, schema: { type: string, enum: [csv, json] } }
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: currency, in: query, schema: { type: string, pattern: "^[A-Z]{3}$" } }
+      responses:
+        "200": { description: "CSV attachment or JSON accounting export payload" }
+        "403": { description: "Requires reports:export (owner_admin or manager) and same-property scope" }
+
 components:
   securitySchemes:
     adminSessionCookie:
@@ -664,6 +846,21 @@ components:
       schema: { type: string, format: uuid }
     RuleID:
       name: ruleID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProviderCode:
+      name: providerCode
+      in: path
+      required: true
+      schema: { type: string, enum: [beds24, smoobu, lodgify, channex] }
+    MappingID:
+      name: mappingID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConnectionID:
+      name: connectionID
       in: path
       required: true
       schema: { type: string, format: uuid }

@@ -34,10 +34,13 @@ func GenerateCSRFToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// ConstantTimeEqual compares two strings in constant time.
+// ConstantTimeEqual compares two non-empty strings in constant time without
+// leaking secret length via early length-mismatch branching.
 func ConstantTimeEqual(a, b string) bool {
-	if len(a) == 0 || len(a) != len(b) {
+	if len(a) == 0 || len(b) == 0 {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+	da := sha256.Sum256([]byte(a))
+	db := sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(da[:], db[:]) == 1 && len(a) == len(b)
 }

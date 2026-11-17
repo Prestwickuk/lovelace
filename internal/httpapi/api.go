@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/config"
 	"github.com/tirbach/tir-bach/internal/domain"
 	"github.com/tirbach/tir-bach/internal/httpx"
@@ -19,24 +20,30 @@ import (
 
 // Handler serves /healthz, /readyz, and /api/v1/*.
 type Handler struct {
-	svc                 *service.Service
-	store               *postgres.Store
-	cfg                 config.Config
-	publicGlobalLimiter *httpx.PublicRateLimiter
-	publicReadLimiter   *httpx.PublicRateLimiter
-	publicWriteLimiter  *httpx.PublicRateLimiter
-	publicLookupLimiter *httpx.PublicRateLimiter
+	svc                   *service.Service
+	store                 *postgres.Store
+	cfg                   config.Config
+	publicGlobalLimiter   *httpx.PublicRateLimiter
+	publicReadLimiter     *httpx.PublicRateLimiter
+	publicWriteLimiter    *httpx.PublicRateLimiter
+	publicLookupLimiter   *httpx.PublicRateLimiter
+	portalAuthLimiter     *httpx.PublicRateLimiter
+	portalMutationLimiter *httpx.PublicRateLimiter
+	portalEnquiryLimiter  *httpx.PublicRateLimiter
 }
 
 func New(svc *service.Service, store *postgres.Store, cfg config.Config) *Handler {
 	return &Handler{
-		svc:                 svc,
-		store:               store,
-		cfg:                 cfg,
-		publicGlobalLimiter: httpx.NewPublicRateLimiter(600, time.Minute),
-		publicReadLimiter:   httpx.NewPublicRateLimiter(180, time.Minute),
-		publicWriteLimiter:  httpx.NewPublicRateLimiter(30, time.Minute),
-		publicLookupLimiter: httpx.NewPublicRateLimiter(20, time.Minute),
+		svc:                   svc,
+		store:                 store,
+		cfg:                   cfg,
+		publicGlobalLimiter:   httpx.NewPublicRateLimiter(600, time.Minute),
+		publicReadLimiter:     httpx.NewPublicRateLimiter(180, time.Minute),
+		publicWriteLimiter:    httpx.NewPublicRateLimiter(30, time.Minute),
+		publicLookupLimiter:   httpx.NewPublicRateLimiter(20, time.Minute),
+		portalAuthLimiter:     httpx.NewPublicRateLimiter(10, time.Minute),
+		portalMutationLimiter: httpx.NewPublicRateLimiter(20, time.Minute),
+		portalEnquiryLimiter:  httpx.NewPublicRateLimiter(10, time.Hour),
 	}
 }
 
@@ -96,7 +103,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerOperationsRoutes(mux)
 	h.registerMaintenanceRoutes(mux)
 	h.registerGuestCRMRoutes(mux)
+	h.registerReportRoutes(mux)
+	h.registerWorkspaceRoutes(mux)
+	h.registerPropertyBrandingRoutes(mux)
 	h.registerPublicRoutes(mux)
+	h.registerPublicPortalRoutes(mux)
 }
 
 type authedHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -133,30 +144,33 @@ func (h *Handler) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	report := h.svc.Readiness(r.Context())
-	if !report.Ready {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"status":      "not_ready",
-			"ready":       false,
-			"database":    report.Database,
-			"payments":    report.Payments,
-			"email":       report.Email,
-			"public_api":  report.Public,
-			"attachments": report.Attachments,
-		})
-		return
+	att := report.Attachments
+	if att.Status != "ok" && att.Detail != "" {
+		// Avoid disclosing internal host filesystem paths on unauthenticated /readyz responses.
+		att.Detail = "attachment storage unavailable"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ready",
-		"ready":       true,
+	statusStr := "ready"
+	httpCode := http.StatusOK
+	if !report.Ready {
+		statusStr = "not_ready"
+		httpCode = http.StatusServiceUnavailable
+	}
+	writeJSON(w, httpCode, map[string]any{
+		"status":      statusStr,
+		"ready":       report.Ready,
 		"database":    report.Database,
 		"payments":    report.Payments,
 		"email":       report.Email,
 		"public_api":  report.Public,
-		"attachments": report.Attachments,
+		"attachments": att,
 	})
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !httpx.IsSameOriginBrowserMutation(r, h.cfg) {
+		writeError(w, http.StatusForbidden, "origin_invalid", "cross-origin login requests are not permitted")
+		return
+	}
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -265,7 +279,7 @@ func (h *Handler) handleUpdateUser(w http.ResponseWriter, r *http.Request, actor
 		FullName           string      `json:"full_name"`
 		Role               domain.Role `json:"role"`
 		IsActive           bool        `json:"is_active"`
-		MustRotatePassword bool        `json:"must_rotate_password"`
+		MustRotatePassword *bool       `json:"must_rotate_password"`
 		Version            int         `json:"version"`
 	}
 	if !decodeJSON(w, r, &body) {
@@ -351,6 +365,27 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if r.Body == nil || r.Body == http.NoBody {
+		return true
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, httpx.MaxJSONBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		if errors.Is(err, io.EOF) {
+			return true
+		}
+		writeError(w, http.StatusBadRequest, "invalid_json", "malformed or invalid JSON request body")
+		return false
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must contain a single JSON object")
+		return false
+	}
+	return true
+}
+
 func parseUUIDParam(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	raw := r.PathValue(name)
 	id, err := uuid.Parse(raw)
@@ -389,6 +424,18 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, service.ErrPortalDisabled):
+		writeError(w, http.StatusNotFound, "not_found", "requested resource was not found")
+	case errors.Is(err, service.ErrPortalCSRFInvalid):
+		writeError(w, http.StatusForbidden, "csrf_invalid", "missing or invalid portal CSRF token")
+	case errors.Is(err, service.ErrPortalStepUpRequired):
+		writeError(w, http.StatusForbidden, "step_up_required", "recent email verification (within 15 minutes) is required for this security or privacy action")
+	case errors.Is(err, service.ErrPortalDoNotContactRestricted):
+		writeError(w, http.StatusForbidden, "do_not_contact_restricted", "this action is restricted while do-not-contact status is active on your profile")
+	case errors.Is(err, service.ErrPortalDuplicateDisambiguation):
+		writeError(w, http.StatusConflict, "duplicate_guest_verification_required", "please provide a booking reference to corroborate which booking profile belongs to you")
+	case errors.Is(err, service.ErrPortalOTAManaged):
+		writeError(w, http.StatusConflict, "ota_managed_booking", "this booking is managed through its original external booking platform")
 	case errors.Is(err, domain.ErrUnauthorized):
 		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required or invalid credentials")
 	case errors.Is(err, domain.ErrPasswordRotationRequired):
@@ -409,6 +456,20 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "conflict", "resource conflict or stale version")
 	case errors.Is(err, domain.ErrRateLimited):
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many failed attempts; please try again later")
+	case errors.Is(err, domain.ErrChannelSyncBlocked), errors.Is(err, channels.ErrOperationBlocked):
+		writeError(w, http.StatusUnprocessableEntity, "capability_blocked", err.Error())
+	case errors.Is(err, domain.ErrChannelConfirmationRequired):
+		writeError(w, http.StatusUnprocessableEntity, "confirmation_required", "broad live sync requires explicit confirm_scope=true confirmation")
+	case errors.Is(err, domain.ErrChannelWebhookUnauthorized), errors.Is(err, channels.ErrWebhookVerificationFailed):
+		writeError(w, http.StatusUnauthorized, "webhook_unauthorized", "channel webhook verification failed")
+	case errors.Is(err, channels.ErrAuthFailed), errors.Is(err, channels.ErrTokenExpired):
+		writeError(w, http.StatusUnprocessableEntity, "provider_auth_failed", "channel provider authentication failed")
+	case errors.Is(err, channels.ErrRateLimited):
+		writeError(w, http.StatusTooManyRequests, "provider_rate_limited", "channel provider rate limit exceeded")
+	case errors.Is(err, channels.ErrInvalidInput):
+		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
+	case errors.Is(err, channels.ErrProviderUnavailable), errors.Is(err, channels.ErrInvalidResponse), errors.Is(err, channels.ErrRedirectBlocked), errors.Is(err, channels.ErrResponseTooLarge):
+		writeError(w, http.StatusBadGateway, "provider_error", "channel provider communication error")
 	case errors.Is(err, domain.ErrValidation):
 		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
 	default:

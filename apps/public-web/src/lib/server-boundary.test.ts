@@ -18,20 +18,19 @@ function listFiles(dir: string): string[] {
 describe("Public frontend server-only credential boundaries", () => {
   const rootDir = path.resolve(__dirname, "../..");
 
-  it("marks lovelace-api and bff-response with explicit import 'server-only'", () => {
-    const apiSource = fs.readFileSync(
-      path.join(rootDir, "src/lib/lovelace-api.ts"),
-      "utf8",
-    );
-    const bffSource = fs.readFileSync(
-      path.join(rootDir, "src/lib/bff-response.ts"),
-      "utf8",
-    );
-    expect(apiSource.startsWith('import "server-only";')).toBe(true);
-    expect(bffSource.startsWith('import "server-only";')).toBe(true);
+  it("marks lovelace-api, bff-response, portal-bff, and portal-server with explicit import 'server-only'", () => {
+    for (const rel of [
+      "src/lib/lovelace-api.ts",
+      "src/lib/bff-response.ts",
+      "src/lib/portal-bff.ts",
+      "src/lib/portal-server.ts",
+    ]) {
+      const src = fs.readFileSync(path.join(rootDir, rel), "utf8");
+      expect(src.startsWith('import "server-only";')).toBe(true);
+    }
   });
 
-  it("never imports server-only helpers or references LOVELACE_PUBLIC_API_SECRET in client components", () => {
+  it("never imports server-only helpers, /api/v1/ admin routes, or LOVELACE_PUBLIC_API_SECRET in client components", () => {
     const srcFiles = listFiles(path.join(rootDir, "src"));
     for (const file of srcFiles) {
       const text = fs.readFileSync(file, "utf8");
@@ -42,8 +41,24 @@ describe("Public frontend server-only credential boundaries", () => {
       ) {
         expect(text).not.toContain("lovelace-api");
         expect(text).not.toContain("bff-response");
+        expect(text).not.toContain("portal-bff");
+        expect(text).not.toContain("portal-server");
         expect(text).not.toContain("LOVELACE_PUBLIC_API_SECRET");
+        expect(text).not.toContain("/api/v1/");
       }
+    }
+  });
+
+  it("never stores Guest Portal credentials in localStorage or sessionStorage", () => {
+    const portalFiles = [
+      ...listFiles(path.join(rootDir, "src/components/portal")),
+      ...listFiles(path.join(rootDir, "src/app/portal")),
+      path.join(rootDir, "src/lib/portal-client.ts"),
+    ];
+    for (const file of portalFiles) {
+      const text = fs.readFileSync(file, "utf8");
+      expect(text).not.toContain("localStorage");
+      expect(text).not.toContain("sessionStorage");
     }
   });
 

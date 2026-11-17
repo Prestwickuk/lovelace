@@ -1,13 +1,16 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,12 +34,19 @@ type Handler struct {
 	svc       *service.Service
 	cfg       config.Config
 	brand     branding.PlatformBrand
+	theme     branding.ThemeSelection
 	loginTmpl *template.Template
 	errorTmpl *template.Template
 	pages     map[string]*template.Template
 }
 
+// New creates a Handler with the default platform PWE-1 theme contract.
 func New(svc *service.Service, cfg config.Config) (*Handler, error) {
+	return NewWithTheme(svc, cfg, branding.DefaultTheme())
+}
+
+// NewWithTheme creates a Handler using a strictly allowlisted PWE-1 theme selection.
+func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeSelection) (*Handler, error) {
 	funcs := template.FuncMap{
 		"formatMoney": domain.FormatPence,
 		"formatDate":  domain.FormatDate,
@@ -199,19 +209,166 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 				return "badge-muted"
 			}
 		},
+		"formatMoneyCur": domain.FormatReportMoney,
+		"formatMoneyCurPtr": func(cur string, v *int64) string {
+			if v == nil {
+				return "N/A"
+			}
+			return domain.FormatReportMoney(cur, *v)
+		},
+		"formatStrPtr": func(s *string) string {
+			if s == nil {
+				return "—"
+			}
+			return *s + "d"
+		},
+		"uuidEq": func(a *uuid.UUID, b uuid.UUID) bool {
+			return a != nil && *a == b
+		},
+		"isNonZeroUUID": func(id uuid.UUID) bool {
+			return id != uuid.Nil
+		},
+		"formatDateInputPtr": func(t *time.Time) string {
+			if t == nil || t.IsZero() {
+				return ""
+			}
+			return t.UTC().Format("2006-01-02")
+		},
+		"bpsToPct": func(bps *int) int {
+			if bps == nil {
+				return 0
+			}
+			v := (*bps + 50) / 100
+			if v < 0 {
+				return 0
+			}
+			if v > 100 {
+				return 100
+			}
+			return v
+		},
+		"bpsLabel": func(bps *int) string {
+			if bps == nil {
+				return "N/A"
+			}
+			return fmt.Sprintf("%.2f%%", float64(*bps)/100.0)
+		},
+		"dict": func(values ...any) (map[string]any, error) {
+			if len(values)%2 != 0 {
+				return nil, fmt.Errorf("dict expects even number of arguments")
+			}
+			out := make(map[string]any, len(values)/2)
+			for i := 0; i < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict keys must be strings")
+				}
+				out[key] = values[i+1]
+			}
+			return out, nil
+		},
+		"statusGlyph": func(cls string) string {
+			switch cls {
+			case "badge-ok", "ok":
+				return "✓"
+			case "badge-warn", "warn":
+				return "!"
+			case "badge-err", "err":
+				return "×"
+			case "badge-info", "info":
+				return "i"
+			default:
+				return "–"
+			}
+		},
+		"inStringSlice": func(list []string, target string) bool {
+			return slices.Contains(list, target)
+		},
+		"navSectionOpen": func(activeNav, sectionKey string, ws domain.ResolvedWorkspace) bool {
+			if navSectionForActive(activeNav) == sectionKey {
+				return true
+			}
+			return !ws.CollapsedSections[sectionKey]
+		},
+		"savedViewsFor": func(ws domain.ResolvedWorkspace, screen string) []domain.SavedOperationalView {
+			var out []domain.SavedOperationalView
+			for _, v := range ws.SavedViews {
+				if v.Screen == screen {
+					out = append(out, v)
+				}
+			}
+			return out
+		},
+		"savedViewURL": func(v domain.SavedOperationalView) string {
+			base := "/"
+			switch v.Screen {
+			case domain.SavedViewScreenCalendar:
+				base = "/calendar"
+			case domain.SavedViewScreenReservations:
+				base = "/reservations"
+			case domain.SavedViewScreenGuests:
+				base = "/guests"
+			}
+			q := url.Values{}
+			q.Set("saved_view", v.ID)
+			return base + "?" + q.Encode()
+		},
+		"cfgBool":   domain.ConfigBool,
+		"cfgInt":    domain.ConfigInt,
+		"cfgString": domain.ConfigString,
+		"cfgSlice":  domain.ConfigStringSlice,
+		"seqPositions": func(n int) []int {
+			out := make([]int, n)
+			for i := 0; i < n; i++ {
+				out[i] = i + 1
+			}
+			return out
+		},
+		"add1": func(i int) int { return i + 1 },
+		"priorityBadgeClass": func(v any) string {
+			switch strings.ToUpper(fmt.Sprint(v)) {
+			case "URGENT", "CRITICAL":
+				return "badge-err"
+			case "HIGH":
+				return "badge-warn"
+			case "MEDIUM":
+				return "badge-info"
+			default:
+				return "badge-muted"
+			}
+		},
+		"calCellShort": func(status string) string {
+			switch status {
+			case "AVAILABLE":
+				return "A"
+			case "BOOKED":
+				return "B"
+			case "PENDING":
+				return "P"
+			case "ALLOCATED":
+				return "L"
+			case "BLOCKED":
+				return "X"
+			case "UNRELEASED":
+				return "U"
+			default:
+				return "·"
+			}
+		},
 	}
 
-	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html")
+	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html", "templates/partials.html")
 	if err != nil {
 		return nil, err
 	}
-	errorTmpl, err := template.New("error.html").Funcs(funcs).ParseFS(embeddedFS, "templates/error.html")
+	errorTmpl, err := template.New("error.html").Funcs(funcs).ParseFS(embeddedFS, "templates/error.html", "templates/partials.html")
 	if err != nil {
 		return nil, err
 	}
 
 	pageNames := []string{
 		"dashboard.html",
+		"workspace.html",
 		"maintenance_list.html",
 		"maintenance_new.html",
 		"maintenance_detail.html",
@@ -239,10 +396,11 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 		"enquiries_list.html",
 		"enquiry_detail.html",
 		"comms_settings.html",
+		"reports.html",
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
-		t, err := template.New("layout.html").Funcs(funcs).ParseFS(embeddedFS, "templates/layout.html", "templates/"+name)
+		t, err := template.New("layout.html").Funcs(funcs).ParseFS(embeddedFS, "templates/partials.html", "templates/layout.html", "templates/"+name)
 		if err != nil {
 			return nil, err
 		}
@@ -253,6 +411,7 @@ func New(svc *service.Service, cfg config.Config) (*Handler, error) {
 		svc:       svc,
 		cfg:       cfg,
 		brand:     branding.Default(),
+		theme:     branding.ResolveTheme(theme),
 		loginTmpl: loginTmpl,
 		errorTmpl: errorTmpl,
 		pages:     pages,
@@ -302,6 +461,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /account", h.requirePageAuth(false, h.handleAccountGet))
 	mux.HandleFunc("POST /account/password", h.requirePageAuth(true, h.handleAccountPasswordPost))
+	mux.HandleFunc("POST /account/preferences/global", h.requirePageAuth(true, h.handleAccountGlobalPreferencesPost))
+	mux.HandleFunc("POST /account/preferences/global/reset", h.requirePageAuth(true, h.handleAccountGlobalPreferencesResetPost))
+	mux.HandleFunc("POST /account/preferences/workspace", h.requirePageAuth(true, h.handleAccountWorkspacePreferencesPost))
+	mux.HandleFunc("POST /account/preferences/workspace/reset", h.requirePageAuth(true, h.handleAccountWorkspacePreferencesResetPost))
+	mux.HandleFunc("POST /account/preferences/views", h.requirePageAuth(true, h.handleAccountSavedViewCreatePost))
+	mux.HandleFunc("POST /account/preferences/views/{id}/delete", h.requirePageAuth(true, h.handleAccountSavedViewDeletePost))
 
 	mux.HandleFunc("GET /audit-logs", h.requirePageAuth(false, h.handleAuditGet))
 
@@ -309,6 +474,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerOperationsRoutes(mux)
 	h.registerMaintenanceRoutes(mux)
 	h.registerGuestCRMRoutes(mux)
+	h.registerReportRoutes(mux)
+	h.registerWorkspaceRoutes(mux)
+	h.registerPropertyBrandingRoutes(mux)
 }
 
 type pageHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -343,21 +511,58 @@ func (h *Handler) requirePageAuth(checkCSRF bool, next pageHandler) http.Handler
 	}
 }
 
+type viewControlMeta struct {
+	FilterHorizon     string
+	FilterGrouping    string
+	FilterSort        string
+	PageSize          int
+	Page              int
+	TotalCount        int
+	TotalPages        int
+	HasPrevPage       bool
+	HasNextPage       bool
+	PrevPage          int
+	NextPage          int
+	ActiveSavedViewID string
+}
+
+type accountPersonalisationData struct {
+	Enabled           bool
+	Accents           []branding.AccentOption
+	NavSections       []domain.NavSectionOption
+	PermittedRoutes   []domain.AdminRouteOption
+	PropertyWorkspace domain.PropertyWorkspacePayload
+}
+
 type baseView struct {
 	Title                 string
 	ActiveNav             string
 	Brand                 branding.PlatformBrand
+	Theme                 branding.ThemeSelection
+	Workspace             domain.ResolvedWorkspace
+	ViewControls          viewControlMeta
+	AccountPrefs          *accountPersonalisationData
 	Actor                 service.Actor
 	CSRFToken             string
 	Property              domain.Property
+	PropertyBranding      domain.PropertyBrandingView
+	PropertyTerms         branding.AdminTerminology
+	PropertyCSSHref       string
+	BrandingDraft         propertyBrandingDraft
+	BrandingPreview       bool
 	Flash                 string
 	Error                 string
+	CanReadProperty       bool
 	CanWriteProperty      bool
+	CanReadInventory      bool
 	CanWriteInventory     bool
+	CanReadRates          bool
 	CanWriteRates         bool
+	CanReadBlocks         bool
 	CanWriteBlocks        bool
 	CanReadReservations   bool
 	CanWriteReservations  bool
+	CanReadReleases       bool
 	CanWriteReleases      bool
 	CanReadChannels       bool
 	CanWriteChannels      bool
@@ -379,32 +584,133 @@ type baseView struct {
 	CanWriteComms         bool
 	CanReconcileComms     bool
 	CanManageTemplates    bool
+	CanReadReports        bool
+	CanExportReports      bool
+	GlobalPortalEnabled   bool
 }
 
 func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor service.Actor, title, nav string) (baseView, error) {
-	props, err := h.svc.ListProperties(ctx, actor)
-	if err != nil {
-		return baseView{}, err
-	}
+	theme := h.theme
+	ws := domain.DefaultResolvedWorkspace()
+	ws.Theme = theme
 	var prop domain.Property
-	if len(props) > 0 {
-		prop = props[0]
+	var propBranding domain.PropertyBrandingView
+	propTerms := branding.DefaultAdminTerminology()
+	propCSSHref := ""
+	brandingDraft := propertyBrandingDraft{EffectiveTerms: propTerms}
+	brandingPreview := false
+	flashMsg := r.URL.Query().Get("msg")
+	flashErr := r.URL.Query().Get("err")
+
+	if h.svc != nil && !actor.MustRotatePassword {
+		props, err := h.svc.ListProperties(ctx, actor)
+		if err != nil {
+			if !errors.Is(err, domain.ErrPasswordRotationRequired) {
+				return baseView{}, err
+			}
+			actor.MustRotatePassword = true
+		} else if len(props) > 0 {
+			prop = props[0]
+		}
+		if !actor.MustRotatePassword {
+			var propPtr *uuid.UUID
+			if prop.ID != uuid.Nil {
+				pid := prop.ID
+				propPtr = &pid
+			}
+			if resolved, werr := h.svc.ResolveWorkspace(ctx, actor, propPtr); werr == nil {
+				ws = resolved
+				theme = resolved.Theme
+			}
+			if prop.ID != uuid.Nil {
+				if pb, pberr := h.svc.GetPropertyBranding(ctx, actor, prop.ID); pberr == nil {
+					propBranding = pb
+					propTerms = pb.ResolvedTerms
+					propCSSHref = fmt.Sprintf("/branding/property.css?v=%d", pb.Version)
+					brandingDraft = propertyBrandingDraft{
+						DisplayName:    pb.DisplayName,
+						Tagline:        pb.Tagline,
+						RegionLabel:    pb.RegionLabel,
+						PrimaryColor:   pb.PrimaryColor,
+						SecondaryColor: pb.SecondaryColor,
+						LogoAlt:        pb.LogoAlt,
+						HeaderLabel:    pb.HeaderLabel,
+						UnitSingular:   pb.Terminology.UnitSingular,
+						UnitPlural:     pb.Terminology.UnitPlural,
+						GuestSingular:  pb.Terminology.GuestSingular,
+						GuestPlural:    pb.Terminology.GuestPlural,
+						StayLabel:      pb.Terminology.StayLabel,
+						EffectiveTerms: pb.ResolvedTerms,
+					}
+					if nav == "property" && r.URL.Query().Get("preview") == "1" && auth.HasPermission(actor.Role, auth.PermPropertyWrite) {
+						qDraft := draftFromFormOrQuery(func(key string) string {
+							return r.URL.Query().Get(key)
+						})
+						if pal, perr := h.svc.ValidatePropertyBrandingPreview(ctx, actor, prop.ID, qDraft.PrimaryColor, qDraft.SecondaryColor); perr == nil {
+							brandingPreview = true
+							brandingDraft = qDraft
+							propTerms = qDraft.EffectiveTerms
+							propBranding.Palette = pal
+							if qDraft.DisplayName != "" {
+								propBranding.DisplayName = qDraft.DisplayName
+								propBranding.PublicProjection.DisplayName = qDraft.DisplayName
+							}
+							if qDraft.Tagline != "" {
+								propBranding.Tagline = qDraft.Tagline
+								propBranding.PublicProjection.Tagline = qDraft.Tagline
+							}
+							if qDraft.RegionLabel != "" {
+								propBranding.RegionLabel = qDraft.RegionLabel
+								propBranding.PublicProjection.RegionLabel = qDraft.RegionLabel
+							}
+							if qDraft.HeaderLabel != "" {
+								propBranding.HeaderLabel = qDraft.HeaderLabel
+							}
+							propBranding.PublicProjection.PrimaryColor = pal.Primary.Base
+							propBranding.PublicProjection.PrimaryOnColor = pal.Primary.OnColor
+							propBranding.PublicProjection.PrimaryHoverColor = pal.Primary.Hover
+							propBranding.PublicProjection.SecondaryColor = pal.Secondary.Base
+							propBranding.PublicProjection.SecondaryOnColor = pal.Secondary.OnColor
+							pq := url.Values{}
+							pq.Set("preview", "1")
+							pq.Set("primary_color", qDraft.PrimaryColor)
+							pq.Set("secondary_color", qDraft.SecondaryColor)
+							propCSSHref = "/branding/property.css?" + pq.Encode()
+						} else if flashErr == "" {
+							flashErr = perr.Error()
+						}
+					}
+				}
+			}
+		}
 	}
 	return baseView{
 		Title:                 title,
 		ActiveNav:             nav,
 		Brand:                 h.brand,
+		Theme:                 theme,
+		Workspace:             ws,
 		Actor:                 actor,
 		CSRFToken:             actor.CSRFToken,
 		Property:              prop,
-		Flash:                 r.URL.Query().Get("msg"),
-		Error:                 r.URL.Query().Get("err"),
+		PropertyBranding:      propBranding,
+		PropertyTerms:         propTerms,
+		PropertyCSSHref:       propCSSHref,
+		BrandingDraft:         brandingDraft,
+		BrandingPreview:       brandingPreview,
+		Flash:                 flashMsg,
+		Error:                 flashErr,
+		CanReadProperty:       auth.HasPermission(actor.Role, auth.PermPropertyRead),
 		CanWriteProperty:      auth.HasPermission(actor.Role, auth.PermPropertyWrite),
+		CanReadInventory:      auth.HasPermission(actor.Role, auth.PermInventoryRead),
 		CanWriteInventory:     auth.HasPermission(actor.Role, auth.PermInventoryWrite),
+		CanReadRates:          auth.HasPermission(actor.Role, auth.PermRatesRead),
 		CanWriteRates:         auth.HasPermission(actor.Role, auth.PermRatesWrite),
+		CanReadBlocks:         auth.HasPermission(actor.Role, auth.PermBlocksRead),
 		CanWriteBlocks:        auth.HasPermission(actor.Role, auth.PermBlocksWrite),
 		CanReadReservations:   auth.HasPermission(actor.Role, auth.PermReservationsRead),
 		CanWriteReservations:  auth.HasPermission(actor.Role, auth.PermReservationsWrite),
+		CanReadReleases:       auth.HasPermission(actor.Role, auth.PermReleasesRead),
 		CanWriteReleases:      auth.HasPermission(actor.Role, auth.PermReleasesWrite),
 		CanReadChannels:       auth.HasPermission(actor.Role, auth.PermChannelsRead),
 		CanWriteChannels:      auth.HasPermission(actor.Role, auth.PermChannelsWrite),
@@ -426,6 +732,9 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		CanWriteComms:         auth.HasPermission(actor.Role, auth.PermCommsWrite),
 		CanReconcileComms:     auth.HasPermission(actor.Role, auth.PermCommsReconcile),
 		CanManageTemplates:    auth.HasPermission(actor.Role, auth.PermCommsTemplates),
+		CanReadReports:        auth.HasPermission(actor.Role, auth.PermReportsRead),
+		CanExportReports:      auth.HasPermission(actor.Role, auth.PermReportsExport),
+		GlobalPortalEnabled:   h.cfg.GuestPortalEnabled,
 	}, nil
 }
 
@@ -435,10 +744,13 @@ func (h *Handler) renderPage(w http.ResponseWriter, tmplName string, data any) {
 		h.renderError(w, http.StatusInternalServerError, "Template Not Found", "The requested console view could not be found.")
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "layout", data); err != nil {
 		h.renderError(w, http.StatusInternalServerError, "Render Error", "Unable to render the requested administrative view.")
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 func (h *Handler) renderError(w http.ResponseWriter, status int, title, message string) {
@@ -449,25 +761,50 @@ func (h *Handler) renderError(w http.ResponseWriter, status int, title, message 
 		Title   string
 		Message string
 		Brand   branding.PlatformBrand
+		Theme   branding.ThemeSelection
 	}{
 		Status:  status,
 		Title:   title,
 		Message: message,
 		Brand:   h.brand,
+		Theme:   h.theme,
 	})
 }
 
 func redirectMsg(w http.ResponseWriter, r *http.Request, path, msg string) {
-	http.Redirect(w, r, path+"?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	redirectAdminWithQuery(w, r, path, "msg", msg)
 }
 
 func (h *Handler) redirectErr(w http.ResponseWriter, r *http.Request, path string, err error) {
-	msg := err.Error()
 	if errors.Is(err, domain.ErrForbidden) {
 		h.renderError(w, http.StatusForbidden, "Access Denied", "Your administrative role does not have permission for this action.")
 		return
 	}
-	http.Redirect(w, r, path+"?err="+url.QueryEscape(msg), http.StatusSeeOther)
+	redirectAdminWithQuery(w, r, path, "err", sanitizeAdminFlashError(err))
+}
+
+func sanitizeAdminFlashError(err error) string {
+	if err == nil {
+		return "An unexpected error occurred."
+	}
+	return sanitizeAdminFlashMessage(err.Error())
+}
+
+func sanitizeAdminFlashMessage(raw string) string {
+	msg := strings.TrimSpace(raw)
+	if msg == "" {
+		return "An unexpected error occurred."
+	}
+	lower := strings.ToLower(msg)
+	for _, internalMarker := range []string{"sqlstate", "pgconn", "pq:", "/var/", "/tmp/", "/users/", "/etc/", "stat /", "open /"} {
+		if strings.Contains(lower, internalMarker) {
+			return "Operation could not be completed due to an internal system error."
+		}
+	}
+	if len(msg) > 300 {
+		return msg[:300]
+	}
+	return msg
 }
 
 func (h *Handler) renderDomainError(w http.ResponseWriter, err error, fallbackTitle, fallbackMessage string) {
@@ -504,4 +841,19 @@ func parseOptionalUUID(s string) *uuid.UUID {
 		return nil
 	}
 	return &id
+}
+
+func navSectionForActive(activeNav string) string {
+	switch activeNav {
+	case "maintenance", "maintenance-schedule", "maintenance-facilities", "calendar", "reservations", "payment-exceptions":
+		return "maintenance"
+	case "guests", "enquiries", "guest-merge", "comms-settings":
+		return "guests"
+	case "blocks", "releases", "unit-types", "units", "extras", "rates", "reports":
+		return "inventory"
+	case "property", "channel-manager", "users", "audit", "account":
+		return "settings"
+	default:
+		return ""
+	}
 }

@@ -6,6 +6,7 @@ import {
   formatMoney,
   formatPricingModel,
   formatStayDate,
+  isSafeCheckoutRedirectUrl,
 } from "@/lib/format";
 import type {
   BookingHold,
@@ -205,8 +206,13 @@ export function BookingWizard({
         setErrorMsg(data.error?.message || "Could not start payment checkout.");
         return;
       }
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
+      if (typeof data.checkout_url === "string" && data.checkout_url.trim() !== "") {
+        const target = data.checkout_url.trim();
+        if (!isSafeCheckoutRedirectUrl(target, window.location.origin)) {
+          setErrorMsg("Payment gateway returned an invalid checkout redirect URL.");
+          return;
+        }
+        window.location.href = target;
       } else {
         setErrorMsg("Payment gateway did not return a checkout URL.");
       }
@@ -468,11 +474,11 @@ export function BookingWizard({
                   />
                   <span>
                     I agree to Tir Bach Campsite&apos;s{" "}
-                    <Link href="/terms" target="_blank" style={{ fontWeight: 600 }}>
+                    <Link href="/terms" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
                       Booking Terms &amp; Cancellation Policy
                     </Link>{" "}
                     and{" "}
-                    <Link href="/privacy" target="_blank" style={{ fontWeight: 600 }}>
+                    <Link href="/privacy" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
                       Privacy Notice
                     </Link>
                     .

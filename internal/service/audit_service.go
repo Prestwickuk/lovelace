@@ -17,8 +17,11 @@ func (s *Service) ListAuditLogs(ctx context.Context, actor Actor, propertyID *uu
 	if err := s.requirePerm(actor, auth.PermAuditRead); err != nil {
 		return nil, err
 	}
-	if actor.PropertyID != nil {
-		pid := *actor.PropertyID
+	if scopePropID := s.effectiveActorPropertyScope(ctx, nil, actor); scopePropID != nil {
+		if propertyID != nil && *propertyID != *scopePropID {
+			return nil, domain.ErrForbidden
+		}
+		pid := *scopePropID
 		propertyID = &pid
 	}
 	return s.store.ListEffectiveAuditLogs(ctx, propertyID, resourceType, limit)

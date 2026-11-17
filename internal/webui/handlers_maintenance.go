@@ -222,9 +222,12 @@ func (h *Handler) handleMaintenanceNewPost(w http.ResponseWriter, r *http.Reques
 		maxBytes = 10 * 1024 * 1024
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+httpx.MaxFormBodyBytes)
-	if err := r.ParseMultipartForm(maxBytes + 64*1024); err != nil {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		h.renderError(w, http.StatusBadRequest, "Invalid Submission", "The submitted maintenance form or attachment exceeded upload limits or was malformed.")
 		return
+	}
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
 	}
 	if !httpx.VerifyCSRFToken(actor, r.FormValue("csrf_token")) {
 		h.renderError(w, http.StatusForbidden, "Security Token Invalid", "Missing or invalid CSRF token. Please reload the page and try again.")
@@ -567,9 +570,12 @@ func (h *Handler) handleMaintenanceAttachmentUpload(w http.ResponseWriter, r *ht
 		maxBytes = 10 * 1024 * 1024
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+httpx.MaxFormBodyBytes)
-	if err := r.ParseMultipartForm(maxBytes + 64*1024); err != nil {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		h.renderError(w, http.StatusBadRequest, "Invalid Upload", "Attachment upload exceeded maximum size or was malformed.")
 		return
+	}
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
 	}
 	if !httpx.VerifyCSRFToken(actor, r.FormValue("csrf_token")) {
 		h.renderError(w, http.StatusForbidden, "Security Token Invalid", "Missing or invalid CSRF token. Please reload the page and try again.")

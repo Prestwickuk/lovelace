@@ -21,6 +21,7 @@ func (h *Handler) registerPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("OPTIONS /api/public/v1/", h.handlePublicPreflight)
 
 	mux.HandleFunc("GET /api/public/v1/properties/{slug}", h.publicEndpoint(false, true, h.handlePublicGetProperty))
+	mux.HandleFunc("GET /api/public/v1/properties/{slug}/logo", h.publicEndpoint(false, true, h.handlePublicGetPropertyLogo))
 	mux.HandleFunc("GET /api/public/v1/accommodation", h.publicEndpoint(false, true, h.handlePublicListAccommodation))
 	mux.HandleFunc("GET /api/public/v1/accommodation/{code}", h.publicEndpoint(false, true, h.handlePublicGetAccommodationDetail))
 	mux.HandleFunc("POST /api/public/v1/availability", h.publicEndpoint(false, true, h.handlePublicAvailabilitySearch))
@@ -34,7 +35,7 @@ func (h *Handler) registerPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/public/v1/booking-confirmation/rotate-token", h.publicEndpoint(true, true, h.handlePublicRotateConfirmationToken))
 	mux.HandleFunc("POST /api/public/v1/booking-confirmation/cancel-request", h.publicEndpoint(true, true, h.handlePublicCancelRequest))
 
-	if h.cfg.StripeSandbox && !h.cfg.IsProduction() {
+	if h.cfg.StripeSandbox && !h.cfg.IsProduction() && !h.cfg.IsStaging() {
 		mux.HandleFunc("POST /api/public/v1/dev/stripe-sandbox/complete", h.publicEndpoint(true, true, h.handleStripeSandboxComplete))
 	}
 
@@ -55,8 +56,8 @@ func (h *Handler) applyPublicCORS(w http.ResponseWriter, r *http.Request) {
 	allowed := h.allowedPublicOrigins()
 	if allowed[origin] {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Lovelace-Public-Key")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, X-Lovelace-Property, X-Guest-CSRF")
 		w.Header().Set("Access-Control-Max-Age", "300")
 	}
 }
@@ -112,7 +113,7 @@ func (h *Handler) publicEndpoint(strictLimit bool, checkPublicSecret bool, next 
 		}
 
 		meta := httpx.MetaFromContext(r.Context())
-		ipKey := httpx.ResolveForwardedCustomerIP(r, bffAuthenticated, meta.IPAddress)
+		ipKey := httpx.RateLimitKeyForIP(httpx.ResolveForwardedCustomerIP(r, bffAuthenticated, meta.IPAddress))
 		if ipKey == "" {
 			ipKey = "unknown"
 		}
@@ -130,12 +131,13 @@ func (h *Handler) publicEndpoint(strictLimit bool, checkPublicSecret bool, next 
 	}
 }
 
-func publicActorMeta(r *http.Request) service.Actor {
+func (h *Handler) publicActorMeta(r *http.Request) service.Actor {
 	meta := httpx.MetaFromContext(r.Context())
+	bffAuth := h.cfg.PublicAPISecret != "" && auth.ConstantTimeEqual(r.Header.Get("X-Lovelace-Public-Key"), h.cfg.PublicAPISecret)
 	return service.Actor{
 		Role:      "public_guest",
 		RequestID: meta.RequestID,
-		IPAddress: meta.IPAddress,
+		IPAddress: httpx.ResolveForwardedCustomerIP(r, bffAuth, meta.IPAddress),
 		UserAgent: meta.UserAgent,
 	}
 }
@@ -255,6 +257,7 @@ func (h *Handler) handlePublicPricingQuote(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) handlePublicCreateHold(w http.ResponseWriter, r *http.Request) {
+	applyConfirmationSecurityHeaders(w)
 	var body struct {
 		PropertySlug    string                       `json:"property_slug"`
 		UnitTypeCode    string                       `json:"unit_type_code"`
@@ -287,7 +290,7 @@ func (h *Handler) handlePublicCreateHold(w http.ResponseWriter, r *http.Request)
 		writeDomainError(w, domain.NewValidationError(map[string]string{"departure_date": "must be YYYY-MM-DD"}))
 		return
 	}
-	res, err := h.svc.CreatePublicHold(r.Context(), publicActorMeta(r), service.CreateHoldRequest{
+	res, err := h.svc.CreatePublicHold(r.Context(), h.publicActorMeta(r), service.CreateHoldRequest{
 		PropertySlug:    body.PropertySlug,
 		UnitTypeCode:    body.UnitTypeCode,
 		ArrivalDate:     arr,
@@ -311,11 +314,12 @@ func (h *Handler) handlePublicCreateHold(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) handlePublicCancelHold(w http.ResponseWriter, r *http.Request) {
+	applyConfirmationSecurityHeaders(w)
 	holdID, ok := parseUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
-	hold, err := h.svc.CancelPublicHold(r.Context(), publicActorMeta(r), holdID)
+	hold, err := h.svc.CancelPublicHold(r.Context(), h.publicActorMeta(r), holdID)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -324,6 +328,7 @@ func (h *Handler) handlePublicCancelHold(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) handlePublicInitiateCheckout(w http.ResponseWriter, r *http.Request) {
+	applyConfirmationSecurityHeaders(w)
 	var body struct {
 		HoldID         string `json:"hold_id"`
 		IdempotencyKey string `json:"idempotency_key"`
@@ -353,7 +358,7 @@ func (h *Handler) handlePublicInitiateCheckout(w http.ResponseWriter, r *http.Re
 	if idemKey == "" {
 		idemKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	}
-	resp, err := h.svc.InitiatePublicCheckout(r.Context(), publicActorMeta(r), service.CreateCheckoutRequest{
+	resp, err := h.svc.InitiatePublicCheckout(r.Context(), h.publicActorMeta(r), service.CreateCheckoutRequest{
 		HoldID:         holdID,
 		IdempotencyKey: idemKey,
 	})
@@ -373,7 +378,7 @@ func (h *Handler) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sig := r.Header.Get("Stripe-Signature")
-	res, err := h.svc.ProcessStripeWebhook(r.Context(), publicActorMeta(r), rawBody, sig)
+	res, err := h.svc.ProcessStripeWebhook(r.Context(), h.publicActorMeta(r), rawBody, sig)
 	if err != nil {
 		if errors.Is(err, domain.ErrUnauthorized) {
 			writeError(w, http.StatusUnauthorized, "invalid_signature", "webhook signature verification failed")
@@ -411,7 +416,7 @@ func extractBearerToken(r *http.Request) string {
 func (h *Handler) checkConfirmationRateLimit(w http.ResponseWriter, r *http.Request) bool {
 	bffAuth := h.cfg.PublicAPISecret != "" && auth.ConstantTimeEqual(r.Header.Get("X-Lovelace-Public-Key"), h.cfg.PublicAPISecret)
 	meta := httpx.MetaFromContext(r.Context())
-	ipKey := httpx.ResolveForwardedCustomerIP(r, bffAuth, meta.IPAddress)
+	ipKey := httpx.RateLimitKeyForIP(httpx.ResolveForwardedCustomerIP(r, bffAuth, meta.IPAddress))
 	if ipKey == "" {
 		ipKey = "unknown"
 	}
@@ -491,7 +496,7 @@ func (h *Handler) handlePublicRotateConfirmationToken(w http.ResponseWriter, r *
 	if token == "" {
 		token = strings.TrimSpace(body.Token)
 	}
-	rotated, err := h.svc.RotateConfirmationToken(r.Context(), publicActorMeta(r), body.BookingReference, token)
+	rotated, err := h.svc.RotateConfirmationToken(r.Context(), h.publicActorMeta(r), body.BookingReference, token)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -516,7 +521,7 @@ func (h *Handler) handlePublicCancelRequest(w http.ResponseWriter, r *http.Reque
 	if token == "" {
 		token = strings.TrimSpace(body.Token)
 	}
-	view, err := h.svc.RequestPublicCancellation(r.Context(), publicActorMeta(r), body.BookingReference, token, body.Note)
+	view, err := h.svc.RequestPublicCancellation(r.Context(), h.publicActorMeta(r), body.BookingReference, token, body.Note)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -618,7 +623,7 @@ func (h *Handler) handleStripeSandboxComplete(w http.ResponseWriter, r *http.Req
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if err := h.svc.CompleteSandboxPayment(r.Context(), publicActorMeta(r), body.SessionID, body.Outcome); err != nil {
+	if err := h.svc.CompleteSandboxPayment(r.Context(), h.publicActorMeta(r), body.SessionID, body.Outcome); err != nil {
 		writeDomainError(w, err)
 		return
 	}

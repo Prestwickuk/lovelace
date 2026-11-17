@@ -1,0 +1,734 @@
+{{define "content"}}
+{{$prop := .Dashboard.Property}}
+{{$layout := .Dashboard.Layout}}
+<div class="page-header">
+  <div>
+    <h1>{{$prop.Name}} — Personal Workspace</h1>
+    <p class="subtitle">
+      Customisable, permission-filtered operational workspace for <strong>{{.Actor.FullName}}</strong>
+      ({{if $layout.IsDefault}}{{if $layout.ProfileName}}{{$layout.ProfileName}} Profile Default{{else}}Platform Default Layout{{end}}{{else}}Saved Custom Layout · {{.Dashboard.WidgetCount}}/{{.Dashboard.MaxWidgets}} widgets{{end}}).
+    </p>
+  </div>
+  <div class="btn-row-gap">
+    <a href="/" class="btn btn-secondary btn-sm">Operations Centre</a>
+    {{if .EditMode}}
+    <a href="/workspace" class="btn btn-primary btn-sm">Done Customising</a>
+    {{else}}
+    <a href="/workspace?edit=1" class="btn btn-primary btn-sm">Customise Workspace</a>
+    {{end}}
+    {{if not $layout.IsDefault}}
+    <details class="inline-disclosure">
+      <summary class="btn btn-secondary btn-sm">Reset Layout Only</summary>
+      <div class="inline-disclosure-panel" role="region" aria-label="Confirm layout reset">
+        <span>Discard custom widget layout for {{$prop.Name}} while keeping your profile choice and personal preferences?</span>
+        <form method="post" action="/workspace/reset" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="property_id" value="{{$prop.ID}}">
+          <input type="hidden" name="return_to" value="/workspace">
+          <button type="submit" class="btn btn-danger btn-sm">Confirm Reset</button>
+        </form>
+      </div>
+    </details>
+    {{end}}
+  </div>
+</div>
+
+<section class="card mb-3" aria-labelledby="workspace-profile-heading">
+  <div class="profile-bar">
+    <div class="profile-meta">
+      <div class="btn-row-gap">
+        <h2 id="workspace-profile-heading">Role Workspace Profile</h2>
+        {{if .Dashboard.ActiveProfile}}
+        <span class="badge badge-info">{{.Dashboard.ActiveProfile.Name}}</span>
+        {{else}}
+        <span class="badge badge-muted">Platform Default</span>
+        {{end}}
+        <span class="badge badge-muted">Density: {{$.Theme.Density}}</span>
+        <span class="badge badge-muted">Landing: {{$.Workspace.DefaultRoute}}</span>
+      </div>
+      {{if .Dashboard.ActiveProfile}}
+      <p class="subtitle mt-1">{{.Dashboard.ActiveProfile.Description}} Profiles set starting layout and presentation defaults without granting permissions.</p>
+      {{else}}
+      <p class="subtitle mt-1">Read-only role using LOVELACE safe permission-filtered defaults.</p>
+      {{end}}
+    </div>
+
+    <div class="btn-row-gap">
+      {{if gt (len .Dashboard.EligibleProfiles) 1}}
+      <form method="post" action="/workspace/profile" class="profile-switcher-form">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="property_id" value="{{$prop.ID}}">
+        <input type="hidden" name="return_to" value="/workspace">
+        <label for="workspace_profile_select" class="sr-only">Workspace Profile</label>
+        <select id="workspace_profile_select" name="profile_code" class="input-auto">
+          {{range .Dashboard.EligibleProfiles}}
+          <option value="{{.Code}}" {{if .IsSelected}}selected{{end}}>{{.Name}}{{if .IsDefaultForRole}} (Role Default){{end}}</option>
+          {{end}}
+        </select>
+        <button type="submit" class="btn btn-secondary btn-sm">Switch Profile</button>
+      </form>
+      {{end}}
+
+      <details class="inline-disclosure">
+        <summary class="btn btn-danger btn-sm">Reset to Profile Defaults</summary>
+        <div class="inline-disclosure-panel" role="region" aria-label="Confirm reset to role profile defaults">
+          <form method="post" action="/workspace/profile/reset" class="inline-row">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="property_id" value="{{$prop.ID}}">
+            <input type="hidden" name="return_to" value="/workspace">
+            <label class="reset-option-label">
+              <input type="checkbox" name="clear_named_overrides" value="1">
+              <span>Also clear personal density, landing page, and shortcut overrides</span>
+            </label>
+            <button type="submit" class="btn btn-danger btn-sm">Confirm Profile Reset</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+{{if .Dashboard.Warnings}}
+<div class="alert alert-info mb-3" role="status">
+  <strong>Workspace layout notices:</strong>
+  <ul>
+    {{range .Dashboard.Warnings}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+
+{{if .EditMode}}
+<section class="card mb-3" aria-labelledby="workspace-editor-heading">
+  <div class="widget-head">
+    <div>
+      <h2 id="workspace-editor-heading">Workspace Layout Builder ({{.Dashboard.WidgetCount}} / {{.Dashboard.MaxWidgets}} widgets)</h2>
+      <p class="subtitle">Add eligible widgets, reorder rows with keyboard-accessible Move/Position controls, adjust supported sizes, or update typed options.</p>
+    </div>
+    <div class="btn-row-gap">
+      <form method="post" action="/workspace/widgets/add" class="inline-row">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="property_id" value="{{$prop.ID}}">
+        <input type="hidden" name="return_to" value="/workspace?edit=1">
+        <label for="add_widget_id" class="sr-only">Widget to add</label>
+        <select id="add_widget_id" name="widget_id" class="input-auto" required>
+          {{range .Dashboard.EligibleCatalogue}}
+          <option value="{{.ID}}">{{.DisplayName}} ({{joinStrings .SupportedSizes "/"}})</option>
+          {{end}}
+        </select>
+        <label for="add_size" class="sr-only">Initial widget size</label>
+        <select id="add_size" name="size" class="input-auto">
+          <option value="">Default size</option>
+          <option value="compact">Compact</option>
+          <option value="standard">Standard</option>
+          <option value="wide">Wide</option>
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm">+ Add Widget</button>
+      </form>
+    </div>
+  </div>
+
+  {{if .Dashboard.Widgets}}
+  <div class="workspace-editor-list mt-2">
+    {{$total := .Dashboard.WidgetCount}}
+    {{range $idx, $w := .Dashboard.Widgets}}
+    <div class="workspace-editor-item">
+      <div class="workspace-editor-head">
+        <div>
+          <strong>#{{$w.Position}} · {{$w.DisplayName}}</strong>
+          <span class="badge badge-muted">{{$w.WidgetID}}</span>
+          <span class="subtitle">{{$w.Description}}</span>
+        </div>
+        <div class="btn-row-gap">
+          {{if gt $idx 0}}
+          <form method="post" action="/workspace/widgets/{{$w.InstanceID}}/move" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="property_id" value="{{$prop.ID}}">
+            <input type="hidden" name="direction" value="up">
+            <button type="submit" class="btn btn-secondary btn-sm" aria-label="Move {{$w.DisplayName}} up">↑ Up</button>
+          </form>
+          {{end}}
+          {{if lt (add1 $idx) $total}}
+          <form method="post" action="/workspace/widgets/{{$w.InstanceID}}/move" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="property_id" value="{{$prop.ID}}">
+            <input type="hidden" name="direction" value="down">
+            <button type="submit" class="btn btn-secondary btn-sm" aria-label="Move {{$w.DisplayName}} down">↓ Down</button>
+          </form>
+          {{end}}
+          <form method="post" action="/workspace/widgets/{{$w.InstanceID}}/move" class="inline-row">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="property_id" value="{{$prop.ID}}">
+            <label for="pos_{{$w.InstanceID}}" class="sr-only">Position for {{$w.DisplayName}}</label>
+            <select id="pos_{{$w.InstanceID}}" name="position" class="input-auto">
+              {{range seqPositions $total}}
+              <option value="{{.}}" {{if eq . $w.Position}}selected{{end}}>Pos {{.}}</option>
+              {{end}}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">Move</button>
+          </form>
+          <form method="post" action="/workspace/widgets/{{$w.InstanceID}}/remove" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="property_id" value="{{$prop.ID}}">
+            <button type="submit" class="btn btn-danger btn-sm" aria-label="Remove {{$w.DisplayName}}">Remove</button>
+          </form>
+        </div>
+      </div>
+
+      <form method="post" action="/workspace/widgets/{{$w.InstanceID}}/update" class="form-grid">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="property_id" value="{{$prop.ID}}">
+        <input type="hidden" name="widget_id" value="{{$w.WidgetID}}">
+        <input type="hidden" name="return_to" value="/workspace?edit=1">
+
+        <div class="field">
+          <label for="size_{{$w.InstanceID}}">Size</label>
+          <select id="size_{{$w.InstanceID}}" name="size">
+            {{range $w.SupportedSizes}}
+            <option value="{{.}}" {{if eq . $w.Size}}selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label for="slot_{{$w.InstanceID}}">Placement Hint</label>
+          <select id="slot_{{$w.InstanceID}}" name="slot">
+            <option value="auto" {{if eq $w.Slot "auto"}}selected{{end}}>Auto Flow</option>
+            <option value="main" {{if eq $w.Slot "main"}}selected{{end}}>Main Band</option>
+            <option value="side" {{if eq $w.Slot "side"}}selected{{end}}>Side / Support</option>
+          </select>
+        </div>
+
+        {{if eq $w.WidgetID "ops.arrivals_summary"}}
+        <div class="field">
+          <label for="limit_{{$w.InstanceID}}">Row Limit (5–25)</label>
+          <input id="limit_{{$w.InstanceID}}" name="limit" type="number" min="5" max="25" value="{{cfgInt $w.Config "limit" 10}}">
+        </div>
+        <div class="field">
+          <label class="pref-check" for="pend_{{$w.InstanceID}}">
+            <input id="pend_{{$w.InstanceID}}" name="show_pending_holds" type="checkbox" value="1" {{if cfgBool $w.Config "show_pending_holds" true}}checked{{end}}>
+            <span>Show pending holds count</span>
+          </label>
+          <label class="pref-check" for="inhouse_{{$w.InstanceID}}">
+            <input id="inhouse_{{$w.InstanceID}}" name="show_in_house_count" type="checkbox" value="1" {{if cfgBool $w.Config "show_in_house_count" true}}checked{{end}}>
+            <span>Show in-house stays count</span>
+          </label>
+        </div>
+        {{else if eq $w.WidgetID "ops.changeover_board"}}
+        <div class="field">
+          <label for="limit_{{$w.InstanceID}}">Row Limit (5–30)</label>
+          <input id="limit_{{$w.InstanceID}}" name="limit" type="number" min="5" max="30" value="{{cfgInt $w.Config "limit" 12}}">
+        </div>
+        <div class="field field-full">
+          <fieldset class="pref-fieldset">
+            <legend>Stage Filter</legend>
+            {{$stages := cfgSlice $w.Config "stage_filter" nil}}
+            <div class="pref-check-grid">
+              <label class="pref-check"><input type="checkbox" name="stage_filter" value="ALL" {{if inStringSlice $stages "ALL"}}checked{{end}}><span>ALL Stages</span></label>
+              <label class="pref-check"><input type="checkbox" name="stage_filter" value="GUEST_DEPARTING" {{if inStringSlice $stages "GUEST_DEPARTING"}}checked{{end}}><span>Guest Departing</span></label>
+              <label class="pref-check"><input type="checkbox" name="stage_filter" value="CLEANING_REQUIRED" {{if inStringSlice $stages "CLEANING_REQUIRED"}}checked{{end}}><span>Cleaning Required</span></label>
+              <label class="pref-check"><input type="checkbox" name="stage_filter" value="CLEANING_IN_PROGRESS" {{if inStringSlice $stages "CLEANING_IN_PROGRESS"}}checked{{end}}><span>Cleaning In Progress</span></label>
+              <label class="pref-check"><input type="checkbox" name="stage_filter" value="INSPECTION_REQUIRED" {{if inStringSlice $stages "INSPECTION_REQUIRED"}}checked{{end}}><span>Inspection Required</span></label>
+              <label class="pref-check"><input type="checkbox" name="stage_filter" value="READY" {{if inStringSlice $stages "READY"}}checked{{end}}><span>Ready</span></label>
+            </div>
+          </fieldset>
+        </div>
+        {{else if eq $w.WidgetID "ops.alerts_attention"}}
+        <div class="field field-full">
+          <fieldset class="pref-fieldset">
+            <legend>Alert Categories (permission-filtered automatically)</legend>
+            {{$cats := cfgSlice $w.Config "include_categories" nil}}
+            <div class="pref-check-grid">
+              <label class="pref-check"><input type="checkbox" name="include_categories" value="payments" {{if inStringSlice $cats "payments"}}checked{{end}}><span>Payments</span></label>
+              <label class="pref-check"><input type="checkbox" name="include_categories" value="channels" {{if inStringSlice $cats "channels"}}checked{{end}}><span>OTA Channels</span></label>
+              <label class="pref-check"><input type="checkbox" name="include_categories" value="comms" {{if inStringSlice $cats "comms"}}checked{{end}}><span>Email Outbox</span></label>
+              <label class="pref-check"><input type="checkbox" name="include_categories" value="maintenance" {{if inStringSlice $cats "maintenance"}}checked{{end}}><span>Maintenance</span></label>
+              <label class="pref-check"><input type="checkbox" name="include_categories" value="housekeeping" {{if inStringSlice $cats "housekeeping"}}checked{{end}}><span>Housekeeping</span></label>
+            </div>
+          </fieldset>
+        </div>
+        {{else if eq $w.WidgetID "maint.open_queue"}}
+        <div class="field">
+          <label for="prio_{{$w.InstanceID}}">Minimum Priority</label>
+          {{$pMin := cfgString $w.Config "priority_min" "low"}}
+          <select id="prio_{{$w.InstanceID}}" name="priority_min">
+            <option value="low" {{if eq $pMin "low"}}selected{{end}}>Low &amp; above</option>
+            <option value="medium" {{if eq $pMin "medium"}}selected{{end}}>Medium &amp; above</option>
+            <option value="high" {{if eq $pMin "high"}}selected{{end}}>High &amp; urgent</option>
+            <option value="urgent" {{if eq $pMin "urgent"}}selected{{end}}>Urgent only</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="limit_{{$w.InstanceID}}">Row Limit (5–20)</label>
+          <input id="limit_{{$w.InstanceID}}" name="limit" type="number" min="5" max="20" value="{{cfgInt $w.Config "limit" 10}}">
+        </div>
+        <div class="field">
+          <label class="pref-check" for="assign_{{$w.InstanceID}}">
+            <input id="assign_{{$w.InstanceID}}" name="assigned_to_me" type="checkbox" value="1" {{if cfgBool $w.Config "assigned_to_me" false}}checked{{end}}>
+            <span>Assigned to me only</span>
+          </label>
+        </div>
+        {{else if eq $w.WidgetID "maint.preventative_due"}}
+        <div class="field">
+          <label for="hor_{{$w.InstanceID}}">Due Window</label>
+          {{$hor := cfgInt $w.Config "horizon_days" 14}}
+          <select id="hor_{{$w.InstanceID}}" name="horizon_days">
+            <option value="7" {{if eq $hor 7}}selected{{end}}>Next 7 days</option>
+            <option value="14" {{if eq $hor 14}}selected{{end}}>Next 14 days</option>
+            <option value="30" {{if eq $hor 30}}selected{{end}}>Next 30 days</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="limit_{{$w.InstanceID}}">Row Limit (5–15)</label>
+          <input id="limit_{{$w.InstanceID}}" name="limit" type="number" min="5" max="15" value="{{cfgInt $w.Config "limit" 8}}">
+        </div>
+        {{else if eq $w.WidgetID "res.pending_inquiries"}}
+        <div class="field">
+          <label for="limit_{{$w.InstanceID}}">Row Limit (5–20)</label>
+          <input id="limit_{{$w.InstanceID}}" name="limit" type="number" min="5" max="20" value="{{cfgInt $w.Config "limit" 10}}">
+        </div>
+        <div class="field">
+          <label class="pref-check" for="inq_{{$w.InstanceID}}">
+            <input id="inq_{{$w.InstanceID}}" name="include_inquiries" type="checkbox" value="1" {{if cfgBool $w.Config "include_inquiries" true}}checked{{end}}>
+            <span>Include INQUIRY bookings</span>
+          </label>
+        </div>
+        {{else if eq $w.WidgetID "res.mini_calendar"}}
+        <div class="field">
+          <label for="days_{{$w.InstanceID}}">Calendar Days</label>
+          {{$days := cfgInt $w.Config "days" 7}}
+          <select id="days_{{$w.InstanceID}}" name="days">
+            <option value="7" {{if eq $days 7}}selected{{end}}>7 Days</option>
+            <option value="14" {{if eq $days 14}}selected{{end}}>14 Days</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ut_{{$w.InstanceID}}">Unit Type Filter</label>
+          {{$selUT := cfgString $w.Config "unit_type_id" ""}}
+          <select id="ut_{{$w.InstanceID}}" name="unit_type_id">
+            <option value="">All active unit types</option>
+            {{range $.Dashboard.UnitTypes}}
+            <option value="{{.ID}}" {{if eq (.ID.String) $selUT}}selected{{end}}>{{.Name}} ({{.Code}})</option>
+            {{end}}
+          </select>
+        </div>
+        {{else if eq $w.WidgetID "crm.open_enquiries"}}
+        <div class="field">
+          <label for="eprio_{{$w.InstanceID}}">Priority Filter</label>
+          {{$ep := cfgString $w.Config "priority_filter" "ALL"}}
+          <select id="eprio_{{$w.InstanceID}}" name="priority_filter">
+            <option value="ALL" {{if eq $ep "ALL"}}selected{{end}}>All Priorities</option>
+            <option value="URGENT" {{if eq $ep "URGENT"}}selected{{end}}>Urgent</option>
+            <option value="HIGH" {{if eq $ep "HIGH"}}selected{{end}}>High</option>
+            <option value="MEDIUM" {{if eq $ep "MEDIUM"}}selected{{end}}>Medium</option>
+            <option value="LOW" {{if eq $ep "LOW"}}selected{{end}}>Low</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="limit_{{$w.InstanceID}}">Row Limit (5–20)</label>
+          <input id="limit_{{$w.InstanceID}}" name="limit" type="number" min="5" max="20" value="{{cfgInt $w.Config "limit" 10}}">
+        </div>
+        <div class="field">
+          <label class="pref-check" for="comp_{{$w.InstanceID}}">
+            <input id="comp_{{$w.InstanceID}}" name="only_complaints" type="checkbox" value="1" {{if cfgBool $w.Config "only_complaints" false}}checked{{end}}>
+            <span>Complaints only</span>
+          </label>
+        </div>
+        {{else if eq $w.WidgetID "channels.sync_health"}}
+        <div class="field">
+          <label class="pref-check" for="okprov_{{$w.InstanceID}}">
+            <input id="okprov_{{$w.InstanceID}}" name="show_ok_providers" type="checkbox" value="1" {{if cfgBool $w.Config "show_ok_providers" true}}checked{{end}}>
+            <span>Show healthy &amp; unconfigured providers</span>
+          </label>
+        </div>
+        {{else if eq $w.WidgetID "reports.kpi_snapshot"}}
+        <div class="field">
+          <label for="win_{{$w.InstanceID}}">KPI Window</label>
+          {{$wd := cfgInt $w.Config "window_days" 30}}
+          <select id="win_{{$w.InstanceID}}" name="window_days">
+            <option value="7" {{if eq $wd 7}}selected{{end}}>Last 7 days</option>
+            <option value="30" {{if eq $wd 30}}selected{{end}}>Last 30 days</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="pref-check" for="prior_{{$w.InstanceID}}">
+            <input id="prior_{{$w.InstanceID}}" name="show_prior_period" type="checkbox" value="1" {{if cfgBool $w.Config "show_prior_period" true}}checked{{end}}>
+            <span>Compare prior period</span>
+          </label>
+        </div>
+        {{else if eq $w.WidgetID "workspace.quick_shortcuts"}}
+        <div class="field">
+          <label for="maxitems_{{$w.InstanceID}}">Max Links (4–12)</label>
+          <input id="maxitems_{{$w.InstanceID}}" name="max_items" type="number" min="4" max="12" value="{{cfgInt $w.Config "max_items" 8}}">
+        </div>
+        <div class="field">
+          <label class="pref-check" for="savedf_{{$w.InstanceID}}">
+            <input id="savedf_{{$w.InstanceID}}" name="show_saved_filters" type="checkbox" value="1" {{if cfgBool $w.Config "show_saved_filters" true}}checked{{end}}>
+            <span>Include saved views</span>
+          </label>
+        </div>
+        {{end}}
+
+        <div class="field field-actions">
+          <button type="submit" class="btn btn-secondary btn-sm">Save Widget</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="subtitle mt-2">No active widgets currently in layout. Use <strong>+ Add Widget</strong> above or <strong>Reset to Default</strong>.</p>
+  {{end}}
+</section>
+{{end}}
+
+{{if not .Dashboard.Widgets}}
+<section class="card" aria-label="Empty workspace">
+  <h2>No Workspace Widgets Active</h2>
+  <p class="subtitle">
+    Your personal dashboard layout currently has no visible widgets for your role permissions.
+    Use <a href="/workspace?edit=1">Customise Workspace</a> to add eligible widgets or restore the platform default.
+  </p>
+  <div class="btn-row-gap mt-2">
+    <a href="/workspace?edit=1" class="btn btn-primary btn-sm">Open Layout Builder</a>
+    <a href="/account" class="btn btn-secondary btn-sm">My Account &amp; Preferences</a>
+  </div>
+</section>
+{{else}}
+<div class="workspace-grid">
+  {{range $w := .Dashboard.Widgets}}
+  <section class="card widget-card widget-size-{{$w.Size}}" aria-labelledby="widget-title-{{$w.InstanceID}}">
+    <div class="widget-head">
+      <div>
+        <h2 id="widget-title-{{$w.InstanceID}}">{{$w.DisplayName}}</h2>
+        <p class="subtitle">{{$w.Description}}</p>
+      </div>
+      <span class="badge badge-muted">{{$w.Category}} · {{$w.Size}}</span>
+    </div>
+
+    {{if and (eq $w.WidgetID "ops.arrivals_summary") $w.ArrivalsSummary}}
+      {{$d := $w.ArrivalsSummary}}
+      <div class="widget-kpi-strip">
+        <div class="widget-stat-pill"><strong>{{$d.ArrivalsTotal}}</strong><span>Arrivals ({{$d.ArrivalsPendingCheckIn}} awaiting)</span></div>
+        <div class="widget-stat-pill"><strong>{{$d.DeparturesTotal}}</strong><span>Departures ({{$d.DeparturesPendingOut}} on site)</span></div>
+        {{if $d.ShowPendingHolds}}<div class="widget-stat-pill"><strong>{{$d.PendingHoldsCount}}</strong><span>Pending holds</span></div>{{end}}
+        {{if $d.ShowInHouseCount}}<div class="widget-stat-pill"><strong>{{$d.InHouseStaysCount}}</strong><span>In-house</span></div>{{end}}
+      </div>
+      {{if $d.Rows}}
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Today arrivals and departures</caption>
+          <thead><tr><th scope="col">Type</th><th scope="col">Booking</th><th scope="col">Guest &amp; Units</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            {{range $d.Rows}}
+            <tr>
+              <td><span class="badge {{if eq .Kind "ARRIVAL"}}badge-ok{{else}}badge-info{{end}}">{{.Kind}}</span></td>
+              <td class="mono"><a href="/reservations/{{.ReservationID}}">{{.Reference}}</a></td>
+              <td>{{.GuestName}}{{if .UnitCodes}}<br><span class="subtitle">{{joinStrings .UnitCodes ", "}}</span>{{end}}</td>
+              <td>{{template "status_badge" (dict "Class" (statusClass .Status) "Label" .Status)}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No arrivals or departures today" "Message" "Confirmed check-ins and scheduled departures for today appear here.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">Date: {{$d.OperationalDate}}</span>
+        <a href="/?focus=front_desk" class="btn btn-secondary btn-sm">Open Front Desk →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "ops.changeover_board") $w.ChangeoverBoard}}
+      {{$d := $w.ChangeoverBoard}}
+      {{if $d.Rows}}
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Daily housekeeping changeover queue</caption>
+          <thead><tr><th scope="col">Unit</th><th scope="col">Stage</th><th scope="col">Flags</th></tr></thead>
+          <tbody>
+            {{range $d.Rows}}
+            <tr>
+              <td><strong>{{.UnitCode}}</strong> · {{.UnitName}}<br><span class="subtitle">{{.UnitTypeName}}</span></td>
+              <td>{{template "status_badge" (dict "Class" (changeoverStageClass .Stage) "Label" .StageLabel)}}</td>
+              <td>
+                {{if .Overdue}}{{template "status_badge" (dict "Class" "badge-err" "Label" "Overdue")}} {{end}}
+                {{if .SameDayArrival}}{{template "status_badge" (dict "Class" "badge-warn" "Label" "Same-day arrival")}}{{end}}
+                {{if .NextArrivalRef}}<span class="mono subtitle"> ({{.NextArrivalRef}})</span>{{end}}
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No units matching stage filter" "Message" "Adjust the widget stage filter or view the full changeover board.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.TotalMatching}} matching unit(s) (read-only view)</span>
+        <a href="/?focus=housekeeping#changeover-board" class="btn btn-secondary btn-sm">Manage Changeover →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "ops.alerts_attention") $w.AlertsAttention}}
+      {{$d := $w.AlertsAttention}}
+      <div class="widget-kpi-strip">
+        {{range $d.CategoryCounts}}
+        <div class="widget-stat-pill"><strong>{{.Count}}</strong><span>{{.Label}}</span></div>
+        {{end}}
+      </div>
+      {{if $d.Items}}
+      <ul class="widget-list">
+        {{range $d.Items}}
+        <li class="widget-list-item">
+          <div>
+            {{template "status_badge" (dict "Class" (attentionSeverityClass .Severity) "Label" (printf "%s" .Severity))}}
+            <strong>{{.Title}}</strong>
+            <div class="subtitle">{{.Detail}}</div>
+          </div>
+          {{if .ActionURL}}<a href="{{.ActionURL}}" class="btn btn-secondary btn-sm">{{.ActionLabel}}</a>{{end}}
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No active alerts" "Message" "All operational alert categories permitted for your role are clear.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.TotalCount}} item(s) across permitted categories</span>
+        <a href="/?focus=attention" class="btn btn-secondary btn-sm">Attention Queue →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "maint.open_queue") $w.MaintOpenQueue}}
+      {{$d := $w.MaintOpenQueue}}
+      {{if $d.Requests}}
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Open maintenance queue</caption>
+          <thead><tr><th scope="col">Ref</th><th scope="col">Title &amp; Location</th><th scope="col">Priority</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            {{range $d.Requests}}
+            <tr>
+              <td class="mono"><a href="/maintenance/{{.ID}}">{{.Reference}}</a></td>
+              <td>{{.Title}}<br><span class="subtitle">{{.LocationLabel}}</span></td>
+              <td>{{template "status_badge" (dict "Class" (maintPriorityClass .Priority) "Label" (printf "%s" .Priority))}}</td>
+              <td>{{template "status_badge" (dict "Class" (maintStatusClass .Status) "Label" (.Status.Label))}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No matching open maintenance" "Message" "No open maintenance requests match the configured priority/assignee filter.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.TotalMatching}} matching request(s)</span>
+        <a href="/maintenance" class="btn btn-secondary btn-sm">All Maintenance →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "maint.preventative_due") $w.MaintPreventative}}
+      {{$d := $w.MaintPreventative}}
+      {{if $d.Items}}
+      <ul class="widget-list">
+        {{range $d.Items}}
+        <li class="widget-list-item">
+          <div>
+            <strong>{{.Title}}</strong><br>
+            <span class="subtitle">{{.TargetLabel}}</span>
+          </div>
+          <div>
+            {{if .IsOverdue}}{{template "status_badge" (dict "Class" "badge-err" "Label" "Overdue")}}{{else}}<span class="mono">{{.NextDueDate}}</span>{{end}}
+          </div>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No preventative tasks due" "Message" (printf "Nothing scheduled within the next %d days." $d.HorizonDays))}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.TotalMatching}} due within {{$d.HorizonDays}}d</span>
+        <a href="/maintenance/schedule" class="btn btn-secondary btn-sm">Schedules →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "res.pending_inquiries") $w.PendingInquiries}}
+      {{$d := $w.PendingInquiries}}
+      {{if $d.Items}}
+      <ul class="widget-list">
+        {{range $d.Items}}
+        <li class="widget-list-item">
+          <div>
+            <a href="/reservations/{{.ID}}" class="mono"><strong>{{.Reference}}</strong></a> · {{.GuestName}}<br>
+            <span class="subtitle">Arrival {{.ArrivalDate}} · {{.UnitSummary}} · {{.AgeLabel}}</span>
+          </div>
+          <div>{{template "status_badge" (dict "Class" (statusClass (printf "%s" .Status)) "Label" (printf "%s" .Status))}}</div>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No pending holds" "Message" "All provisional holds and inquiries have been resolved.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.TotalMatching}} matching booking(s)</span>
+        <a href="/reservations?status=PENDING" class="btn btn-secondary btn-sm">View Reservations →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "res.mini_calendar") $w.MiniCalendar}}
+      {{$d := $w.MiniCalendar}}
+      {{if $d.Units}}
+      <div class="table-wrap">
+        <table class="cal-table">
+          <caption class="sr-only">Availability horizon mini-calendar</caption>
+          <thead>
+            <tr>
+              <th scope="col">Unit</th>
+              {{range $d.Dates}}
+              <th scope="col" class="mini-cal-cell">{{.Format "02"}}</th>
+              {{end}}
+            </tr>
+          </thead>
+          <tbody>
+            {{range $d.Units}}
+            <tr>
+              <td class="mono"><strong>{{.Unit.Code}}</strong> <span class="subtitle">{{.Unit.UnitTypeName}}</span></td>
+              {{range .Cells}}
+              <td class="cal-cell cal-cell-{{.Status}} mini-cal-cell" title="{{.Status}}{{if .Reference}} · {{.Reference}}{{end}}">
+                <span aria-label="{{.Status}}">{{calCellShort .Status}}</span>
+              </td>
+              {{end}}
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No active units for filter" "Message" "No units match the selected unit type filter.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.Days}}-day horizon{{if $d.UnitTypeName}} · {{$d.UnitTypeName}}{{end}}{{if $d.Truncated}} (showing 10 of {{$d.TotalUnits}} units){{end}} · Legend: A Available, B Booked, P Pending, L Alloc, X Blocked, U Unreleased</span>
+        <a href="{{$d.CalendarURL}}" class="btn btn-secondary btn-sm">Full Calendar →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "crm.open_enquiries") $w.OpenEnquiries}}
+      {{$d := $w.OpenEnquiries}}
+      {{if $d.Items}}
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Open guest enquiries and complaints SLA queue</caption>
+          <thead><tr><th scope="col">Ref</th><th scope="col">Subject &amp; Guest</th><th scope="col">Priority</th><th scope="col">SLA / Follow-up</th></tr></thead>
+          <tbody>
+            {{range $d.Items}}
+            <tr>
+              <td class="mono"><a href="/enquiries/{{.ID}}">{{.Reference}}</a></td>
+              <td>{{.Subject}}<br><span class="subtitle">{{.GuestLabel}} · {{.Category}}</span></td>
+              <td>{{template "status_badge" (dict "Class" (priorityBadgeClass .Priority) "Label" (printf "%s" .Priority))}}</td>
+              <td>
+                {{if .Overdue}}{{template "status_badge" (dict "Class" "badge-err" "Label" "Overdue")}}{{else if .TargetLabel}}<span class="mono">{{.TargetLabel}}</span>{{else if .FollowUpLabel}}<span class="mono">{{.FollowUpLabel}}</span>{{else}}<span>{{.Status}}</span>{{end}}
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No open enquiries" "Message" "No open enquiries or complaints match this filter.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.TotalMatching}} matching open item(s)</span>
+        <a href="/enquiries" class="btn btn-secondary btn-sm">Enquiries Queue →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "channels.sync_health") $w.ChannelsHealth}}
+      {{$d := $w.ChannelsHealth}}
+      {{if $d.Rows}}
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">OTA channel sync health</caption>
+          <thead><tr><th scope="col">Provider</th><th scope="col">Status</th><th scope="col">Sync / Imports</th></tr></thead>
+          <tbody>
+            {{range $d.Rows}}
+            <tr>
+              <td><strong>{{.ProviderName}}</strong><br><span class="subtitle">{{.MappingsCount}} mapping(s)</span></td>
+              <td>{{template "status_badge" (dict "Class" (channelStatusClass .Status) "Label" .Status)}}</td>
+              <td>
+                {{if .HasIssue}}
+                {{.FailedJobsCount}} failed job(s) · {{.UnmappedCount}} unmapped · {{.OverbookedCount}} conflicts
+                {{else}}
+                {{.PendingJobsCount}} pending · Healthy
+                {{end}}
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "All channel providers healthy" "Message" "No channel sync errors or unmapped conflicts detected.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">{{$d.ConfiguredCount}} connected · {{$d.IssueCount}} with issues</span>
+        <a href="/settings/integrations/channel-manager" class="btn btn-secondary btn-sm">Channel Manager →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "reports.kpi_snapshot") $w.KPISnapshot}}
+      {{$d := $w.KPISnapshot}}
+      {{if $d.InventoryHistoryIncomplete}}
+      <div class="alert alert-info" role="note">
+        <strong>Partial unit inventory history:</strong> Reliable status history starts {{if $d.ReliableFrom}}{{$d.ReliableFrom}}{{else}}later in window{{end}}; older nights may under-reflect historical removals.
+      </div>
+      {{end}}
+      <div class="widget-kpi-strip">
+        <div class="widget-stat-pill">
+          <strong>{{if $d.ZeroAvailability}}N/A (0 sellable){{else}}{{$d.OccupancyPct}}{{end}}</strong>
+          <span>Occupancy ({{$d.OccupiedUnitNights}}/{{$d.SellableUnitNights}} nights){{if and $d.PriorPeriodShown $d.PriorOccupancyPct}} · Prior: {{$d.PriorOccupancyPct}}{{end}}</span>
+        </div>
+      </div>
+      {{if $d.ByCurrency}}
+      <div class="table-wrap">
+        <table>
+          <caption class="sr-only">Per-currency revenue, ADR, and RevPAR summary</caption>
+          <thead><tr><th scope="col">Currency</th><th scope="col">Booked Gross</th><th scope="col">ADR</th><th scope="col">RevPAR</th></tr></thead>
+          <tbody>
+            {{range $d.ByCurrency}}
+            <tr>
+              <td class="mono"><strong>{{.Currency}}</strong></td>
+              <td class="mono">{{formatMoney .GrossBookedTotalPence .Currency}}</td>
+              <td class="mono">{{if .ZeroOccupancyForADR}}N/A{{else}}{{.ADRFormatted}}{{end}}</td>
+              <td class="mono">{{if .ZeroAvailabilityForRevPAR}}N/A{{else}}{{.RevPARFormatted}}{{end}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No currency activity" "Message" (printf "No accepted bookings or cash movements recorded in %s → %s." $d.StartDate $d.EndDate))}}
+      {{end}}
+      {{if $d.CompletenessWarnings}}
+      <div class="subtitle">Notices: {{joinStrings $d.CompletenessWarnings "; "}}</div>
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">Window: {{$d.StartDate}} → {{$d.EndDate}} ({{$d.WindowDays}}d){{if $d.MultiCurrencyDetected}} · Separated by currency{{end}}</span>
+        <a href="/reports" class="btn btn-secondary btn-sm">Full Reports →</a>
+      </div>
+
+    {{else if and (eq $w.WidgetID "workspace.quick_shortcuts") $w.QuickShortcuts}}
+      {{$d := $w.QuickShortcuts}}
+      {{if not $d.HasDataWidgets}}
+      <p class="subtitle">Your role has limited operational dashboard modules; quick links below show permitted sections.</p>
+      {{end}}
+      {{if $d.Items}}
+      <ul class="shortcut-list">
+        {{range $d.Items}}
+        <li><a href="{{.URL}}" class="btn btn-secondary btn-sm">{{.Label}}</a></li>
+        {{end}}
+      </ul>
+      {{else}}
+      {{template "empty_state" (dict "Title" "No quick links configured" "Message" "Pin navigation shortcuts under My Account.")}}
+      {{end}}
+      <div class="widget-footer">
+        <span class="subtitle">Permitted shortcuts &amp; views (max {{$d.MaxItems}})</span>
+        <a href="/account" class="btn btn-secondary btn-sm">Manage Shortcuts →</a>
+      </div>
+    {{end}}
+  </section>
+  {{end}}
+</div>
+{{end}}
+{{end}}

@@ -22,7 +22,7 @@ export function formatStayDate(isoDate: string): string {
 }
 
 export function formatPricingModel(model: string): string {
-  switch (model) {
+  switch ((model || "").trim().toUpperCase()) {
     case "PER_NIGHT":
       return "per night";
     case "PER_PERSON_PER_STAY":
@@ -35,7 +35,7 @@ export function formatPricingModel(model: string): string {
 }
 
 export function formatCategoryLabel(category: string): string {
-  switch (category) {
+  switch ((category || "").trim().toUpperCase()) {
     case "GLAMPING":
       return "Glamping";
     case "CABIN":
@@ -44,6 +44,8 @@ export function formatCategoryLabel(category: string): string {
       return "Tent Pitch";
     case "TOURING_PITCH":
       return "Touring & Hook-Up";
+    case "OTHER":
+      return "Other Accommodation";
     default:
       return category;
   }
@@ -112,4 +114,50 @@ export function buildSafeSandboxRedirect(
     return "/booking/confirmation";
   }
   return `/booking/confirmation?ref=${encodeURIComponent(cleanRef)}`;
+}
+
+/**
+ * Validates that a checkout URL returned by the booking API points exclusively
+ * to either the local non-production sandbox route (`/checkout/sandbox`) or an
+ * official `https://checkout.stripe.com` hosted checkout session without userinfo.
+ */
+export function isSafeCheckoutRedirectUrl(
+  rawUrl: string,
+  currentOrigin?: string,
+): boolean {
+  const target = (rawUrl || "").trim();
+  if (!target || target.includes("\\") || /[\r\n\t]/.test(target)) {
+    return false;
+  }
+  if (target.startsWith("/")) {
+    if (target.startsWith("//")) return false;
+    try {
+      const parsed = new URL(target, "https://lovelace.local");
+      return parsed.pathname === "/checkout/sandbox";
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const parsed = new URL(target);
+    if (parsed.username || parsed.password) return false;
+    if (
+      parsed.protocol === "https:" &&
+      parsed.hostname.toLowerCase() === "checkout.stripe.com"
+    ) {
+      return true;
+    }
+    if (currentOrigin) {
+      const self = new URL(currentOrigin);
+      if (
+        parsed.origin.toLowerCase() === self.origin.toLowerCase() &&
+        parsed.pathname === "/checkout/sandbox"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }

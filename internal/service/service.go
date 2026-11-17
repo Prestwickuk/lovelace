@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tirbach/tir-bach/internal/auth"
+	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/config"
 	"github.com/tirbach/tir-bach/internal/domain"
 	"github.com/tirbach/tir-bach/internal/mailer"
@@ -135,6 +139,60 @@ type Service struct {
 	dispatchMu       sync.Mutex
 	dispatchCfg      DispatchConfig
 	activeDispatches map[uuid.UUID]activeDispatchHandle
+
+	channelMu           sync.Mutex
+	channelAdapterCfg   channels.AdapterConfig
+	channelConnLocks    map[uuid.UUID]*sync.Mutex
+	channelSyncWorkerID string
+}
+
+// SetChannelAdapterConfig injects channel adapter HTTP/clock/test endpoint overrides.
+// Only tests should supply ProviderBaseURLs / AllowHTTPForTests; production always uses official endpoints.
+func (s *Service) SetChannelAdapterConfig(cfg channels.AdapterConfig) {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
+	s.channelAdapterCfg = cfg
+}
+
+func (s *Service) effectiveChannelAdapterConfig() channels.AdapterConfig {
+	s.channelMu.Lock()
+	cfg := s.channelAdapterCfg
+	s.channelMu.Unlock()
+	if cfg.Clock == nil && s.nowOverride != nil {
+		cfg.Clock = s.nowOverride
+	}
+	return cfg
+}
+
+func (s *Service) channelConnectionLock(connID uuid.UUID) *sync.Mutex {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
+	if s.channelConnLocks == nil {
+		s.channelConnLocks = make(map[uuid.UUID]*sync.Mutex)
+	}
+	mu, ok := s.channelConnLocks[connID]
+	if !ok {
+		mu = &sync.Mutex{}
+		s.channelConnLocks[connID] = mu
+	}
+	return mu
+}
+
+// SetChannelSyncWorkerID overrides the durable worker identity for channel sync job leasing tests.
+func (s *Service) SetChannelSyncWorkerID(workerID string) {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
+	s.channelSyncWorkerID = strings.TrimSpace(workerID)
+}
+
+func (s *Service) effectiveChannelWorkerID() string {
+	s.channelMu.Lock()
+	w := s.channelSyncWorkerID
+	s.channelMu.Unlock()
+	if w != "" {
+		return w
+	}
+	return "channel-sync-worker"
 }
 
 // SetDispatchConfig validates and stores worker lease, heartbeat, and transport timeout settings.
@@ -217,7 +275,7 @@ func New(store *postgres.Store, cfg config.Config) *Service {
 	var payProv payments.Provider
 	if cfg.StripeSecretKey != "" {
 		payProv = payments.NewStripeClient(cfg.StripeSecretKey, cfg.StripeAPIBaseURL)
-	} else if cfg.StripeSandbox && !cfg.IsProduction() {
+	} else if cfg.StripeSandbox && !cfg.IsProduction() && !cfg.IsStaging() {
 		origins := cfg.AllowedPublicOrigins()
 		primaryOrigin := ""
 		if len(origins) > 0 {
@@ -225,15 +283,21 @@ func New(store *postgres.Store, cfg config.Config) *Service {
 		}
 		payProv = payments.NewSandboxProvider(primaryOrigin)
 		if cfg.StripeWebhookSecret == "" {
-			cfg.StripeWebhookSecret = "whsec_sandbox_dev_only"
+			var rnd [16]byte
+			if _, err := rand.Read(rnd[:]); err == nil {
+				cfg.StripeWebhookSecret = "whsec_sandbox_" + hex.EncodeToString(rnd[:])
+			} else {
+				cfg.StripeWebhookSecret = "whsec_sandbox_ephemeral_fallback"
+			}
 		}
 	}
 	var emailSnd mailer.Sender
 	if strings.TrimSpace(cfg.SMTPAddr) != "" {
 		emailSnd = &mailer.SMTPSender{
-			Addr:     cfg.SMTPAddr,
-			Username: cfg.SMTPUsername,
-			Password: cfg.SMTPPassword,
+			Addr:       cfg.SMTPAddr,
+			Username:   cfg.SMTPUsername,
+			Password:   cfg.SMTPPassword,
+			RequireTLS: cfg.IsProduction() && !isLoopbackSMTPAddr(cfg.SMTPAddr),
 		}
 	}
 	attDir := strings.TrimSpace(cfg.AttachmentStorageDir)
@@ -258,6 +322,20 @@ func New(store *postgres.Store, cfg config.Config) *Service {
 
 func (s *Service) HasEmailProvider() bool {
 	return mailer.IsGenuineProvider(s.emailSender)
+}
+
+func isLoopbackSMTPAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		host = strings.TrimSpace(addr)
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
 }
 
 func (s *Service) EmailProviderKind() string {
@@ -302,6 +380,9 @@ func (s *Service) ValidateProductionStartup(ctx context.Context) error {
 	if strings.TrimSpace(s.cfg.PublicAPISecret) == "" {
 		return errors.New("TIRBACH_PUBLIC_API_SECRET is required in production to isolate public backend endpoints to trusted BFF callers")
 	}
+	if _, err := s.portalOTPHMACKey(); err != nil {
+		return fmt.Errorf("TIRBACH_ENCRYPTION_KEY is required in production for portal HMAC protection: %w", err)
+	}
 	if err := s.cfg.ValidateStripeKeys(); err != nil {
 		return err
 	}
@@ -314,6 +395,15 @@ func (s *Service) ValidateProductionStartup(ctx context.Context) error {
 	}
 	if (activeStripeProps > 0 || s.cfg.RequireEmail) && !s.HasEmailProvider() {
 		return errors.New("confirmation email delivery (TIRBACH_SMTP_ADDR) is required in production whenever direct public payments are enabled or TIRBACH_REQUIRE_EMAIL=true")
+	}
+	if s.cfg.GuestPortalEnabled {
+		activePortalProps, pErr := s.store.CountActivePortalEnabledProperties(ctx)
+		if pErr != nil {
+			return fmt.Errorf("check portal-enabled properties: %w", pErr)
+		}
+		if activePortalProps > 0 && !s.HasEmailProvider() {
+			return errors.New("email delivery (TIRBACH_SMTP_ADDR) is required in production whenever the public guest portal is enabled on any property")
+		}
 	}
 	if att := s.attachmentReadiness(); att.Status != "ok" {
 		return fmt.Errorf("attachment storage (%s) is unavailable or not writable: %s", s.attachmentDir, att.Detail)
@@ -424,14 +514,19 @@ func (s *Service) Readiness(ctx context.Context) ReadinessReport {
 		status := "unconfigured"
 		detail := "no genuine SMTP provider configured; confirmation emails remain PENDING in outbox"
 		if s.cfg.IsProduction() {
-			if stripePropsErr != nil {
+			var activePortalProps int
+			var portalPropsErr error
+			if s.cfg.GuestPortalEnabled {
+				activePortalProps, portalPropsErr = s.store.CountActivePortalEnabledProperties(ctx)
+			}
+			if stripePropsErr != nil || portalPropsErr != nil {
 				status = "unknown"
 				report.Ready = false
-				detail = "unable to verify email requirement while property payment policies are unavailable"
-			} else if activeStripeProps > 0 || s.cfg.RequireEmail {
+				detail = "unable to verify email requirement while property policies are unavailable"
+			} else if activeStripeProps > 0 || activePortalProps > 0 || s.cfg.RequireEmail {
 				status = "misconfigured"
 				report.Ready = false
-				detail = "confirmation email provider is required in production when live public bookings are enabled or TIRBACH_REQUIRE_EMAIL=true"
+				detail = "confirmation email provider is required in production when live public bookings or the guest portal are enabled, or TIRBACH_REQUIRE_EMAIL=true"
 			}
 		}
 		report.Email = ReadinessComponent{
@@ -491,6 +586,13 @@ func (s *Service) requirePerm(actor Actor, perm auth.Permission) error {
 func (s *Service) requirePropertyScope(actor Actor, propertyID uuid.UUID) error {
 	if actor.PropertyID != nil && *actor.PropertyID != propertyID {
 		return domain.ErrForbidden
+	}
+	if s.store != nil && actor.UserID != uuid.Nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if scopePropID := s.effectiveActorPropertyScope(ctx, nil, actor); scopePropID != nil && *scopePropID != propertyID {
+			return domain.ErrForbidden
+		}
 	}
 	return nil
 }

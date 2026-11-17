@@ -30,6 +30,8 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guests/{id}/consent", h.requirePageAuth(true, h.handleGuestConsentPost))
 	mux.HandleFunc("GET /guests/{id}/export", h.requirePageAuth(false, h.handleGuestExportGet))
 	mux.HandleFunc("POST /guests/{id}/anonymize", h.requirePageAuth(true, h.handleGuestAnonymizePost))
+	mux.HandleFunc("POST /guests/{id}/portal/send-verification", h.requirePageAuth(true, h.handleGuestPortalSendVerificationPost))
+	mux.HandleFunc("POST /guests/{id}/portal/revoke-sessions", h.requirePageAuth(true, h.handleGuestPortalRevokeSessionsPost))
 	mux.HandleFunc("POST /communications/{id}/complete-followup", h.requirePageAuth(true, h.handleCommFollowUpCompletePost))
 
 	mux.HandleFunc("GET /enquiries", h.requirePageAuth(false, h.handleEnquiriesListGet))
@@ -50,22 +52,69 @@ func (h *Handler) registerGuestCRMRoutes(mux *http.ServeMux) {
 func (h *Handler) handleGuestsListGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Directory", "guests")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	q := r.URL.Query()
+	segment := q.Get("segment")
+	includeAll := q.Get("include_all") == "1"
+	sortKey := base.Workspace.GuestsSort
+	if norm, ok := domain.IsAllowedGuestsSort(q.Get("sort"), false); ok {
+		sortKey = norm
+	}
+	rawPageSize := q.Get("page_size")
+	activeSavedViewID := ""
+	if sv, ok := findSavedView(base.Workspace, domain.SavedViewScreenGuests, q.Get("saved_view")); ok {
+		activeSavedViewID = sv.ID
+		if !q.Has("segment") && sv.Filters["segment"] != "" {
+			segment = sv.Filters["segment"]
+		}
+		if !q.Has("include_all") && sv.Filters["include_all"] != "" {
+			includeAll = sv.Filters["include_all"] == "1"
+		}
+		if !q.Has("sort") && sv.Filters["sort"] != "" {
+			if norm, ok := domain.IsAllowedGuestsSort(sv.Filters["sort"], false); ok {
+				sortKey = norm
+			}
+		}
+		if rawPageSize == "" && sv.Filters["page_size"] != "" {
+			rawPageSize = sv.Filters["page_size"]
+		}
+	}
+
 	filter := domain.GuestDirectoryFilter{
 		Query:      q.Get("q"),
-		Segment:    q.Get("segment"),
+		Segment:    segment,
 		Status:     q.Get("status"),
-		IncludeAll: q.Get("include_all") == "1",
+		IncludeAll: includeAll,
 	}
 	guests, err := h.svc.ListGuests(r.Context(), actor, base.Property.ID, filter)
 	if err != nil {
 		h.renderDomainError(w, err, "Guest Directory Error", "unable to load guest directory")
 		return
 	}
+	sortGuestsForWorkspace(guests, sortKey)
+	totalCount := len(guests)
+	page, pageSize := resolvePageParams(rawPageSize, q.Get("page"), base.Workspace.TablePageSize)
+	startIdx, endIdx, totalPages := paginateRange(totalCount, page, pageSize)
+	if page > totalPages {
+		page = totalPages
+	}
+	pagedGuests := guests[startIdx:endIdx]
+
 	scan, _ := h.svc.ListDuplicateCandidates(r.Context(), actor, base.Property.ID)
+	base.ViewControls = viewControlMeta{
+		FilterSort:        sortKey,
+		PageSize:          pageSize,
+		Page:              page,
+		TotalCount:        totalCount,
+		TotalPages:        totalPages,
+		HasPrevPage:       page > 1,
+		HasNextPage:       page < totalPages,
+		PrevPage:          page - 1,
+		NextPage:          page + 1,
+		ActiveSavedViewID: activeSavedViewID,
+	}
 	h.renderPage(w, "guests_list.html", struct {
 		baseView
 		Guests         []domain.GuestListItem
@@ -73,7 +122,7 @@ func (h *Handler) handleGuestsListGet(w http.ResponseWriter, r *http.Request, ac
 		DuplicateCount int
 	}{
 		baseView:       base,
-		Guests:         guests,
+		Guests:         pagedGuests,
 		Filter:         filter,
 		DuplicateCount: len(scan.Candidates),
 	})
@@ -82,7 +131,7 @@ func (h *Handler) handleGuestsListGet(w http.ResponseWriter, r *http.Request, ac
 func (h *Handler) handleGuestCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Directory", "guests")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	created, err := h.svc.CreateGuest(r.Context(), actor, domain.Guest{
@@ -112,7 +161,7 @@ func (h *Handler) handleGuestDetailGet(w http.ResponseWriter, r *http.Request, a
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	detail, err := h.svc.GetGuestDetail(r.Context(), actor, base.Property.ID, guestID)
@@ -142,22 +191,26 @@ func (h *Handler) handleGuestDetailGet(w http.ResponseWriter, r *http.Request, a
 		}
 	}
 
+	policy, _ := h.svc.GetBookingPolicy(r.Context(), actor, base.Property.ID)
+
 	h.renderPage(w, "guest_detail.html", struct {
 		baseView
-		Detail          domain.GuestDetailBundle
-		Templates       []domain.CommunicationTemplate
-		StaffUsers      []domain.AdminUser
-		PreviewTplID    string
-		PreviewSubject  string
-		PreviewBodyText string
+		Detail                   domain.GuestDetailBundle
+		Templates                []domain.CommunicationTemplate
+		StaffUsers               []domain.AdminUser
+		PreviewTplID             string
+		PreviewSubject           string
+		PreviewBodyText          string
+		PortalEnabledForProperty bool
 	}{
-		baseView:        base,
-		Detail:          detail,
-		Templates:       templates,
-		StaffUsers:      staff,
-		PreviewTplID:    r.URL.Query().Get("preview_template"),
-		PreviewSubject:  previewSubj,
-		PreviewBodyText: previewBody,
+		baseView:                 base,
+		Detail:                   detail,
+		Templates:                templates,
+		StaffUsers:               staff,
+		PreviewTplID:             r.URL.Query().Get("preview_template"),
+		PreviewSubject:           previewSubj,
+		PreviewBodyText:          previewBody,
+		PortalEnabledForProperty: base.GlobalPortalEnabled && policy.GuestPortalEnabled,
 	})
 }
 
@@ -169,7 +222,7 @@ func (h *Handler) handleGuestUpdatePost(w http.ResponseWriter, r *http.Request, 
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
-		h.renderError(w, http.StatusInternalServerError, "Server Error", "failed to load property")
+		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
 	addrJSON := json.RawMessage(`{}`)
@@ -210,6 +263,7 @@ func (h *Handler) handleGuestPreferenceAddPost(w http.ResponseWriter, r *http.Re
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.AddGuestPreference(r.Context(), actor, domain.GuestPreference{
@@ -231,6 +285,7 @@ func (h *Handler) handleGuestPreferenceDeletePost(w http.ResponseWriter, r *http
 	prefID, _ := uuid.Parse(r.PathValue("prefID"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if err := h.svc.RemoveGuestPreference(r.Context(), actor, base.Property.ID, guestID, prefID); err != nil {
@@ -244,6 +299,7 @@ func (h *Handler) handleGuestNoteAddPost(w http.ResponseWriter, r *http.Request,
 	guestID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.AddGuestNote(r.Context(), actor, domain.GuestNote{
@@ -265,6 +321,7 @@ func (h *Handler) handleGuestNoteDeletePost(w http.ResponseWriter, r *http.Reque
 	noteID, _ := uuid.Parse(r.PathValue("noteID"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if err := h.svc.RemoveGuestNote(r.Context(), actor, base.Property.ID, guestID, noteID); err != nil {
@@ -278,6 +335,7 @@ func (h *Handler) handleGuestInteractionPost(w http.ResponseWriter, r *http.Requ
 	guestID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	var followUpAt *time.Time
@@ -313,6 +371,7 @@ func (h *Handler) handleGuestEmailSendPost(w http.ResponseWriter, r *http.Reques
 	guestID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.SendGuestEmail(r.Context(), actor, service.SendGuestEmailInput{
@@ -331,15 +390,19 @@ func (h *Handler) handleGuestEmailSendPost(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) handleCommFollowUpCompletePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
-	commID, _ := uuid.Parse(r.PathValue("id"))
-	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
+	commID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Request", "invalid communication id")
 		return
 	}
-	guestID := strings.TrimSpace(r.FormValue("guest_id"))
+	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
+		return
+	}
 	back := "/guests"
-	if guestID != "" {
-		back = "/guests/" + guestID
+	if parsedGuestID, gErr := uuid.Parse(strings.TrimSpace(r.FormValue("guest_id"))); gErr == nil {
+		back = "/guests/" + parsedGuestID.String()
 	}
 	if err := h.svc.CompleteCommunicationFollowUp(r.Context(), actor, base.Property.ID, commID); err != nil {
 		h.redirectErr(w, r, back, err)
@@ -352,6 +415,7 @@ func (h *Handler) handleGuestConsentPost(w http.ResponseWriter, r *http.Request,
 	guestID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.RecordGuestConsent(r.Context(), actor, domain.GuestConsentRecord{
@@ -378,6 +442,7 @@ func (h *Handler) handleGuestExportGet(w http.ResponseWriter, r *http.Request, a
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Export", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	bundle, err := h.svc.ExportGuestData(r.Context(), actor, base.Property.ID, guestID)
@@ -394,6 +459,7 @@ func (h *Handler) handleGuestAnonymizePost(w http.ResponseWriter, r *http.Reques
 	guestID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.AnonymizeGuest(r.Context(), actor, base.Property.ID, guestID, r.FormValue("reason")); err != nil {
@@ -406,6 +472,7 @@ func (h *Handler) handleGuestAnonymizePost(w http.ResponseWriter, r *http.Reques
 func (h *Handler) handleGuestMergeQueueGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Duplicate Guest Merge", "guest-merge")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	scan, err := h.svc.ListDuplicateCandidates(r.Context(), actor, base.Property.ID)
@@ -430,6 +497,7 @@ func (h *Handler) handleGuestMergeQueueGet(w http.ResponseWriter, r *http.Reques
 func (h *Handler) handleGuestMergePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Duplicate Guest Merge", "guest-merge")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	srcID, err1 := uuid.Parse(r.FormValue("source_guest_id"))
@@ -449,6 +517,7 @@ func (h *Handler) handleGuestMergePost(w http.ResponseWriter, r *http.Request, a
 func (h *Handler) handleGuestDuplicateDismissPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Duplicate Guest Merge", "guest-merge")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	idA, err1 := uuid.Parse(r.FormValue("guest_a_id"))
@@ -467,6 +536,7 @@ func (h *Handler) handleGuestDuplicateDismissPost(w http.ResponseWriter, r *http
 func (h *Handler) handleEnquiriesListGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Enquiries & Requests", "enquiries")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	q := r.URL.Query()
@@ -503,6 +573,7 @@ func (h *Handler) handleEnquiriesListGet(w http.ResponseWriter, r *http.Request,
 func (h *Handler) handleEnquiryCreatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Enquiries & Requests", "enquiries")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	var followUpAt *time.Time
@@ -542,6 +613,7 @@ func (h *Handler) handleEnquiryDetailGet(w http.ResponseWriter, r *http.Request,
 	}
 	base, err := h.buildBaseView(r.Context(), r, actor, "Enquiry Detail", "enquiries")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	enq, msgs, err := h.svc.GetGuestEnquiryDetail(r.Context(), actor, base.Property.ID, enqID)
@@ -567,15 +639,33 @@ func (h *Handler) handleEnquiryDetailGet(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *Handler) handleEnquiryUpdatePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
-	enqID, _ := uuid.Parse(r.PathValue("id"))
-	base, err := h.buildBaseView(r.Context(), r, actor, "Enquiry Detail", "enquiries")
+	enqID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Request", "invalid enquiry id")
 		return
 	}
-	var followUpAt *time.Time
-	if raw := strings.TrimSpace(r.FormValue("follow_up_at")); raw != "" {
-		if t, err := time.Parse("2006-01-02", raw); err == nil {
-			followUpAt = &t
+	base, err := h.buildBaseView(r.Context(), r, actor, "Enquiry Detail", "enquiries")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
+		return
+	}
+	existing, _, _ := h.svc.GetGuestEnquiryDetail(r.Context(), actor, base.Property.ID, enqID)
+
+	assignedUserID := existing.AssignedUserID
+	if r.FormValue("assigned_user_id_present") == "1" || r.FormValue("assigned_user_id") != "" {
+		assignedUserID = parseOptionalUUID(r.FormValue("assigned_user_id"))
+	}
+	maintReqID := existing.MaintenanceRequestID
+	if r.FormValue("maintenance_request_id_present") == "1" || r.FormValue("maintenance_request_id") != "" {
+		maintReqID = parseOptionalUUID(r.FormValue("maintenance_request_id"))
+	}
+	followUpAt := existing.FollowUpAt
+	if r.FormValue("follow_up_at_present") == "1" || strings.TrimSpace(r.FormValue("follow_up_at")) != "" {
+		followUpAt = nil
+		if raw := strings.TrimSpace(r.FormValue("follow_up_at")); raw != "" {
+			if t, pErr := time.Parse("2006-01-02", raw); pErr == nil {
+				followUpAt = &t
+			}
 		}
 	}
 	if _, err := h.svc.UpdateGuestEnquiry(r.Context(), actor, domain.GuestEnquiry{
@@ -583,13 +673,13 @@ func (h *Handler) handleEnquiryUpdatePost(w http.ResponseWriter, r *http.Request
 		PropertyID:           base.Property.ID,
 		GuestID:              parseOptionalUUID(r.FormValue("guest_id")),
 		ReservationID:        parseOptionalUUID(r.FormValue("reservation_id")),
-		MaintenanceRequestID: parseOptionalUUID(r.FormValue("maintenance_request_id")),
+		MaintenanceRequestID: maintReqID,
 		Category:             domain.EnquiryCategory(r.FormValue("category")),
 		Status:               domain.EnquiryStatus(r.FormValue("status")),
 		Priority:             domain.EnquiryPriority(r.FormValue("priority")),
 		Subject:              r.FormValue("subject"),
 		Description:          r.FormValue("description"),
-		AssignedUserID:       parseOptionalUUID(r.FormValue("assigned_user_id")),
+		AssignedUserID:       assignedUserID,
 		FollowUpAt:           followUpAt,
 		ResolutionNotes:      r.FormValue("resolution_notes"),
 		Version:              parseIntDefault(r.FormValue("version"), 1),
@@ -604,6 +694,7 @@ func (h *Handler) handleEnquiryMessagePost(w http.ResponseWriter, r *http.Reques
 	enqID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Enquiry Detail", "enquiries")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	isInternal := r.FormValue("is_internal") == "true"
@@ -622,6 +713,7 @@ func (h *Handler) handleEnquiryMessagePost(w http.ResponseWriter, r *http.Reques
 func (h *Handler) handleCommsSettingsGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	templates, err := h.svc.ListCommunicationTemplates(r.Context(), actor, base.Property.ID)
@@ -656,6 +748,7 @@ func (h *Handler) handleCommsSettingsGet(w http.ResponseWriter, r *http.Request,
 func (h *Handler) handleTemplateSavePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.CreateCommunicationTemplate(r.Context(), actor, domain.CommunicationTemplate{
@@ -679,6 +772,7 @@ func (h *Handler) handleTemplateUpdatePost(w http.ResponseWriter, r *http.Reques
 	tplID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.UpdateCommunicationTemplate(r.Context(), actor, domain.CommunicationTemplate{
@@ -702,6 +796,7 @@ func (h *Handler) handleAutomationRuleUpdatePost(w http.ResponseWriter, r *http.
 	ruleID, _ := uuid.Parse(r.PathValue("id"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	tplID, _ := uuid.Parse(r.FormValue("template_id"))
@@ -740,6 +835,7 @@ func (h *Handler) handleFailedEmailRetryPost(w http.ResponseWriter, r *http.Requ
 	outboxID, _ := uuid.Parse(r.PathValue("outboxID"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if err := h.svc.RetryFailedOutboxEmail(r.Context(), actor, base.Property.ID, outboxID); err != nil {
@@ -753,6 +849,7 @@ func (h *Handler) handleOutboxReconcilePost(w http.ResponseWriter, r *http.Reque
 	outboxID, _ := uuid.Parse(r.PathValue("outboxID"))
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.ReconcileUnknownOutboxDispatch(r.Context(), actor, service.ReconcileOutboxInput{
@@ -773,6 +870,7 @@ func (h *Handler) handleOutboxReconcilePost(w http.ResponseWriter, r *http.Reque
 func (h *Handler) handleRetentionPolicyPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "Templates & Automation", "comms-settings")
 	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
 		return
 	}
 	if _, err := h.svc.UpdatePropertyRetentionPolicy(r.Context(), actor, domain.PropertyRetentionPolicy{
@@ -786,4 +884,40 @@ func (h *Handler) handleRetentionPolicyPost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	redirectMsg(w, r, "/communications/settings", "Data retention policy updated.")
+}
+
+func (h *Handler) handleGuestPortalSendVerificationPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	guestID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Guest", "invalid guest id")
+		return
+	}
+	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
+		return
+	}
+	if err := h.svc.SendGuestPortalVerification(r.Context(), actor, base.Property.ID, guestID); err != nil {
+		h.redirectErr(w, r, "/guests/"+guestID.String(), err)
+		return
+	}
+	redirectMsg(w, r, "/guests/"+guestID.String(), "Portal verification code queued to guest email (code withheld from staff logs).")
+}
+
+func (h *Handler) handleGuestPortalRevokeSessionsPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	guestID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Guest", "invalid guest id")
+		return
+	}
+	base, err := h.buildBaseView(r.Context(), r, actor, "Guest Profile", "guests")
+	if err != nil {
+		h.renderDomainError(w, err, "Server Error", "Unable to load property context.")
+		return
+	}
+	if _, err := h.svc.RevokeGuestPortalSessions(r.Context(), actor, base.Property.ID, guestID); err != nil {
+		h.redirectErr(w, r, "/guests/"+guestID.String(), err)
+		return
+	}
+	redirectMsg(w, r, "/guests/"+guestID.String(), "Active guest portal sessions and challenges revoked.")
 }

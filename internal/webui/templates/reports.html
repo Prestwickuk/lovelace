@@ -1,0 +1,344 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Reports &amp; Business Intelligence</h1>
+    <p class="subtitle">Property-scoped occupancy, ADR/RevPAR, channel performance, forecast vs OTB, repeat guest analytics, and audited accounting exports · Timezone: <span class="mono">{{.Overview.Period.Timezone}}</span></p>
+  </div>
+</div>
+
+<div class="card">
+  <form method="get" action="/reports" class="filter-bar filter-row">
+    <div class="field filter-field">
+      <label for="start_date">Start Date (inclusive)</label>
+      <input type="date" id="start_date" name="start_date" value="{{.FilterStart}}">
+    </div>
+    <div class="field filter-field">
+      <label for="end_date">End Date (exclusive)</label>
+      <input type="date" id="end_date" name="end_date" value="{{.FilterEnd}}">
+    </div>
+    <div class="field filter-field">
+      <label for="currency">Currency Filter</label>
+      <input type="text" id="currency" name="currency" value="{{.FilterCurrency}}" placeholder="All (e.g. GBP)" maxlength="3">
+    </div>
+    <div class="field filter-field">
+      <label for="season">Season Comparison</label>
+      <select id="season" name="season">
+        <option value="peak" {{if eq .FilterSeason "peak"}}selected{{end}}>Peak (vs prior year)</option>
+        <option value="shoulder" {{if eq .FilterSeason "shoulder"}}selected{{end}}>Shoulder (vs prior year)</option>
+        <option value="off_peak" {{if eq .FilterSeason "off_peak"}}selected{{end}}>Off-Peak (vs prior year)</option>
+        <option value="custom" {{if eq .FilterSeason "custom"}}selected{{end}}>Custom Range</option>
+      </select>
+    </div>
+    <div class="field filter-field">
+      <label for="compare_start">Compare Start (custom)</label>
+      <input type="date" id="compare_start" name="compare_start" value="{{.FilterCompareStart}}">
+    </div>
+    <div class="field filter-field">
+      <label for="compare_end">Compare End (custom)</label>
+      <input type="date" id="compare_end" name="compare_end" value="{{.FilterCompareEnd}}">
+    </div>
+    <div class="field filter-field">
+      <label for="horizon_days">Forecast Horizon (days)</label>
+      <input type="number" id="horizon_days" name="horizon_days" value="{{.FilterHorizon}}" min="1" max="180" class="w-num-md">
+    </div>
+    <button type="submit" class="btn btn-primary">Run Report</button>
+  </form>
+</div>
+
+{{if .Overview.Revenue.Completeness.Warnings}}
+<div class="alert alert-warn">
+  <strong>Data Completeness &amp; Integrity Notices:</strong>
+  <ul>
+    {{range .Overview.Revenue.Completeness.Warnings}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+
+<div class="grid grid-4">
+  <div class="card">
+    <div class="kpi-label">Occupancy Rate</div>
+    <div class="kpi-value">{{.Overview.Occupancy.Summary.OccupancyRatePct}}</div>
+    <div class="kpi-sub">{{.Overview.Occupancy.Summary.OccupiedUnitNights}} / {{.Overview.Occupancy.Summary.SellableUnitNights}} sellable nights</div>
+    <progress class="report-progress" max="100" value="{{bpsToPct .Overview.Occupancy.Summary.OccupancyRateBPS}}"></progress>
+  </div>
+  <div class="card">
+    <div class="kpi-label">Physical vs Non-Sellable</div>
+    <div class="kpi-value">{{.Overview.Occupancy.Summary.PhysicalUnitNights}} phys</div>
+    <div class="kpi-sub">OOO: {{.Overview.Occupancy.Summary.OutOfOrderNights}} · Owner/Admin: {{.Overview.Occupancy.Summary.OwnerAdminBlockNights}} · Pending/Hold: {{.Overview.Occupancy.Summary.PendingHoldNights}}</div>
+  </div>
+  <div class="card">
+    <div class="kpi-label">Forward OTB ({{.Overview.Forecast.HorizonDays}}d)</div>
+    <div class="kpi-value">{{.Overview.Forecast.OnTheBooksUnitNights}} nights</div>
+    <div class="kpi-sub">Projected Total: {{.Overview.Forecast.ProjectedTotalUnitNights}} (Band: {{.Overview.Forecast.ConfidenceLowNights}}–{{.Overview.Forecast.ConfidenceHighNights}})</div>
+  </div>
+  <div class="card">
+    <div class="kpi-label">Repeat Guest Share</div>
+    <div class="kpi-value">{{.Overview.Retention.RepeatGuestRatePct}}</div>
+    <div class="kpi-sub">{{.Overview.Retention.ReturningGuestsCount}} returning / {{.Overview.Retention.DistinctCanonicalGuestsCount}} canonical guests ({{.Overview.Retention.MergedAliasStaysResolved}} merged resolved)</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Revenue, ADR &amp; RevPAR by Currency (Realized vs Cash Flow)</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Currency</th>
+          <th>Accepted Stays</th>
+          <th>Accom. Net</th>
+          <th>Extras</th>
+          <th>Discount</th>
+          <th>Tax</th>
+          <th>Gross Booked</th>
+          <th>ADR</th>
+          <th>RevPAR</th>
+          <th>Net Collected Cash</th>
+          <th>Refunded</th>
+          <th>Balance Due</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Overview.Revenue.ByCurrency}}
+        <tr>
+          <td class="mono"><strong>{{.Currency}}</strong></td>
+          <td>{{.AcceptedBookingsCount}} ({{.OccupiedUnitNights}}n)</td>
+          <td class="mono">{{formatMoneyCur .Currency .AccommodationNetPence}}</td>
+          <td class="mono">{{formatMoneyCur .Currency .ExtrasSubtotalPence}}</td>
+          <td class="mono">{{formatMoneyCur .Currency .DiscountPence}}</td>
+          <td class="mono">{{formatMoneyCur .Currency .TaxPence}}</td>
+          <td class="mono"><strong>{{formatMoneyCur .Currency .GrossBookedTotalPence}}</strong></td>
+          <td class="mono">{{.ADRFormatted}}</td>
+          <td class="mono">{{.RevPARFormatted}}</td>
+          <td class="mono"><strong>{{formatMoneyCur .Currency .NetCollectedCashPence}}</strong></td>
+          <td class="mono">{{formatMoneyCur .Currency .RefundedPence}}</td>
+          <td class="mono">{{formatMoneyCur .Currency .OutstandingBalancePence}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="12">No recognized revenue or settled payments found in this window.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Occupancy by Unit Type</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Unit Type</th>
+            <th>Units</th>
+            <th>Sellable</th>
+            <th>Occupied</th>
+            <th>OOO</th>
+            <th>Occupancy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Overview.Occupancy.ByUnitType}}
+          <tr>
+            <td><strong>{{.UnitTypeName}}</strong> <span class="mono">{{.UnitTypeCode}}</span></td>
+            <td>{{.UnitCount}}</td>
+            <td>{{.SellableUnitNights}}</td>
+            <td>{{.OccupiedUnitNights}}</td>
+            <td>{{.OutOfOrderNights}}</td>
+            <td>{{.OccupancyRatePct}}</td>
+          </tr>
+          {{else}}
+          <tr><td colspan="6">No active unit types found.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Monthly Occupancy Trend</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Sellable</th>
+            <th>Occupied</th>
+            <th>Pending/Hold</th>
+            <th>Occupancy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Overview.Occupancy.Monthly}}
+          <tr>
+            <td class="mono">{{.Month}}</td>
+            <td>{{.SellableUnitNights}}</td>
+            <td>{{.OccupiedUnitNights}}</td>
+            <td>{{.PendingHoldNights}}</td>
+            <td>
+              {{.OccupancyRatePct}}
+              <progress class="report-progress" max="100" value="{{bpsToPct .OccupancyRateBPS}}"></progress>
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="5">No daily points in range.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Booking Channel Comparison</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th>Category</th>
+          <th>Currency</th>
+          <th>Accepted</th>
+          <th>Unit-Nights</th>
+          <th>Booked Total</th>
+          <th>Collected Cash</th>
+          <th>ADR</th>
+          <th>Avg Lead (days)</th>
+          <th>OTA Imports (Unmapped / Conflict)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Overview.Channels.Rows}}
+        <tr>
+          <td><strong>{{.ChannelName}}</strong><br><span class="mono">{{.ChannelCode}}</span></td>
+          <td><span class="badge badge-muted">{{.Category}}</span></td>
+          <td class="mono">{{.Currency}}</td>
+          <td>{{.AcceptedBookings}} (Canc: {{.CancelledOrNoShowCount}})</td>
+          <td>{{.OccupiedUnitNights}} ({{bpsLabel .UnitNightShareBPS}})</td>
+          <td class="mono">{{formatMoneyCur .Currency .GrossBookedTotalPence}}</td>
+          <td class="mono">{{formatMoneyCur .Currency .GrossCollectedCashPence}}</td>
+          <td class="mono">{{.ADRFormatted}}</td>
+          <td class="mono">{{formatStrPtr .AvgLeadTimeDays}}</td>
+          <td class="mono">{{.ExternalMappedCount}} ok · {{.ExternalUnmappedCount}} unmapped · {{.ExternalConflictCount}} conflict</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="10">No channel activity recorded for this window.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>On-The-Books vs Read-Only Forecast ({{.Overview.Forecast.Window.StartDate}} to {{.Overview.Forecast.Window.EndDate}})</h2>
+    <p class="subtitle">{{.Overview.Forecast.Method}}</p>
+    <p><span class="badge badge-info">{{.Overview.Forecast.ReadOnlyGuarantee}}</span></p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Currency</th>
+            <th>OTB Booked (Gross)</th>
+            <th>Provisional Pending</th>
+            <th>Trailing ADR</th>
+            <th>Allocated Add. Nights</th>
+            <th>Projected Total Accom.</th>
+            <th>Range (Low – High)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Overview.Forecast.ByCurrency}}
+          <tr>
+            <td class="mono"><strong>{{.Currency}}</strong></td>
+            <td class="mono">{{formatMoneyCur .Currency .OnTheBooksGrossTotalPence}}</td>
+            <td class="mono">{{formatMoneyCur .Currency .ProvisionalPendingPence}}</td>
+            <td class="mono">{{formatMoneyCurPtr .Currency .TrailingBenchmarkADRPence}}</td>
+            <td class="mono">{{.AllocatedAdditionalNights}}</td>
+            <td class="mono"><strong>{{formatMoneyCur .Currency .ProjectedTotalPence}}</strong></td>
+            <td class="mono">{{formatMoneyCur .Currency .ProjectedLowPence}} – {{formatMoneyCur .Currency .ProjectedHighPence}}</td>
+          </tr>
+          {{else}}
+          <tr><td colspan="7">Insufficient currency data for forecast breakdown.</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Seasonal Performance Comparison ({{.Seasonal.SeasonPreset}})</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Window</th>
+            <th>Dates</th>
+            <th>Occupied / Sellable</th>
+            <th>Occupancy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>{{.Seasonal.Current.Label}}</strong></td>
+            <td class="mono">{{.Seasonal.Current.Period.StartDate}} → {{.Seasonal.Current.Period.EndDate}}</td>
+            <td>{{.Seasonal.Current.Occupancy.OccupiedUnitNights}} / {{.Seasonal.Current.Occupancy.SellableUnitNights}}</td>
+            <td><strong>{{.Seasonal.Current.Occupancy.OccupancyRatePct}}</strong> ({{.Seasonal.OccupancyDeltaLabel}})</td>
+          </tr>
+          <tr>
+            <td>{{.Seasonal.Comparison.Label}}</td>
+            <td class="mono">{{.Seasonal.Comparison.Period.StartDate}} → {{.Seasonal.Comparison.Period.EndDate}}</td>
+            <td>{{.Seasonal.Comparison.Occupancy.OccupiedUnitNights}} / {{.Seasonal.Comparison.Occupancy.SellableUnitNights}}</td>
+            <td>{{.Seasonal.Comparison.Occupancy.OccupancyRatePct}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{{if .CanExportReports}}
+<div class="card">
+  <h2>Accounting CSV Exports (Formula-Safe &amp; Audited)</h2>
+  <p class="subtitle">Schema: <span class="mono">lovelace.accounting.v1</span> · Exports exclude guest PII and are recorded as <span class="mono">report.exported</span> audit events.</p>
+  <div class="filter-bar">
+    <a class="btn btn-secondary" href="/reports/export?type=booking_line_items&start_date={{.FilterStart}}&end_date={{.FilterEnd}}&currency={{.FilterCurrency}}">Download Booking Line Items CSV</a>
+    <a class="btn btn-secondary" href="/reports/export?type=payment_ledger&start_date={{.FilterStart}}&end_date={{.FilterEnd}}&currency={{.FilterCurrency}}">Download Payment Ledger CSV</a>
+    <a class="btn btn-secondary" href="/reports/export?type=refund_ledger&start_date={{.FilterStart}}&end_date={{.FilterEnd}}&currency={{.FilterCurrency}}">Download Refund Ledger CSV</a>
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <h2>Metric Definitions &amp; Unsupported Accounting Fields</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Metric / Field</th>
+          <th>Definition / Status</th>
+          <th>Exclusions / Basis</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Overview.Revenue.Definitions}}
+        <tr>
+          <td><strong>{{.Metric}}</strong></td>
+          <td>{{.Formula}}</td>
+          <td>{{.Exclusions}} · <em>{{.TimeBasis}}</em></td>
+        </tr>
+        {{end}}
+        {{range .Overview.Unsupported}}
+        <tr>
+          <td class="mono">{{.Field}}</td>
+          <td><span class="badge badge-warn">{{.Status}}</span></td>
+          <td>{{.Reason}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

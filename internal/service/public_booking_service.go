@@ -87,8 +87,17 @@ type ReservationFinancials struct {
 	Payments    []domain.PaymentRecord `json:"payments"`
 }
 
+func (s *Service) maskPublicPropertyPortalFlag(prop *domain.PublicPropertyView) {
+	prop.Policy.GuestPortalEnabled = s.cfg.GuestPortalEnabled && prop.Policy.GuestPortalEnabled
+}
+
 func (s *Service) GetPublicProperty(ctx context.Context, slug string) (domain.PublicPropertyView, error) {
-	return s.store.GetPublicPropertyBySlug(ctx, nil, slug)
+	prop, err := s.store.GetPublicPropertyBySlug(ctx, nil, slug)
+	if err != nil {
+		return domain.PublicPropertyView{}, err
+	}
+	s.maskPublicPropertyPortalFlag(&prop)
+	return prop, nil
 }
 
 func (s *Service) ListPublicAccommodation(ctx context.Context, slug string) (PublicAccommodationCatalog, error) {
@@ -96,6 +105,7 @@ func (s *Service) ListPublicAccommodation(ctx context.Context, slug string) (Pub
 	if err != nil {
 		return PublicAccommodationCatalog{}, err
 	}
+	s.maskPublicPropertyPortalFlag(&prop)
 	uts, err := s.store.ListPublicUnitTypes(ctx, nil, prop.ID)
 	if err != nil {
 		return PublicAccommodationCatalog{}, err
@@ -116,6 +126,7 @@ func (s *Service) GetPublicAccommodationDetail(ctx context.Context, slug, code s
 	if err != nil {
 		return PublicAccommodationDetail{}, err
 	}
+	s.maskPublicPropertyPortalFlag(&prop)
 	ut, err := s.store.GetPublicUnitTypeByCode(ctx, nil, prop.ID, code)
 	if err != nil {
 		return PublicAccommodationDetail{}, err
@@ -169,6 +180,7 @@ func (s *Service) SearchPublicAvailability(ctx context.Context, in domain.Availa
 	if err != nil {
 		return PublicAvailabilityResponse{}, err
 	}
+	s.maskPublicPropertyPortalFlag(&prop)
 	if in.Adults < 1 || in.Children < 0 || in.Infants < 0 {
 		return PublicAvailabilityResponse{}, domain.NewValidationError(map[string]string{
 			"party": "at least 1 adult is required and children/infants cannot be negative",
@@ -490,12 +502,26 @@ func (s *Service) CreatePublicHold(ctx context.Context, meta Actor, req CreateHo
 	return out, err
 }
 
+func sanitizePublicHold(h domain.BookingHold) domain.BookingHold {
+	h.GuestID = nil
+	h.GuestName = ""
+	h.GuestEmail = ""
+	h.GuestPhone = ""
+	h.SpecialRequests = ""
+	h.CustomerSessionHash = ""
+	h.ConfirmedReservationID = nil
+	return h
+}
+
 func (s *Service) CancelPublicHold(ctx context.Context, meta Actor, holdID uuid.UUID) (domain.BookingHold, error) {
 	var cancelled domain.BookingHold
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		before, err := s.store.GetBookingHoldForUpdate(ctx, tx, holdID)
 		if err != nil {
 			return err
+		}
+		if before.Status == domain.HoldStatusConfirmed {
+			return fmt.Errorf("%w: booking hold is already confirmed", domain.ErrConflict)
 		}
 		if before.Status != domain.HoldStatusActive {
 			cancelled = before
@@ -514,7 +540,10 @@ func (s *Service) CancelPublicHold(ctx context.Context, meta Actor, holdID uuid.
 		}
 		return s.recordAudit(ctx, tx, metaActor, &before.PropertyID, "booking_hold.cancelled", "booking_hold", holdID.String(), auditBookingHoldSnapshot(before), auditBookingHoldSnapshot(cancelled))
 	})
-	return cancelled, err
+	if err != nil {
+		return domain.BookingHold{}, err
+	}
+	return sanitizePublicHold(cancelled), nil
 }
 
 func (s *Service) InitiatePublicCheckout(ctx context.Context, meta Actor, req CreateCheckoutRequest) (CreateCheckoutResponse, error) {
@@ -633,7 +662,7 @@ func (s *Service) InitiatePublicCheckout(ctx context.Context, meta Actor, req Cr
 			return CreateCheckoutResponse{}, domain.ErrActiveCheckoutExists
 		}
 		return CreateCheckoutResponse{
-			Hold:             hold,
+			Hold:             sanitizePublicHold(hold),
 			Attempt:          attempt,
 			CheckoutURL:      attempt.CheckoutURL,
 			PaymentAttemptID: attempt.ID,
@@ -701,7 +730,7 @@ func (s *Service) InitiatePublicCheckout(ctx context.Context, meta Actor, req Cr
 	attempt.Status = domain.AttemptStatusRequiresAction
 
 	return CreateCheckoutResponse{
-		Hold:             hold,
+		Hold:             sanitizePublicHold(hold),
 		Attempt:          attempt,
 		CheckoutURL:      session.CheckoutURL,
 		PaymentAttemptID: attempt.ID,
@@ -719,20 +748,33 @@ type WebhookResult struct {
 type stripeWebhookEnvelope struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
+	Created  int64  `json:"created"`
 	LiveMode *bool  `json:"livemode"`
 	Data     struct {
 		Object struct {
 			ID               string `json:"id"`
 			PaymentIntent    string `json:"payment_intent"`
+			Amount           int64  `json:"amount"`
 			AmountTotal      int64  `json:"amount_total"`
 			AmountReceived   int64  `json:"amount_received"`
 			AmountRefunded   int64  `json:"amount_refunded"`
 			Currency         string `json:"currency"`
+			Created          int64  `json:"created"`
 			PaymentStatus    string `json:"payment_status"`
 			LatestCharge     string `json:"latest_charge"`
 			LastPaymentError *struct {
 				Message string `json:"message"`
 			} `json:"last_payment_error"`
+			Refunds *struct {
+				Data []struct {
+					ID       string `json:"id"`
+					Amount   int64  `json:"amount"`
+					Currency string `json:"currency"`
+					Status   string `json:"status"`
+					Reason   string `json:"reason"`
+					Created  int64  `json:"created"`
+				} `json:"data"`
+			} `json:"refunds"`
 			Metadata map[string]string `json:"metadata"`
 		} `json:"object"`
 	} `json:"data"`
@@ -754,6 +796,14 @@ func (s *Service) ProcessStripeWebhook(ctx context.Context, meta Actor, rawBody 
 
 	var resOut WebhookResult
 	var outboxQueueErr error
+	type autoRefundIntent struct {
+		attID       uuid.UUID
+		exID        uuid.UUID
+		piID        string
+		amountPence int64
+		reason      string
+	}
+	var pendingRefund *autoRefundIntent
 
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		seen, txErr := s.store.BeginWebhookEvent(ctx, tx, "stripe", evt.ID, evt.Type, evt.LiveMode, payloadHash)
@@ -837,17 +887,14 @@ func (s *Service) ProcessStripeWebhook(ctx context.Context, meta Actor, rawBody 
 
 			if res.ExceptionRecorded != nil {
 				ex := *res.ExceptionRecorded
-				// Attempt best-effort automatic idempotent refund for expired hold paid or mismatch if provider available & PI known.
+				// Defer outbound Stripe Refund HTTP call until after WithTx commits so row locks and DB pool connections are never held across network I/O.
 				if s.payProvider != nil && piID != "" && (ex.ExceptionType == "EXPIRED_HOLD_PAID" || ex.ExceptionType == "OVERLAP_ON_CONFIRM") {
-					if refRes, rErr := s.payProvider.Refund(payments.RefundRequest{
-						IdempotencyKey:  "auto-refund-" + att.ID.String(),
-						PaymentIntentID: piID,
-						AmountPence:     paidAmt,
-						Reason:          ex.ExceptionType,
-					}); rErr == nil && refRes.RefundID != "" {
-						_, _ = tx.Exec(ctx, `UPDATE payment_exceptions SET status = 'AUTO_REFUNDED', resolution_notes = $2, resolved_at = NOW(), updated_at = NOW() WHERE id = $1`,
-							ex.ID, "Automatic refund issued: "+refRes.RefundID)
-						_, _ = tx.Exec(ctx, `UPDATE payment_attempts SET status = 'REFUNDED', updated_at = NOW() WHERE id = $1`, att.ID)
+					pendingRefund = &autoRefundIntent{
+						attID:       att.ID,
+						exID:        ex.ID,
+						piID:        piID,
+						amountPence: paidAmt,
+						reason:      ex.ExceptionType,
 					}
 				}
 				if err := s.recordAudit(ctx, tx, whActor, &ex.PropertyID, "payment.reconciliation_required", "payment_exception", ex.ID.String(), nil, ex); err != nil {
@@ -909,7 +956,52 @@ func (s *Service) ProcessStripeWebhook(ctx context.Context, meta Actor, rawBody 
 		case "charge.refunded":
 			piID := obj.PaymentIntent
 			if piID != "" {
-				if err := s.store.RecordRefundOutcome(ctx, tx, piID, obj.ID, obj.AmountRefunded); err != nil {
+				evtOccurredAt := nowUTC
+				if evt.Created > 0 {
+					evtOccurredAt = time.Unix(evt.Created, 0).UTC()
+				}
+				var entries []postgres.StripeRefundEntry
+				if obj.Refunds != nil {
+					for _, rf := range obj.Refunds.Data {
+						if rf.Amount <= 0 {
+							continue
+						}
+						st := "SUCCEEDED"
+						switch strings.ToLower(strings.TrimSpace(rf.Status)) {
+						case "pending", "requires_action":
+							st = "PENDING"
+						case "failed", "canceled":
+							st = "FAILED"
+						case "succeeded", "":
+							st = "SUCCEEDED"
+						}
+						rfOccurredAt := evtOccurredAt
+						if rf.Created > 0 {
+							rfOccurredAt = time.Unix(rf.Created, 0).UTC()
+						}
+						cur := strings.ToUpper(strings.TrimSpace(rf.Currency))
+						if cur == "" {
+							cur = strings.ToUpper(strings.TrimSpace(obj.Currency))
+						}
+						idem := ""
+						if strings.TrimSpace(rf.ID) != "" {
+							idem = "stripe_refund:" + strings.TrimSpace(rf.ID)
+						}
+						entries = append(entries, postgres.StripeRefundEntry{
+							ProviderRefundID: strings.TrimSpace(rf.ID),
+							AmountPence:      rf.Amount,
+							Currency:         cur,
+							Status:           st,
+							Reason:           strings.TrimSpace(rf.Reason),
+							OccurredAt:       rfOccurredAt,
+							IdempotencyKey:   idem,
+						})
+					}
+				}
+				if err := s.store.RecordRefundOutcome(
+					ctx, tx, piID, obj.ID, evt.ID, evtOccurredAt,
+					obj.AmountRefunded, strings.ToUpper(strings.TrimSpace(obj.Currency)), entries,
+				); err != nil {
 					return err
 				}
 			}
@@ -922,6 +1014,17 @@ func (s *Service) ProcessStripeWebhook(ctx context.Context, meta Actor, rawBody 
 	_ = outboxQueueErr
 	if err != nil {
 		return resOut, err
+	}
+
+	if pendingRefund != nil && s.payProvider != nil {
+		if refRes, rErr := s.payProvider.Refund(payments.RefundRequest{
+			IdempotencyKey:  "auto-refund-" + pendingRefund.attID.String(),
+			PaymentIntentID: pendingRefund.piID,
+			AmountPence:     pendingRefund.amountPence,
+			Reason:          pendingRefund.reason,
+		}); rErr == nil && refRes.RefundID != "" {
+			_ = s.store.RecordAutoRefundSuccess(ctx, pendingRefund.exID, pendingRefund.attID, refRes.RefundID)
+		}
 	}
 
 	// Dispatch queued emails cleanly outside transaction (email errors never affect confirmation!).
@@ -1075,6 +1178,10 @@ func (s *Service) RotateConfirmationToken(ctx context.Context, meta Actor, ref, 
 	nowUTC := s.nowUTC()
 	var rotated string
 	err := s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		_, propID, _, _, pErr := s.store.GetPublicConfirmationByRefAndToken(ctx, tx, ref, currentToken, nowUTC)
+		if pErr != nil {
+			return pErr
+		}
 		var txErr error
 		rotated, txErr = s.store.RotateConfirmationToken(ctx, tx, ref, currentToken, nowUTC)
 		if txErr != nil {
@@ -1087,7 +1194,7 @@ func (s *Service) RotateConfirmationToken(ctx context.Context, meta Actor, ref, 
 			IPAddress: meta.IPAddress,
 			UserAgent: meta.UserAgent,
 		}
-		return s.recordAudit(ctx, tx, metaActor, nil, "confirmation_token.rotated", "confirmation_access_token", strings.ToUpper(strings.TrimSpace(ref)), nil, map[string]any{"reference": ref})
+		return s.recordAudit(ctx, tx, metaActor, &propID, "confirmation_token.rotated", "confirmation_access_token", strings.ToUpper(strings.TrimSpace(ref)), nil, map[string]any{"reference": ref})
 	})
 	return rotated, err
 }
@@ -1118,6 +1225,9 @@ func (s *Service) RequestPublicCancellation(ctx context.Context, meta Actor, ref
 				return err
 			}
 			return domain.ErrNotFound
+		}
+		if view.Status != string(domain.ResStatusPending) && view.Status != string(domain.ResStatusConfirmed) {
+			return fmt.Errorf("%w: cancellation requests are only permitted for pending or confirmed reservations", domain.ErrConflict)
 		}
 		resID = *rIDPtr
 		propID = pID
@@ -1248,7 +1358,7 @@ func (s *Service) GetReservationFinancials(ctx context.Context, actor Actor, pro
 // CompleteSandboxPayment executes a non-production local Stripe Checkout completion
 // by generating a genuine signed Stripe webhook event and feeding it through ProcessStripeWebhook.
 func (s *Service) CompleteSandboxPayment(ctx context.Context, meta Actor, sessionID, outcome string) error {
-	if !s.cfg.StripeSandbox || strings.EqualFold(s.cfg.AppEnv, "production") {
+	if !s.cfg.StripeSandbox || s.cfg.IsProduction() || s.cfg.IsStaging() {
 		return domain.ErrForbidden
 	}
 	att, err := s.store.GetPaymentAttemptByIDOrSession(ctx, nil, nil, strings.TrimSpace(sessionID))
