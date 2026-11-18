@@ -1,6 +1,6 @@
 # Tir Bach Campsite & LOVELACE — Production Launch Sign-Off Checklist
 
-Before opening public direct bookings to guests on a live domain, the property owner and platform operator must explicitly review and verify every item below. Items seeded in development/demo databases are **not** verified production property facts until confirmed by the property owner in the Admin Console (`/property`) and environment configuration.
+Before opening public direct bookings to guests on a live domain, the property owner and platform operator must explicitly review and verify every item below alongside the full infrastructure architecture in [Production Foundation & Launch-Readiness Plan](production-foundation-plan.md). Items seeded in development/demo databases are **not** verified production property facts until confirmed by the property owner in the Admin Console (`/property`) and environment configuration.
 
 ## 1. Property Facts & Policies (Owner Confirmation Required)
 Verify each field in LOVELACE Admin Console (`/property`):

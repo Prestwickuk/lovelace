@@ -10,6 +10,7 @@ Multi-property campsite & accommodation booking platform built with a **Go 1.24 
 - [Phase 2 Architecture & Isolation Specification](docs/phase2-architecture.md)
 - [Phase 3 Milestone 4: Self-Service Public Guest Portal](docs/phase3-milestone4-guest-portal.md)
 - [Phase 3 Milestone 4: Operational Readiness & Hosted Staging Gate Report](docs/phase3-milestone4-operational-readiness-report.md)
+- [Production Foundation & Launch-Readiness Plan (Portal Disabled)](docs/production-foundation-plan.md)
 - [Public Booking OpenAPI Contract (`/api/public/v1`)](docs/openapi-public-v1.yaml)
 - [Admin Operations & Maintenance OpenAPI Contract (`/api/v1`)](docs/openapi-admin-v1.yaml)
 - [Architecture & Five-Phase Blueprint](docs/architecture.md)
