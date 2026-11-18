@@ -1,0 +1,15 @@
+{{define "content"}}
+{{template "page_header" (dict "Title" "No Property Configured Yet" "Subtitle" "Your administrator account is active and ready.")}}
+
+<div class="card card-narrow">
+  <h2>Initial Foundation Ready</h2>
+  <p class="subtitle mt-2">
+    No property record has been seeded or created in this environment yet. Property-scoped operational views (Operations Centre, Reservations, Inventory, Guests, and Reports) unlock automatically as soon as your initial property record is created.
+  </p>
+  <div class="days-row mt-3">
+    <a href="/account" class="btn btn-primary">My Account</a>
+    {{if .CanManageUsers}}<a href="/users" class="btn btn-secondary">Admin Users</a>{{end}}
+    {{if .CanViewAudit}}<a href="/audit-logs" class="btn btn-secondary">Audit Log</a>{{end}}
+  </div>
+</div>
+{{end}}

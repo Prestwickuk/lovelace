@@ -12,6 +12,11 @@
       </div>
       <h1>Administrative Console</h1>
       <p class="subtitle">Property, Inventory &amp; Channel Administration</p>
+      {{if .NeedsBootstrap}}
+      <div class="alert alert-warn mt-3" role="status">
+        <strong>First-time setup pending:</strong> No administrator account has been provisioned yet. Configure <code>TIRBACH_BOOTSTRAP_ADMIN_EMAIL</code> and <code>TIRBACH_BOOTSTRAP_ADMIN_PASSWORD</code> (or run <code>tirbach-seed -admin-only</code>) to create the initial Owner-Admin login; you will be prompted to set your own password on first sign-in.
+      </div>
+      {{end}}
       {{if .Error}}<div class="alert alert-err mt-3" role="alert" id="login-error">{{.Error}}</div>{{end}}
       <form method="post" action="/login" class="grid mt-3">
         <div class="field">
@@ -24,6 +29,9 @@
         </div>
         <button type="submit" class="btn btn-primary mt-1">Sign in</button>
       </form>
+      <div class="mt-3">
+        <a href="/login/recover">Forgot password? Use a recovery code</a>
+      </div>
       <div class="login-footer">{{.Brand.AttributionText}}</div>
     </div>
   </main>

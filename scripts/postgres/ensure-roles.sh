@@ -152,6 +152,10 @@ BEGIN
         EXECUTE 'REVOKE ALL ON TABLE public.guest_portal_sessions FROM PUBLIC';
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.guest_portal_sessions TO %I', v_app);
     END IF;
+    IF to_regclass('public.admin_recovery_codes') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.admin_recovery_codes FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_recovery_codes TO %I', v_app);
+    END IF;
 
     -- Harden append-only audit and redaction overlay privileges idempotently across reruns.
     IF to_regclass('public.audit_logs') IS NOT NULL THEN

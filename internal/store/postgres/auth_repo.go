@@ -10,6 +10,15 @@ import (
 	"github.com/tirbach/tir-bach/internal/domain"
 )
 
+func (s *Store) CountAdminUsers(ctx context.Context, db DBTX) (int, error) {
+	if db == nil {
+		db = s.pool
+	}
+	var count int
+	err := db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_users`).Scan(&count)
+	return count, MapErr(err)
+}
+
 func (s *Store) ListAdminUsers(ctx context.Context, propertyID *uuid.UUID) ([]domain.AdminUser, error) {
 	var (
 		rows pgx.Rows
@@ -127,6 +136,102 @@ func (s *Store) UpdateAdminUserPassword(ctx context.Context, tx pgx.Tx, userID u
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) SetAdminUserPasswordAndRotation(ctx context.Context, tx pgx.Tx, userID uuid.UUID, passwordHash string, mustRotate bool) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE admin_users
+		SET password_hash = $2,
+		    must_rotate_password = $3,
+		    version = version + 1,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, userID, passwordHash, mustRotate)
+	if err != nil {
+		return MapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+type AdminRecoveryCodeRecord struct {
+	ID       uuid.UUID
+	CodeHash string
+}
+
+func (s *Store) ReplaceAdminRecoveryCodes(ctx context.Context, tx pgx.Tx, userID uuid.UUID, codeHashes []string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM admin_recovery_codes WHERE user_id = $1`, userID); err != nil {
+		return MapErr(err)
+	}
+	for _, h := range codeHashes {
+		id, err := NewUUID()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO admin_recovery_codes (id, user_id, code_hash)
+			VALUES ($1, $2, $3)
+		`, id, userID, h); err != nil {
+			return MapErr(err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) GetAdminRecoveryCodeSummary(ctx context.Context, db DBTX, userID uuid.UUID) (unusedCount int, totalCount int, lastCreatedAt *time.Time, err error) {
+	if db == nil {
+		db = s.pool
+	}
+	err = db.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE used_at IS NULL),
+			COUNT(*),
+			MAX(created_at)
+		FROM admin_recovery_codes
+		WHERE user_id = $1
+	`, userID).Scan(&unusedCount, &totalCount, &lastCreatedAt)
+	return unusedCount, totalCount, lastCreatedAt, MapErr(err)
+}
+
+func (s *Store) ListUnusedAdminRecoveryCodesForUpdate(ctx context.Context, tx pgx.Tx, userID uuid.UUID) ([]AdminRecoveryCodeRecord, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id, code_hash
+		FROM admin_recovery_codes
+		WHERE user_id = $1 AND used_at IS NULL
+		ORDER BY created_at ASC
+		FOR UPDATE
+	`, userID)
+	if err != nil {
+		return nil, MapErr(err)
+	}
+	defer rows.Close()
+
+	var out []AdminRecoveryCodeRecord
+	for rows.Next() {
+		var r AdminRecoveryCodeRecord
+		if err := rows.Scan(&r.ID, &r.CodeHash); err != nil {
+			return nil, MapErr(err)
+		}
+		out = append(out, r)
+	}
+	return out, MapErr(rows.Err())
+}
+
+func (s *Store) MarkAdminRecoveryCodeUsed(ctx context.Context, tx pgx.Tx, codeID uuid.UUID) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE admin_recovery_codes
+		SET used_at = NOW()
+		WHERE id = $1 AND used_at IS NULL
+	`, codeID)
+	if err != nil {
+		return MapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrUnauthorized
 	}
 	return nil
 }

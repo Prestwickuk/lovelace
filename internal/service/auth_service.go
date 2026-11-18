@@ -18,9 +18,16 @@ import (
 const dummyArgon2Hash = "$argon2id$v=19$m=65536,t=3,p=1$c29tZXJhbmRvbXNhbHQxNg$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE"
 
 type LoginResult struct {
-	User         domain.AdminUser
-	SessionToken string
-	CSRFToken    string
+	User                   domain.AdminUser
+	SessionToken           string
+	CSRFToken              string
+	GeneratedRecoveryCodes []string
+}
+
+type RecoveryCodeSummary struct {
+	UnusedCount     int        `json:"unused_count"`
+	TotalCount      int        `json:"total_count"`
+	LastGeneratedAt *time.Time `json:"last_generated_at,omitempty"`
 }
 
 func (s *Service) Login(ctx context.Context, email, password, ip, userAgent, requestID string) (LoginResult, error) {
@@ -159,6 +166,92 @@ func (s *Service) effectiveActorPropertyScope(ctx context.Context, db postgres.D
 		}
 	}
 	return actor.PropertyID
+}
+
+const bootstrapAdminAdvisoryLockKey int64 = 748291099
+
+// HasAdminUsers reports whether at least one administrator account exists in the database.
+func (s *Service) HasAdminUsers(ctx context.Context) (bool, error) {
+	count, err := s.store.CountAdminUsers(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// BootstrapInitialAdmin provisions the initial global owner_admin account with MustRotatePassword=true
+// when and only when admin_users has zero rows. Subsequent invocations are strictly idempotent no-ops
+// and never overwrite existing accounts or rotated passwords.
+func (s *Service) BootstrapInitialAdmin(ctx context.Context, email, fullName, password string) (bool, domain.AdminUser, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	fullName = strings.TrimSpace(fullName)
+	if fullName == "" {
+		fullName = "Owner Administrator"
+	}
+
+	u := domain.AdminUser{
+		PropertyID:         nil,
+		Email:              email,
+		FullName:           fullName,
+		Role:               domain.RoleOwnerAdmin,
+		IsActive:           true,
+		MustRotatePassword: true,
+	}
+	if err := u.ValidateNew(); err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	if err := auth.ValidatePasswordPolicy(password); err != nil {
+		return false, domain.AdminUser{}, err
+	}
+
+	// Fast path check before deriving Argon2id hash on routine restarts.
+	if existing, err := s.store.CountAdminUsers(ctx, nil); err != nil {
+		return false, domain.AdminUser{}, err
+	} else if existing > 0 {
+		return false, domain.AdminUser{}, nil
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	id, err := postgres.NewUUID()
+	if err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	u.ID = id
+	u.PasswordHash = hash
+
+	var (
+		created bool
+		out     domain.AdminUser
+	)
+	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, lockErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, bootstrapAdminAdvisoryLockKey); lockErr != nil {
+			return postgres.MapErr(lockErr)
+		}
+		count, cntErr := s.store.CountAdminUsers(ctx, tx)
+		if cntErr != nil {
+			return cntErr
+		}
+		if count > 0 {
+			return nil
+		}
+		var txErr error
+		out, txErr = s.store.CreateAdminUser(ctx, tx, u)
+		if txErr != nil {
+			return txErr
+		}
+		created = true
+		return s.recordAudit(ctx, tx, Actor{
+			Email: "system",
+			Role:  domain.RoleOwnerAdmin,
+		}, nil, "admin_user.created", "admin_user", out.ID.String(), nil, auditAdminUserSnapshot(out))
+	})
+	if err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	return created, out, nil
 }
 
 func (s *Service) ListUsers(ctx context.Context, actor Actor) ([]domain.AdminUser, error) {
@@ -334,7 +427,10 @@ func (s *Service) ChangeOwnPassword(ctx context.Context, actor Actor, currentPas
 		return LoginResult{}, err
 	}
 	now := s.nowUTC()
-	var updatedUser domain.AdminUser
+	var (
+		updatedUser domain.AdminUser
+		freshCodes  []string
+	)
 	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
 		if err := s.store.UpdateAdminUserPassword(ctx, tx, actor.UserID, newHash, true); err != nil {
 			return err
@@ -353,6 +449,25 @@ func (s *Service) ChangeOwnPassword(ctx context.Context, actor Actor, currentPas
 		}); err != nil {
 			return err
 		}
+		unusedCnt, _, _, sumErr := s.store.GetAdminRecoveryCodeSummary(ctx, tx, actor.UserID)
+		if sumErr != nil {
+			return sumErr
+		}
+		if unusedCnt == 0 {
+			codes, genErr := auth.GenerateRecoveryCodes(auth.DefaultRecoveryCodeCount)
+			if genErr != nil {
+				return genErr
+			}
+			hashes := make([]string, 0, len(codes))
+			for _, c := range codes {
+				norm, _ := auth.NormalizeRecoveryCode(c)
+				hashes = append(hashes, auth.HashRecoveryCode(s.cfg.EncryptionKey, actor.UserID.String(), norm))
+			}
+			if repErr := s.store.ReplaceAdminRecoveryCodes(ctx, tx, actor.UserID, hashes); repErr != nil {
+				return repErr
+			}
+			freshCodes = codes
+		}
 		updatedUser, err = s.store.GetAdminUserByID(ctx, tx, actor.UserID)
 		if err != nil {
 			return err
@@ -366,8 +481,242 @@ func (s *Service) ChangeOwnPassword(ctx context.Context, actor Actor, currentPas
 		return LoginResult{}, err
 	}
 	return LoginResult{
+		User:                   updatedUser,
+		SessionToken:           tokenPlain,
+		CSRFToken:              csrfToken,
+		GeneratedRecoveryCodes: freshCodes,
+	}, nil
+}
+
+func (s *Service) GetRecoveryCodeSummary(ctx context.Context, actor Actor) (RecoveryCodeSummary, error) {
+	if actor.UserID == uuid.Nil {
+		return RecoveryCodeSummary{}, domain.ErrUnauthorized
+	}
+	unused, total, lastAt, err := s.store.GetAdminRecoveryCodeSummary(ctx, nil, actor.UserID)
+	if err != nil {
+		return RecoveryCodeSummary{}, err
+	}
+	return RecoveryCodeSummary{
+		UnusedCount:     unused,
+		TotalCount:      total,
+		LastGeneratedAt: lastAt,
+	}, nil
+}
+
+// RegenerateOwnRecoveryCodes replaces the authenticated user's recovery codes after verifying currentPassword.
+func (s *Service) RegenerateOwnRecoveryCodes(ctx context.Context, actor Actor, currentPassword string) ([]string, error) {
+	if actor.UserID == uuid.Nil {
+		return nil, domain.ErrUnauthorized
+	}
+	user, err := s.store.GetAdminUserByID(ctx, nil, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user.MustRotatePassword || actor.MustRotatePassword {
+		return nil, domain.ErrPasswordRotationRequired
+	}
+	ok, err := auth.VerifyPassword(currentPassword, user.PasswordHash)
+	if err != nil || !ok {
+		return nil, domain.NewValidationError(map[string]string{
+			"current_password": "is incorrect",
+		})
+	}
+	codes, err := auth.GenerateRecoveryCodes(auth.DefaultRecoveryCodeCount)
+	if err != nil {
+		return nil, err
+	}
+	hashes := make([]string, 0, len(codes))
+	for _, c := range codes {
+		norm, _ := auth.NormalizeRecoveryCode(c)
+		hashes = append(hashes, auth.HashRecoveryCode(s.cfg.EncryptionKey, user.ID.String(), norm))
+	}
+	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		if repErr := s.store.ReplaceAdminRecoveryCodes(ctx, tx, user.ID, hashes); repErr != nil {
+			return repErr
+		}
+		return s.recordAudit(ctx, tx, actor, user.PropertyID, "admin_user.recovery_codes_generated", "admin_user", user.ID.String(), nil, map[string]any{
+			"user_id": user.ID.String(),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return codes, nil
+}
+
+// RecoverPasswordWithCode resets an active admin user's password using a single-use recovery code without email.
+func (s *Service) RecoverPasswordWithCode(ctx context.Context, email, rawRecoveryCode, newPassword, ip, userAgent, requestID string) (LoginResult, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" || len(email) > 254 {
+		return LoginResult{}, domain.ErrUnauthorized
+	}
+	if err := auth.ValidatePasswordPolicy(newPassword); err != nil {
+		return LoginResult{}, err
+	}
+
+	byIP, byEmail, err := s.store.CountRecentFailedLogins(ctx, email, ip, s.cfg.LoginWindow)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if byIP >= s.cfg.LoginMaxFailIP || byEmail >= s.cfg.LoginMaxFailAcc {
+		return LoginResult{}, domain.ErrRateLimited
+	}
+
+	normCode, validSyntax := auth.NormalizeRecoveryCode(rawRecoveryCode)
+	if !validSyntax {
+		_, _ = auth.VerifyPassword(newPassword, dummyArgon2Hash)
+		_ = auth.HashRecoveryCode(s.cfg.EncryptionKey, uuid.Nil.String(), "DDDDDDDDDDDDDDDD")
+		_ = s.store.RecordLoginAttempt(ctx, email, ip, false)
+		return LoginResult{}, domain.ErrUnauthorized
+	}
+
+	user, err := s.store.GetAdminUserByEmail(ctx, nil, email)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			_, _ = auth.VerifyPassword(newPassword, dummyArgon2Hash)
+			_ = auth.HashRecoveryCode(s.cfg.EncryptionKey, uuid.Nil.String(), normCode)
+			_ = s.store.RecordLoginAttempt(ctx, email, ip, false)
+			return LoginResult{}, domain.ErrUnauthorized
+		}
+		return LoginResult{}, err
+	}
+	if !user.IsActive {
+		_, _ = auth.VerifyPassword(newPassword, user.PasswordHash)
+		_ = auth.HashRecoveryCode(s.cfg.EncryptionKey, user.ID.String(), normCode)
+		_ = s.store.RecordLoginAttempt(ctx, email, ip, false)
+		return LoginResult{}, domain.ErrUnauthorized
+	}
+
+	newHash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	candidateDigest := auth.HashRecoveryCode(s.cfg.EncryptionKey, user.ID.String(), normCode)
+
+	tokenPlain, tokenHash, err := auth.GenerateToken()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	csrfToken, err := auth.GenerateCSRFToken()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	sessID, err := postgres.NewUUID()
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	now := s.nowUTC()
+	var updatedUser domain.AdminUser
+	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		unusedRows, listErr := s.store.ListUnusedAdminRecoveryCodesForUpdate(ctx, tx, user.ID)
+		if listErr != nil {
+			return listErr
+		}
+		var matchedID uuid.UUID
+		var matched bool
+		for _, rec := range unusedRows {
+			if auth.MatchRecoveryCodeHash(candidateDigest, rec.CodeHash) {
+				matchedID = rec.ID
+				matched = true
+			}
+		}
+		if !matched {
+			return domain.ErrUnauthorized
+		}
+		if useErr := s.store.MarkAdminRecoveryCodeUsed(ctx, tx, matchedID); useErr != nil {
+			return useErr
+		}
+		if pwErr := s.store.UpdateAdminUserPassword(ctx, tx, user.ID, newHash, true); pwErr != nil {
+			return pwErr
+		}
+		if revErr := s.store.RevokeAllUserSessions(ctx, tx, user.ID); revErr != nil {
+			return revErr
+		}
+		if sessErr := s.store.CreateSession(ctx, tx, domain.AdminSession{
+			ID:        sessID,
+			UserID:    user.ID,
+			TokenHash: tokenHash,
+			CSRFToken: csrfToken,
+			IPAddress: ip,
+			UserAgent: userAgent,
+			ExpiresAt: now.Add(s.cfg.SessionTTL),
+		}); sessErr != nil {
+			return sessErr
+		}
+		if llErr := s.store.UpdateLastLogin(ctx, tx, user.ID); llErr != nil {
+			return llErr
+		}
+		var gErr error
+		updatedUser, gErr = s.store.GetAdminUserByID(ctx, tx, user.ID)
+		if gErr != nil {
+			return gErr
+		}
+		actor := Actor{
+			UserID:    user.ID,
+			Email:     user.Email,
+			Role:      user.Role,
+			RequestID: requestID,
+			IPAddress: ip,
+			UserAgent: userAgent,
+		}
+		return s.recordAudit(ctx, tx, actor, user.PropertyID, "admin_user.password_recovered", "admin_user", user.ID.String(), nil, map[string]any{
+			"user_id":          user.ID.String(),
+			"sessions_revoked": true,
+			"new_session_id":   sessID.String(),
+		})
+	})
+	if err != nil {
+		if errors.Is(err, domain.ErrUnauthorized) {
+			_ = s.store.RecordLoginAttempt(ctx, email, ip, false)
+		}
+		return LoginResult{}, err
+	}
+	_ = s.store.RecordLoginAttempt(ctx, email, ip, true)
+
+	return LoginResult{
 		User:         updatedUser,
 		SessionToken: tokenPlain,
 		CSRFToken:    csrfToken,
 	}, nil
+}
+
+// AdminResetUserPassword allows an authorized owner_admin to set a temporary password
+// (with must_rotate_password=true and immediate session revocation) for another user in scope.
+func (s *Service) AdminResetUserPassword(ctx context.Context, actor Actor, targetUserID uuid.UUID, temporaryPassword string) error {
+	if err := s.requirePerm(actor, auth.PermUsersManage); err != nil {
+		return err
+	}
+	if actor.UserID == targetUserID {
+		return domain.NewValidationError(map[string]string{
+			"user": "use My Account to update your own password",
+		})
+	}
+	newHash, err := auth.HashPassword(temporaryPassword)
+	if err != nil {
+		return err
+	}
+
+	return s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		target, err := s.store.GetAdminUserByID(ctx, tx, targetUserID)
+		if err != nil {
+			return err
+		}
+		if scopePropID := s.effectiveActorPropertyScope(ctx, tx, actor); scopePropID != nil {
+			if target.PropertyID == nil || *target.PropertyID != *scopePropID {
+				return domain.ErrForbidden
+			}
+		}
+		if err := s.store.SetAdminUserPasswordAndRotation(ctx, tx, target.ID, newHash, true); err != nil {
+			return err
+		}
+		if err := s.store.RevokeAllUserSessions(ctx, tx, target.ID); err != nil {
+			return err
+		}
+		return s.recordAudit(ctx, tx, actor, target.PropertyID, "admin_user.password_reset_by_admin", "admin_user", target.ID.String(), nil, map[string]any{
+			"user_id":              target.ID.String(),
+			"sessions_revoked":     true,
+			"must_rotate_password": true,
+		})
+	})
 }

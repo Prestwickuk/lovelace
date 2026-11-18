@@ -57,6 +57,7 @@
           <th>Role</th>
           <th>Status</th>
           <th>Update Role / Status</th>
+          <th>Reset Password</th>
         </tr>
       </thead>
       <tbody>
@@ -89,6 +90,17 @@
               </label>
               <button type="submit" class="btn btn-secondary btn-sm">Save</button>
             </form>
+          </td>
+          <td>
+            {{if eq .ID $.Actor.UserID}}
+            <a href="/account" class="btn btn-secondary btn-sm">My Account</a>
+            {{else}}
+            <form method="post" action="/users/{{.ID}}/reset-password" class="inline-row">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="password" name="temporary_password" minlength="12" placeholder="Temp password (12+)" aria-label="Temporary password for {{.Email}}" class="input-auto" required>
+              <button type="submit" class="btn btn-secondary btn-sm">Reset</button>
+            </form>
+            {{end}}
           </td>
         </tr>
         {{end}}

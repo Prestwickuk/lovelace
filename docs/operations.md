@@ -12,6 +12,9 @@
 | `TIRBACH_TRUST_PROXY` | `false` (`true` in prod compose) | `true` behind Caddy/Nginx/Cloudflare | Extracts real client IP from `X-Forwarded-For` for rate limiter & audit logs. |
 | `TIRBACH_ENCRYPTION_KEY` | dev fallback outside prod | **Required** 32-byte key (64 hex chars or 44-char base64) | AES-256-GCM encryption for `channel_connections.encrypted_credentials`. |
 | `TIRBACH_AUTO_SEED` | `false` | Must be `false` | Startup fails closed if `true` in `production`. |
+| `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` | unset | Optional first-boot email | When `admin_users` has `0` rows, provisions the initial global `owner_admin` on startup with `must_rotate_password=true` (without seeding demo property data). Ignored once any admin exists. |
+| `TIRBACH_BOOTSTRAP_ADMIN_NAME` | `Owner Administrator` | Optional display name | Display name used when bootstrapping the initial `owner_admin`. |
+| `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` | unset | `>= 12` chars (paired with email; dev placeholders rejected) | Temporary passphrase for the initial `owner_admin`; user is redirected to `/account?rotate=1` on first login to set their own permanent password, and restarts never overwrite rotated passwords. |
 | `TIRBACH_ATTACHMENT_DIR` | `/var/lib/lovelace/attachments` | Persistent writable volume | Directory storing uploaded maintenance evidence attachments (`storage_key` SHA-256 blobs). |
 | `TIRBACH_MAX_ATTACHMENT_BYTES` | `10485760` (10 MiB) | Positive integer (<= `26214400`) | Maximum byte size per uploaded maintenance attachment. |
 
@@ -42,7 +45,9 @@ docker compose up -d --build
 ```
 Place behind a TLS-terminating reverse proxy (Nginx, Caddy, or Traefik) serving HTTPS on `:443` and forwarding `X-Forwarded-For` and `X-Forwarded-Proto: https` to `127.0.0.1:8080`.
 
-Initial bootstrap of Tir Bach property and owner user can be run once explicitly via `cmd/seed` (using `lovelace_app` DML credentials after `migrate` completes; never left enabled automatically on container boot):
+On a fresh empty database (`admin_users = 0` rows), set `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` and `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` (`>= 12` characters) in your container environment (or run `tirbach-seed -admin-only`) so `tirbach-server` automatically provisions the initial `owner_admin` with `must_rotate_password=true` on first boot without seeding demo property/guest data. Signing in redirects immediately to `/account?rotate=1` to set your permanent password, automatically generates **8 one-time Recovery Codes** (downloadable/copyable in `/account`, stored solely as keyed HMAC-SHA256 digests in `admin_recovery_codes`) for email-free self-service reset at **`/login/recover`**, and never overwrites existing accounts on subsequent restarts. For other staff accounts, `owner_admin` can also issue a temporary reset password (`must_rotate_password=true`) directly in **`/users`**.
+
+Initial bootstrap of both a baseline property and owner user (for standalone non-production demos) can also be run explicitly via `cmd/seed`:
 ```bash
 DATABASE_URL="postgres://lovelace_app:<app-pw>@127.0.0.1:5432/tir_bach?sslmode=disable" \
   go run ./cmd/seed \

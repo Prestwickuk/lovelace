@@ -31,13 +31,14 @@ var embeddedFS embed.FS
 
 // Handler serves the server-rendered LOVELACE Admin Console.
 type Handler struct {
-	svc       *service.Service
-	cfg       config.Config
-	brand     branding.PlatformBrand
-	theme     branding.ThemeSelection
-	loginTmpl *template.Template
-	errorTmpl *template.Template
-	pages     map[string]*template.Template
+	svc         *service.Service
+	cfg         config.Config
+	brand       branding.PlatformBrand
+	theme       branding.ThemeSelection
+	loginTmpl   *template.Template
+	recoverTmpl *template.Template
+	errorTmpl   *template.Template
+	pages       map[string]*template.Template
 }
 
 // New creates a Handler with the default platform PWE-1 theme contract.
@@ -361,6 +362,10 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 	if err != nil {
 		return nil, err
 	}
+	recoverTmpl, err := template.New("recover.html").Funcs(funcs).ParseFS(embeddedFS, "templates/recover.html", "templates/partials.html")
+	if err != nil {
+		return nil, err
+	}
 	errorTmpl, err := template.New("error.html").Funcs(funcs).ParseFS(embeddedFS, "templates/error.html", "templates/partials.html")
 	if err != nil {
 		return nil, err
@@ -397,6 +402,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 		"enquiry_detail.html",
 		"comms_settings.html",
 		"reports.html",
+		"no_property.html",
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
@@ -408,13 +414,14 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 	}
 
 	return &Handler{
-		svc:       svc,
-		cfg:       cfg,
-		brand:     branding.Default(),
-		theme:     branding.ResolveTheme(theme),
-		loginTmpl: loginTmpl,
-		errorTmpl: errorTmpl,
-		pages:     pages,
+		svc:         svc,
+		cfg:         cfg,
+		brand:       branding.Default(),
+		theme:       branding.ResolveTheme(theme),
+		loginTmpl:   loginTmpl,
+		recoverTmpl: recoverTmpl,
+		errorTmpl:   errorTmpl,
+		pages:       pages,
 	}, nil
 }
 
@@ -425,6 +432,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /login", h.handleLoginGet)
 	mux.HandleFunc("POST /login", h.handleLoginPost)
+	mux.HandleFunc("GET /login/recover", h.handleRecoverGet)
+	mux.HandleFunc("POST /login/recover", h.handleRecoverPost)
 	mux.HandleFunc("POST /logout", h.requirePageAuth(true, h.handleLogoutPost))
 
 	mux.HandleFunc("GET /{$}", h.requirePageAuth(false, h.handleDashboard))
@@ -458,9 +467,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /users", h.requirePageAuth(false, h.handleUsersGet))
 	mux.HandleFunc("POST /users", h.requirePageAuth(true, h.handleUsersCreate))
 	mux.HandleFunc("POST /users/{id}/update", h.requirePageAuth(true, h.handleUsersUpdate))
+	mux.HandleFunc("POST /users/{id}/reset-password", h.requirePageAuth(true, h.handleUsersResetPassword))
 
 	mux.HandleFunc("GET /account", h.requirePageAuth(false, h.handleAccountGet))
 	mux.HandleFunc("POST /account/password", h.requirePageAuth(true, h.handleAccountPasswordPost))
+	mux.HandleFunc("POST /account/recovery-codes", h.requirePageAuth(true, h.handleAccountRecoveryCodesPost))
 	mux.HandleFunc("POST /account/preferences/global", h.requirePageAuth(true, h.handleAccountGlobalPreferencesPost))
 	mux.HandleFunc("POST /account/preferences/global/reset", h.requirePageAuth(true, h.handleAccountGlobalPreferencesResetPost))
 	mux.HandleFunc("POST /account/preferences/workspace", h.requirePageAuth(true, h.handleAccountWorkspacePreferencesPost))
@@ -506,9 +517,23 @@ func (h *Handler) requirePageAuth(checkCSRF bool, next pageHandler) http.Handler
 				http.Redirect(w, r, "/account?rotate=1", http.StatusSeeOther)
 				return
 			}
+		} else if r.Method == http.MethodGet && h.svc != nil && !isPropertyIndependentAdminPath(r.URL.Path) {
+			if props, err := h.svc.ListProperties(r.Context(), actor); err == nil && len(props) == 0 {
+				base, berr := h.buildBaseView(r.Context(), r, actor, "No Property Configured", "dashboard")
+				if berr == nil {
+					h.renderPage(w, "no_property.html", base)
+					return
+				}
+			}
 		}
 		next(w, r, actor)
 	}
+}
+
+func isPropertyIndependentAdminPath(p string) bool {
+	return p == "/account" || strings.HasPrefix(p, "/account/") ||
+		p == "/users" || strings.HasPrefix(p, "/users/") ||
+		p == "/audit-logs" || p == "/logout"
 }
 
 type viewControlMeta struct {
@@ -535,58 +560,60 @@ type accountPersonalisationData struct {
 }
 
 type baseView struct {
-	Title                 string
-	ActiveNav             string
-	Brand                 branding.PlatformBrand
-	Theme                 branding.ThemeSelection
-	Workspace             domain.ResolvedWorkspace
-	ViewControls          viewControlMeta
-	AccountPrefs          *accountPersonalisationData
-	Actor                 service.Actor
-	CSRFToken             string
-	Property              domain.Property
-	PropertyBranding      domain.PropertyBrandingView
-	PropertyTerms         branding.AdminTerminology
-	PropertyCSSHref       string
-	BrandingDraft         propertyBrandingDraft
-	BrandingPreview       bool
-	Flash                 string
-	Error                 string
-	CanReadProperty       bool
-	CanWriteProperty      bool
-	CanReadInventory      bool
-	CanWriteInventory     bool
-	CanReadRates          bool
-	CanWriteRates         bool
-	CanReadBlocks         bool
-	CanWriteBlocks        bool
-	CanReadReservations   bool
-	CanWriteReservations  bool
-	CanReadReleases       bool
-	CanWriteReleases      bool
-	CanReadChannels       bool
-	CanWriteChannels      bool
-	CanManageUsers        bool
-	CanViewAudit          bool
-	CanWriteHousekeeping  bool
-	CanReadMaintenance    bool
-	CanReportMaintenance  bool
-	CanWriteMaintenance   bool
-	CanInspectMaintenance bool
-	CanManageMaintenance  bool
-	CanReadGuests         bool
-	CanWriteGuests        bool
-	CanViewGuestNotes     bool
-	CanMergeGuests        bool
-	CanExportGuests       bool
-	CanAnonymizeGuests    bool
-	CanReadComms          bool
-	CanWriteComms         bool
-	CanReconcileComms     bool
-	CanManageTemplates    bool
-	CanReadReports        bool
-	CanExportReports      bool
-	GlobalPortalEnabled   bool
+	Title                  string
+	ActiveNav              string
+	Brand                  branding.PlatformBrand
+	Theme                  branding.ThemeSelection
+	Workspace              domain.ResolvedWorkspace
+	ViewControls           viewControlMeta
+	AccountPrefs           *accountPersonalisationData
+	RecoverySummary        *service.RecoveryCodeSummary
+	GeneratedRecoveryCodes []string
+	Actor                  service.Actor
+	CSRFToken              string
+	Property               domain.Property
+	PropertyBranding       domain.PropertyBrandingView
+	PropertyTerms          branding.AdminTerminology
+	PropertyCSSHref        string
+	BrandingDraft          propertyBrandingDraft
+	BrandingPreview        bool
+	Flash                  string
+	Error                  string
+	CanReadProperty        bool
+	CanWriteProperty       bool
+	CanReadInventory       bool
+	CanWriteInventory      bool
+	CanReadRates           bool
+	CanWriteRates          bool
+	CanReadBlocks          bool
+	CanWriteBlocks         bool
+	CanReadReservations    bool
+	CanWriteReservations   bool
+	CanReadReleases        bool
+	CanWriteReleases       bool
+	CanReadChannels        bool
+	CanWriteChannels       bool
+	CanManageUsers         bool
+	CanViewAudit           bool
+	CanWriteHousekeeping   bool
+	CanReadMaintenance     bool
+	CanReportMaintenance   bool
+	CanWriteMaintenance    bool
+	CanInspectMaintenance  bool
+	CanManageMaintenance   bool
+	CanReadGuests          bool
+	CanWriteGuests         bool
+	CanViewGuestNotes      bool
+	CanMergeGuests         bool
+	CanExportGuests        bool
+	CanAnonymizeGuests     bool
+	CanReadComms           bool
+	CanWriteComms          bool
+	CanReconcileComms      bool
+	CanManageTemplates     bool
+	CanReadReports         bool
+	CanExportReports       bool
+	GlobalPortalEnabled    bool
 }
 
 func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor service.Actor, title, nav string) (baseView, error) {

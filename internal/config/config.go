@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tirbach/tir-bach/internal/payments"
 )
@@ -34,36 +35,39 @@ const defaultTrustedProxyCIDRs = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,
 
 // Config holds runtime configuration loaded from environment variables.
 type Config struct {
-	AppEnv               string
-	ListenAddr           string
-	DatabaseURL          string
-	CookieSecure         bool
-	SessionTTL           time.Duration
-	SessionIdleTTL       time.Duration
-	LoginMaxFailIP       int
-	LoginMaxFailAcc      int
-	LoginWindow          time.Duration
-	TrustProxy           bool
-	TrustedProxies       []net.IPNet
-	AutoSeed             bool
-	EncryptionKey        []byte
-	PublicOrigin         string
-	PublicAPISecret      string
-	GuestPortalEnabled   bool
-	StripeSecretKey      string
-	StripeWebhookSecret  string
-	StripeAPIBaseURL     string
-	StripeSuccessURL     string
-	StripeCancelURL      string
-	StripeSandbox        bool
-	EmailFrom            string
-	EmailWebhookSecret   string
-	SMTPAddr             string
-	SMTPUsername         string
-	SMTPPassword         string
-	RequireEmail         bool
-	AttachmentStorageDir string
-	MaxAttachmentBytes   int64
+	AppEnv                 string
+	ListenAddr             string
+	DatabaseURL            string
+	CookieSecure           bool
+	SessionTTL             time.Duration
+	SessionIdleTTL         time.Duration
+	LoginMaxFailIP         int
+	LoginMaxFailAcc        int
+	LoginWindow            time.Duration
+	TrustProxy             bool
+	TrustedProxies         []net.IPNet
+	AutoSeed               bool
+	BootstrapAdminEmail    string
+	BootstrapAdminName     string
+	BootstrapAdminPassword string
+	EncryptionKey          []byte
+	PublicOrigin           string
+	PublicAPISecret        string
+	GuestPortalEnabled     bool
+	StripeSecretKey        string
+	StripeWebhookSecret    string
+	StripeAPIBaseURL       string
+	StripeSuccessURL       string
+	StripeCancelURL        string
+	StripeSandbox          bool
+	EmailFrom              string
+	EmailWebhookSecret     string
+	SMTPAddr               string
+	SMTPUsername           string
+	SMTPPassword           string
+	RequireEmail           bool
+	AttachmentStorageDir   string
+	MaxAttachmentBytes     int64
 }
 
 // IsProduction reports whether the application runs in production mode.
@@ -148,6 +152,39 @@ func Load() (Config, error) {
 		RequireEmail:         envBool("TIRBACH_REQUIRE_EMAIL", false),
 		AttachmentStorageDir: envOrDefault("TIRBACH_ATTACHMENT_DIR", filepath.Join(os.TempDir(), "lovelace-attachments")),
 		MaxAttachmentBytes:   envInt64("TIRBACH_MAX_ATTACHMENT_BYTES", 10*1024*1024),
+	}
+	if !cfg.AutoSeed {
+		bootEmail := strings.TrimSpace(os.Getenv("TIRBACH_BOOTSTRAP_ADMIN_EMAIL"))
+		bootPass := os.Getenv("TIRBACH_BOOTSTRAP_ADMIN_PASSWORD")
+		bootName := strings.TrimSpace(os.Getenv("TIRBACH_BOOTSTRAP_ADMIN_NAME"))
+		if bootEmail == "" && bootPass == "" {
+			legacyEmail := strings.TrimSpace(os.Getenv("TIRBACH_ADMIN_EMAIL"))
+			legacyPass := os.Getenv("TIRBACH_ADMIN_PASSWORD")
+			if legacyEmail != "" || legacyPass != "" {
+				bootEmail = legacyEmail
+				bootPass = legacyPass
+				if bootName == "" {
+					bootName = strings.TrimSpace(os.Getenv("TIRBACH_ADMIN_NAME"))
+				}
+			}
+		}
+		if bootName == "" && (bootEmail != "" || bootPass != "") {
+			bootName = "Owner Administrator"
+		}
+		cfg.BootstrapAdminEmail = bootEmail
+		cfg.BootstrapAdminName = bootName
+		cfg.BootstrapAdminPassword = bootPass
+	}
+	if (cfg.BootstrapAdminEmail != "") != (cfg.BootstrapAdminPassword != "") {
+		return Config{}, fmt.Errorf("TIRBACH_BOOTSTRAP_ADMIN_EMAIL and TIRBACH_BOOTSTRAP_ADMIN_PASSWORD must be provided together")
+	}
+	if cfg.BootstrapAdminPassword != "" {
+		if utf8.RuneCountInString(cfg.BootstrapAdminPassword) < 12 || len(cfg.BootstrapAdminPassword) > 256 {
+			return Config{}, fmt.Errorf("TIRBACH_BOOTSTRAP_ADMIN_PASSWORD must be between 12 characters and 256 bytes")
+		}
+		if (cfg.IsProduction() || cfg.IsStaging()) && isInsecureSecret(cfg.BootstrapAdminPassword) {
+			return Config{}, fmt.Errorf("TIRBACH_BOOTSTRAP_ADMIN_PASSWORD uses a known insecure development value")
+		}
 	}
 	if cfg.MaxAttachmentBytes < 1024 || cfg.MaxAttachmentBytes > 50*1024*1024 {
 		return Config{}, fmt.Errorf("TIRBACH_MAX_ATTACHMENT_BYTES must be between 1024 and 52428800 bytes")

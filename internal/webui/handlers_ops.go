@@ -253,9 +253,13 @@ func (h *Handler) handleUsersCreate(w http.ResponseWriter, r *http.Request, acto
 		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
-	propID := base.Property.ID
+	var propPtr *uuid.UUID
+	if base.Property.ID != uuid.Nil {
+		pid := base.Property.ID
+		propPtr = &pid
+	}
 	_, err = h.svc.CreateUser(r.Context(), actor, service.CreateUserInput{
-		PropertyID:         &propID,
+		PropertyID:         propPtr,
 		Email:              r.FormValue("email"),
 		FullName:           r.FormValue("full_name"),
 		Role:               domain.Role(r.FormValue("role")),
@@ -295,13 +299,26 @@ func (h *Handler) handleUsersUpdate(w http.ResponseWriter, r *http.Request, acto
 	redirectMsg(w, r, "/users", "User updated.")
 }
 
+func (h *Handler) handleUsersResetPassword(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Request", "invalid id")
+		return
+	}
+	if err := h.svc.AdminResetUserPassword(r.Context(), actor, id, r.FormValue("temporary_password")); err != nil {
+		h.redirectErr(w, r, "/users", err)
+		return
+	}
+	redirectMsg(w, r, "/users", "Temporary password set. User must choose a new password on next sign-in.")
+}
+
 func (h *Handler) handleAccountGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
 	base, err := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
 	if err != nil {
 		h.renderDomainError(w, err, "Server Error", "failed to load property")
 		return
 	}
-	h.renderAccountPage(w, actor, base)
+	h.renderAccountPage(r.Context(), w, actor, base)
 }
 
 func (h *Handler) handleAccountPasswordPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
@@ -311,7 +328,36 @@ func (h *Handler) handleAccountPasswordPost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	httpx.SetSessionCookie(w, h.cfg, res.SessionToken)
+	if len(res.GeneratedRecoveryCodes) > 0 {
+		actor.MustRotatePassword = false
+		actor.CSRFToken = res.CSRFToken
+		base, berr := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
+		if berr != nil {
+			redirectMsg(w, r, "/account", "Password updated and prior active sessions revoked.")
+			return
+		}
+		base.Flash = "Password updated and prior active sessions revoked. Save your one-time recovery codes below."
+		base.GeneratedRecoveryCodes = res.GeneratedRecoveryCodes
+		h.renderAccountPage(r.Context(), w, actor, base)
+		return
+	}
 	redirectMsg(w, r, "/account", "Password updated and prior active sessions revoked.")
+}
+
+func (h *Handler) handleAccountRecoveryCodesPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	codes, err := h.svc.RegenerateOwnRecoveryCodes(r.Context(), actor, r.FormValue("current_password"))
+	if err != nil {
+		h.redirectErr(w, r, "/account", err)
+		return
+	}
+	base, berr := h.buildBaseView(r.Context(), r, actor, "My Account", "account")
+	if berr != nil {
+		h.renderDomainError(w, berr, "Server Error", "failed to load account")
+		return
+	}
+	base.Flash = "New recovery codes generated. Any previous codes have been invalidated."
+	base.GeneratedRecoveryCodes = codes
+	h.renderAccountPage(r.Context(), w, actor, base)
 }
 
 // --- Audit Logs ---
@@ -323,7 +369,12 @@ func (h *Handler) handleAuditGet(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	resType := r.URL.Query().Get("resource_type")
-	logs, err := h.svc.ListAuditLogs(r.Context(), actor, &base.Property.ID, resType, 150)
+	var propFilter *uuid.UUID
+	if base.Property.ID != uuid.Nil {
+		pid := base.Property.ID
+		propFilter = &pid
+	}
+	logs, err := h.svc.ListAuditLogs(r.Context(), actor, propFilter, resType, 150)
 	if err != nil {
 		h.renderDomainError(w, err, "Unable to Load Audit Log", "Unable to retrieve audit log records.")
 		return

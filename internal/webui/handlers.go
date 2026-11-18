@@ -14,10 +14,11 @@ import (
 )
 
 type loginViewData struct {
-	Email string
-	Error string
-	Brand branding.PlatformBrand
-	Theme branding.ThemeSelection
+	Email          string
+	Error          string
+	NeedsBootstrap bool
+	Brand          branding.PlatformBrand
+	Theme          branding.ThemeSelection
 }
 
 func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
@@ -25,8 +26,18 @@ func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	needsBootstrap := false
+	if h.svc != nil {
+		if hasAdmins, err := h.svc.HasAdminUsers(r.Context()); err == nil && !hasAdmins {
+			needsBootstrap = true
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.loginTmpl.Execute(w, loginViewData{Brand: h.brand, Theme: h.theme})
+	_ = h.loginTmpl.Execute(w, loginViewData{
+		NeedsBootstrap: needsBootstrap,
+		Brand:          h.brand,
+		Theme:          h.theme,
+	})
 }
 
 func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +97,60 @@ func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		landing = safeAdminReturnPath(ws.DefaultRoute, "/")
 	}
 	http.Redirect(w, r, landing, http.StatusSeeOther)
+}
+
+func (h *Handler) handleRecoverGet(w http.ResponseWriter, r *http.Request) {
+	if _, ok := httpx.ActorFromContext(r.Context()); ok {
+		http.Redirect(w, r, "/account", http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = h.recoverTmpl.Execute(w, loginViewData{
+		Brand: h.brand,
+		Theme: h.theme,
+	})
+}
+
+func (h *Handler) handleRecoverPost(w http.ResponseWriter, r *http.Request) {
+	if !httpx.IsSameOriginBrowserMutation(r, h.cfg) {
+		h.renderError(w, http.StatusForbidden, "Security Check Failed", "Cross-site password recovery submissions are not permitted. Please submit directly from this page.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, httpx.MaxFormBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Request", "Unable to read the recovery request.")
+		return
+	}
+	email := strings.TrimSpace(r.FormValue("email"))
+	recoveryCode := r.FormValue("recovery_code")
+	newPassword := r.FormValue("new_password")
+	meta := httpx.MetaFromContext(r.Context())
+
+	res, err := h.svc.RecoverPasswordWithCode(r.Context(), email, recoveryCode, newPassword, meta.IPAddress, meta.UserAgent, meta.RequestID)
+	if err != nil {
+		msg := "Invalid email or recovery code."
+		status := http.StatusUnauthorized
+		var valErr *domain.ValidationError
+		switch {
+		case errors.Is(err, domain.ErrRateLimited):
+			msg = "Too many failed attempts. Please wait a few minutes before trying again."
+			status = http.StatusTooManyRequests
+		case errors.As(err, &valErr):
+			msg = "New password must be at least 12 characters. Your recovery code was not consumed."
+			status = http.StatusUnprocessableEntity
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		_ = h.recoverTmpl.Execute(w, loginViewData{
+			Email: email,
+			Error: msg,
+			Brand: h.brand,
+			Theme: h.theme,
+		})
+		return
+	}
+	httpx.SetSessionCookie(w, h.cfg, res.SessionToken)
+	redirectMsg(w, r, "/account", "Password reset succeeded. That recovery code has been marked used.")
 }
 
 func (h *Handler) handleLogoutPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
