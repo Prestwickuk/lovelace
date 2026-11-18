@@ -35,15 +35,15 @@ const defaultTrustedProxyCIDRs = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,
 
 // Config holds runtime configuration loaded from environment variables.
 type Config struct {
-	AppEnv               string
-	ListenAddr           string
-	DatabaseURL          string
-	CookieSecure         bool
-	SessionTTL           time.Duration
-	SessionIdleTTL       time.Duration
-	LoginMaxFailIP       int
-	LoginMaxFailAcc      int
-	LoginWindow          time.Duration
+	AppEnv                 string
+	ListenAddr             string
+	DatabaseURL            string
+	CookieSecure           bool
+	SessionTTL             time.Duration
+	SessionIdleTTL         time.Duration
+	LoginMaxFailIP         int
+	LoginMaxFailAcc        int
+	LoginWindow            time.Duration
 	TrustProxy             bool
 	TrustedProxies         []net.IPNet
 	AutoSeed               bool
@@ -51,23 +51,23 @@ type Config struct {
 	BootstrapAdminName     string
 	BootstrapAdminPassword string
 	EncryptionKey          []byte
-	PublicOrigin         string
-	PublicAPISecret      string
-	GuestPortalEnabled   bool
-	StripeSecretKey      string
-	StripeWebhookSecret  string
-	StripeAPIBaseURL     string
-	StripeSuccessURL     string
-	StripeCancelURL      string
-	StripeSandbox        bool
-	EmailFrom            string
-	EmailWebhookSecret   string
-	SMTPAddr             string
-	SMTPUsername         string
-	SMTPPassword         string
-	RequireEmail         bool
-	AttachmentStorageDir string
-	MaxAttachmentBytes   int64
+	PublicOrigin           string
+	PublicAPISecret        string
+	GuestPortalEnabled     bool
+	StripeSecretKey        string
+	StripeWebhookSecret    string
+	StripeAPIBaseURL       string
+	StripeSuccessURL       string
+	StripeCancelURL        string
+	StripeSandbox          bool
+	EmailFrom              string
+	EmailWebhookSecret     string
+	SMTPAddr               string
+	SMTPUsername           string
+	SMTPPassword           string
+	RequireEmail           bool
+	AttachmentStorageDir   string
+	MaxAttachmentBytes     int64
 }
 
 // IsProduction reports whether the application runs in production mode.

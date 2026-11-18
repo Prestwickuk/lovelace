@@ -31,8 +31,8 @@ var embeddedFS embed.FS
 
 // Handler serves the server-rendered LOVELACE Admin Console.
 type Handler struct {
-	svc       *service.Service
-	cfg       config.Config
+	svc         *service.Service
+	cfg         config.Config
 	brand       branding.PlatformBrand
 	theme       branding.ThemeSelection
 	loginTmpl   *template.Template
@@ -570,50 +570,50 @@ type baseView struct {
 	RecoverySummary        *service.RecoveryCodeSummary
 	GeneratedRecoveryCodes []string
 	Actor                  service.Actor
-	CSRFToken             string
-	Property              domain.Property
-	PropertyBranding      domain.PropertyBrandingView
-	PropertyTerms         branding.AdminTerminology
-	PropertyCSSHref       string
-	BrandingDraft         propertyBrandingDraft
-	BrandingPreview       bool
-	Flash                 string
-	Error                 string
-	CanReadProperty       bool
-	CanWriteProperty      bool
-	CanReadInventory      bool
-	CanWriteInventory     bool
-	CanReadRates          bool
-	CanWriteRates         bool
-	CanReadBlocks         bool
-	CanWriteBlocks        bool
-	CanReadReservations   bool
-	CanWriteReservations  bool
-	CanReadReleases       bool
-	CanWriteReleases      bool
-	CanReadChannels       bool
-	CanWriteChannels      bool
-	CanManageUsers        bool
-	CanViewAudit          bool
-	CanWriteHousekeeping  bool
-	CanReadMaintenance    bool
-	CanReportMaintenance  bool
-	CanWriteMaintenance   bool
-	CanInspectMaintenance bool
-	CanManageMaintenance  bool
-	CanReadGuests         bool
-	CanWriteGuests        bool
-	CanViewGuestNotes     bool
-	CanMergeGuests        bool
-	CanExportGuests       bool
-	CanAnonymizeGuests    bool
-	CanReadComms          bool
-	CanWriteComms         bool
-	CanReconcileComms     bool
-	CanManageTemplates    bool
-	CanReadReports        bool
-	CanExportReports      bool
-	GlobalPortalEnabled   bool
+	CSRFToken              string
+	Property               domain.Property
+	PropertyBranding       domain.PropertyBrandingView
+	PropertyTerms          branding.AdminTerminology
+	PropertyCSSHref        string
+	BrandingDraft          propertyBrandingDraft
+	BrandingPreview        bool
+	Flash                  string
+	Error                  string
+	CanReadProperty        bool
+	CanWriteProperty       bool
+	CanReadInventory       bool
+	CanWriteInventory      bool
+	CanReadRates           bool
+	CanWriteRates          bool
+	CanReadBlocks          bool
+	CanWriteBlocks         bool
+	CanReadReservations    bool
+	CanWriteReservations   bool
+	CanReadReleases        bool
+	CanWriteReleases       bool
+	CanReadChannels        bool
+	CanWriteChannels       bool
+	CanManageUsers         bool
+	CanViewAudit           bool
+	CanWriteHousekeeping   bool
+	CanReadMaintenance     bool
+	CanReportMaintenance   bool
+	CanWriteMaintenance    bool
+	CanInspectMaintenance  bool
+	CanManageMaintenance   bool
+	CanReadGuests          bool
+	CanWriteGuests         bool
+	CanViewGuestNotes      bool
+	CanMergeGuests         bool
+	CanExportGuests        bool
+	CanAnonymizeGuests     bool
+	CanReadComms           bool
+	CanWriteComms          bool
+	CanReconcileComms      bool
+	CanManageTemplates     bool
+	CanReadReports         bool
+	CanExportReports       bool
+	GlobalPortalEnabled    bool
 }
 
 func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor service.Actor, title, nav string) (baseView, error) {
