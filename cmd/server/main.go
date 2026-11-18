@@ -87,6 +87,19 @@ func main() {
 	}
 
 	svc := service.New(store, cfg)
+	if !cfg.AutoSeed && cfg.BootstrapAdminEmail != "" {
+		created, bootUser, err := svc.BootstrapInitialAdmin(ctx, cfg.BootstrapAdminEmail, cfg.BootstrapAdminName, cfg.BootstrapAdminPassword)
+		if err != nil {
+			slog.Error("failed to bootstrap initial owner_admin account", "error", err)
+			os.Exit(1)
+		}
+		if created {
+			slog.Info("initial owner_admin bootstrapped with mandatory first-login password rotation",
+				"user_id", bootUser.ID,
+				"must_rotate_password", bootUser.MustRotatePassword,
+			)
+		}
+	}
 	if err := svc.ValidateProductionStartup(ctx); err != nil {
 		slog.Error("production readiness startup check failed", "error", err)
 		os.Exit(1)

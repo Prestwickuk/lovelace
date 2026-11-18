@@ -323,7 +323,12 @@ func (h *Handler) handleAuditGet(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	resType := r.URL.Query().Get("resource_type")
-	logs, err := h.svc.ListAuditLogs(r.Context(), actor, &base.Property.ID, resType, 150)
+	var propFilter *uuid.UUID
+	if base.Property.ID != uuid.Nil {
+		pid := base.Property.ID
+		propFilter = &pid
+	}
+	logs, err := h.svc.ListAuditLogs(r.Context(), actor, propFilter, resType, 150)
 	if err != nil {
 		h.renderDomainError(w, err, "Unable to Load Audit Log", "Unable to retrieve audit log records.")
 		return

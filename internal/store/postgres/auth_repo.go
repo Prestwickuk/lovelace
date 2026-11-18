@@ -10,6 +10,15 @@ import (
 	"github.com/tirbach/tir-bach/internal/domain"
 )
 
+func (s *Store) CountAdminUsers(ctx context.Context, db DBTX) (int, error) {
+	if db == nil {
+		db = s.pool
+	}
+	var count int
+	err := db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_users`).Scan(&count)
+	return count, MapErr(err)
+}
+
 func (s *Store) ListAdminUsers(ctx context.Context, propertyID *uuid.UUID) ([]domain.AdminUser, error) {
 	var (
 		rows pgx.Rows

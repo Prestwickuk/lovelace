@@ -161,6 +161,92 @@ func (s *Service) effectiveActorPropertyScope(ctx context.Context, db postgres.D
 	return actor.PropertyID
 }
 
+const bootstrapAdminAdvisoryLockKey int64 = 748291099
+
+// HasAdminUsers reports whether at least one administrator account exists in the database.
+func (s *Service) HasAdminUsers(ctx context.Context) (bool, error) {
+	count, err := s.store.CountAdminUsers(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// BootstrapInitialAdmin provisions the initial global owner_admin account with MustRotatePassword=true
+// when and only when admin_users has zero rows. Subsequent invocations are strictly idempotent no-ops
+// and never overwrite existing accounts or rotated passwords.
+func (s *Service) BootstrapInitialAdmin(ctx context.Context, email, fullName, password string) (bool, domain.AdminUser, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	fullName = strings.TrimSpace(fullName)
+	if fullName == "" {
+		fullName = "Owner Administrator"
+	}
+
+	u := domain.AdminUser{
+		PropertyID:         nil,
+		Email:              email,
+		FullName:           fullName,
+		Role:               domain.RoleOwnerAdmin,
+		IsActive:           true,
+		MustRotatePassword: true,
+	}
+	if err := u.ValidateNew(); err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	if err := auth.ValidatePasswordPolicy(password); err != nil {
+		return false, domain.AdminUser{}, err
+	}
+
+	// Fast path check before deriving Argon2id hash on routine restarts.
+	if existing, err := s.store.CountAdminUsers(ctx, nil); err != nil {
+		return false, domain.AdminUser{}, err
+	} else if existing > 0 {
+		return false, domain.AdminUser{}, nil
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	id, err := postgres.NewUUID()
+	if err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	u.ID = id
+	u.PasswordHash = hash
+
+	var (
+		created bool
+		out     domain.AdminUser
+	)
+	err = s.store.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, lockErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, bootstrapAdminAdvisoryLockKey); lockErr != nil {
+			return postgres.MapErr(lockErr)
+		}
+		count, cntErr := s.store.CountAdminUsers(ctx, tx)
+		if cntErr != nil {
+			return cntErr
+		}
+		if count > 0 {
+			return nil
+		}
+		var txErr error
+		out, txErr = s.store.CreateAdminUser(ctx, tx, u)
+		if txErr != nil {
+			return txErr
+		}
+		created = true
+		return s.recordAudit(ctx, tx, Actor{
+			Email: "system",
+			Role:  domain.RoleOwnerAdmin,
+		}, nil, "admin_user.created", "admin_user", out.ID.String(), nil, auditAdminUserSnapshot(out))
+	})
+	if err != nil {
+		return false, domain.AdminUser{}, err
+	}
+	return created, out, nil
+}
+
 func (s *Service) ListUsers(ctx context.Context, actor Actor) ([]domain.AdminUser, error) {
 	if err := s.requirePerm(actor, auth.PermUsersManage); err != nil {
 		return nil, err

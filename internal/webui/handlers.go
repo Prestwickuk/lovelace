@@ -14,10 +14,11 @@ import (
 )
 
 type loginViewData struct {
-	Email string
-	Error string
-	Brand branding.PlatformBrand
-	Theme branding.ThemeSelection
+	Email          string
+	Error          string
+	NeedsBootstrap bool
+	Brand          branding.PlatformBrand
+	Theme          branding.ThemeSelection
 }
 
 func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
@@ -25,8 +26,18 @@ func (h *Handler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	needsBootstrap := false
+	if h.svc != nil {
+		if hasAdmins, err := h.svc.HasAdminUsers(r.Context()); err == nil && !hasAdmins {
+			needsBootstrap = true
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = h.loginTmpl.Execute(w, loginViewData{Brand: h.brand, Theme: h.theme})
+	_ = h.loginTmpl.Execute(w, loginViewData{
+		NeedsBootstrap: needsBootstrap,
+		Brand:          h.brand,
+		Theme:          h.theme,
+	})
 }
 
 func (h *Handler) handleLoginPost(w http.ResponseWriter, r *http.Request) {

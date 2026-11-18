@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/tirbach/tir-bach/internal/config"
 	"github.com/tirbach/tir-bach/internal/seed"
+	"github.com/tirbach/tir-bach/internal/service"
 	"github.com/tirbach/tir-bach/internal/store/postgres"
 )
 
@@ -16,6 +18,7 @@ func main() {
 	email := flag.String("admin-email", os.Getenv("TIRBACH_ADMIN_EMAIL"), "Initial owner_admin email")
 	name := flag.String("admin-name", os.Getenv("TIRBACH_ADMIN_NAME"), "Initial owner_admin full name")
 	password := flag.String("admin-password", os.Getenv("TIRBACH_ADMIN_PASSWORD"), "Initial owner_admin password (min 12 chars)")
+	adminOnly := flag.Bool("admin-only", strings.EqualFold(strings.TrimSpace(os.Getenv("TIRBACH_SEED_ADMIN_ONLY")), "true"), "Bootstrap initial owner_admin only (must_rotate_password=true) without seeding demo property data")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -35,6 +38,33 @@ func main() {
 	if err := store.Migrate(ctx); err != nil {
 		slog.Error("run migrations", "error", err)
 		os.Exit(1)
+	}
+
+	if *adminOnly {
+		svc := service.New(store, cfg)
+		bootEmail := strings.TrimSpace(*email)
+		bootPass := *password
+		bootName := strings.TrimSpace(*name)
+		if bootEmail == "" {
+			bootEmail = cfg.BootstrapAdminEmail
+		}
+		if bootPass == "" {
+			bootPass = cfg.BootstrapAdminPassword
+		}
+		if bootName == "" {
+			bootName = cfg.BootstrapAdminName
+		}
+		created, u, err := svc.BootstrapInitialAdmin(ctx, bootEmail, bootName, bootPass)
+		if err != nil {
+			slog.Error("bootstrap initial admin failed", "error", err)
+			os.Exit(1)
+		}
+		if created {
+			fmt.Printf("Bootstrapped initial owner_admin (%s) with must_rotate_password=true\n", u.ID)
+		} else {
+			fmt.Println("Administrator account already exists; bootstrap skipped")
+		}
+		return
 	}
 
 	if *email == "" || *password == "" {

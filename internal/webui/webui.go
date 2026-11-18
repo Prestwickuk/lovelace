@@ -397,6 +397,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 		"enquiry_detail.html",
 		"comms_settings.html",
 		"reports.html",
+		"no_property.html",
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
@@ -506,9 +507,23 @@ func (h *Handler) requirePageAuth(checkCSRF bool, next pageHandler) http.Handler
 				http.Redirect(w, r, "/account?rotate=1", http.StatusSeeOther)
 				return
 			}
+		} else if r.Method == http.MethodGet && h.svc != nil && !isPropertyIndependentAdminPath(r.URL.Path) {
+			if props, err := h.svc.ListProperties(r.Context(), actor); err == nil && len(props) == 0 {
+				base, berr := h.buildBaseView(r.Context(), r, actor, "No Property Configured", "dashboard")
+				if berr == nil {
+					h.renderPage(w, "no_property.html", base)
+					return
+				}
+			}
 		}
 		next(w, r, actor)
 	}
+}
+
+func isPropertyIndependentAdminPath(p string) bool {
+	return p == "/account" || strings.HasPrefix(p, "/account/") ||
+		p == "/users" || strings.HasPrefix(p, "/users/") ||
+		p == "/audit-logs" || p == "/logout"
 }
 
 type viewControlMeta struct {
