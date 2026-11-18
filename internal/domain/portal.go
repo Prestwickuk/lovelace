@@ -78,8 +78,8 @@ func IsPortalSecurityChallengeTemplate(templateCode string) bool {
 }
 
 // IsPrivacyRightsEnquiry reports whether a GuestEnquiry is a tracked SAR or Erasure rights
-// request whose details and status must not be surfaced in portal enquiry endpoints while
-// Section 7.2 identity-assurance and fulfilment gates remain open.
+// request whose details and status must never be surfaced in portal enquiry endpoints per
+// owner-approved Section 7.2.2 identity-assurance policy.
 func IsPrivacyRightsEnquiry(e GuestEnquiry) bool {
 	subj := strings.TrimSpace(e.Subject)
 	return strings.HasPrefix(subj, PortalSARSubjectPrefix) ||
