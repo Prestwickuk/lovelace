@@ -176,3 +176,50 @@
 
   updateSelectionUI();
 })();
+
+
+(function () {
+  "use strict";
+
+  function getRecoveryText() {
+    var src = document.getElementById("recovery-codes-plain");
+    if (!src) return "";
+    return (src.value || src.textContent || "").trim();
+  }
+
+  var copyBtn = document.getElementById("copy-recovery-codes-btn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", function () {
+      var text = getRecoveryText();
+      if (!text || !navigator.clipboard || !navigator.clipboard.writeText) return;
+      var original = copyBtn.textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        copyBtn.textContent = "Copied!";
+        setTimeout(function () {
+          copyBtn.textContent = original;
+        }, 2200);
+      });
+    });
+  }
+
+  var dlBtn = document.getElementById("download-recovery-codes-btn");
+  if (dlBtn) {
+    dlBtn.addEventListener("click", function () {
+      var text = getRecoveryText();
+      if (!text) return;
+      var email = dlBtn.getAttribute("data-account-email") || "admin";
+      var header = "LOVELACE Booking System — One-Time Recovery Codes\n" +
+        "Account: " + email + "\n" +
+        "Keep these codes in a password manager or safe place. Each code works once at /login/recover.\n\n";
+      var blob = new Blob([header + text + "\n"], { type: "text/plain;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "lovelace-recovery-codes.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+})();

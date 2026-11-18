@@ -45,7 +45,7 @@ docker compose up -d --build
 ```
 Place behind a TLS-terminating reverse proxy (Nginx, Caddy, or Traefik) serving HTTPS on `:443` and forwarding `X-Forwarded-For` and `X-Forwarded-Proto: https` to `127.0.0.1:8080`.
 
-On a fresh empty database (`admin_users = 0` rows), set `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` and `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` (`>= 12` characters) in your container environment (or run `tirbach-seed -admin-only`) so `tirbach-server` automatically provisions the initial `owner_admin` with `must_rotate_password=true` on first boot without seeding demo property/guest data. Signing in redirects immediately to `/account?rotate=1` to set your permanent password, and subsequent restarts never overwrite existing accounts.
+On a fresh empty database (`admin_users = 0` rows), set `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` and `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` (`>= 12` characters) in your container environment (or run `tirbach-seed -admin-only`) so `tirbach-server` automatically provisions the initial `owner_admin` with `must_rotate_password=true` on first boot without seeding demo property/guest data. Signing in redirects immediately to `/account?rotate=1` to set your permanent password, automatically generates **8 one-time Recovery Codes** (downloadable/copyable in `/account`, stored solely as keyed HMAC-SHA256 digests in `admin_recovery_codes`) for email-free self-service reset at **`/login/recover`**, and never overwrites existing accounts on subsequent restarts. For other staff accounts, `owner_admin` can also issue a temporary reset password (`must_rotate_password=true`) directly in **`/users`**.
 
 Initial bootstrap of both a baseline property and owner user (for standalone non-production demos) can also be run explicitly via `cmd/seed`:
 ```bash

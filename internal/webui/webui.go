@@ -33,11 +33,12 @@ var embeddedFS embed.FS
 type Handler struct {
 	svc       *service.Service
 	cfg       config.Config
-	brand     branding.PlatformBrand
-	theme     branding.ThemeSelection
-	loginTmpl *template.Template
-	errorTmpl *template.Template
-	pages     map[string]*template.Template
+	brand       branding.PlatformBrand
+	theme       branding.ThemeSelection
+	loginTmpl   *template.Template
+	recoverTmpl *template.Template
+	errorTmpl   *template.Template
+	pages       map[string]*template.Template
 }
 
 // New creates a Handler with the default platform PWE-1 theme contract.
@@ -361,6 +362,10 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 	if err != nil {
 		return nil, err
 	}
+	recoverTmpl, err := template.New("recover.html").Funcs(funcs).ParseFS(embeddedFS, "templates/recover.html", "templates/partials.html")
+	if err != nil {
+		return nil, err
+	}
 	errorTmpl, err := template.New("error.html").Funcs(funcs).ParseFS(embeddedFS, "templates/error.html", "templates/partials.html")
 	if err != nil {
 		return nil, err
@@ -409,13 +414,14 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 	}
 
 	return &Handler{
-		svc:       svc,
-		cfg:       cfg,
-		brand:     branding.Default(),
-		theme:     branding.ResolveTheme(theme),
-		loginTmpl: loginTmpl,
-		errorTmpl: errorTmpl,
-		pages:     pages,
+		svc:         svc,
+		cfg:         cfg,
+		brand:       branding.Default(),
+		theme:       branding.ResolveTheme(theme),
+		loginTmpl:   loginTmpl,
+		recoverTmpl: recoverTmpl,
+		errorTmpl:   errorTmpl,
+		pages:       pages,
 	}, nil
 }
 
@@ -426,6 +432,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /login", h.handleLoginGet)
 	mux.HandleFunc("POST /login", h.handleLoginPost)
+	mux.HandleFunc("GET /login/recover", h.handleRecoverGet)
+	mux.HandleFunc("POST /login/recover", h.handleRecoverPost)
 	mux.HandleFunc("POST /logout", h.requirePageAuth(true, h.handleLogoutPost))
 
 	mux.HandleFunc("GET /{$}", h.requirePageAuth(false, h.handleDashboard))
@@ -459,9 +467,11 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /users", h.requirePageAuth(false, h.handleUsersGet))
 	mux.HandleFunc("POST /users", h.requirePageAuth(true, h.handleUsersCreate))
 	mux.HandleFunc("POST /users/{id}/update", h.requirePageAuth(true, h.handleUsersUpdate))
+	mux.HandleFunc("POST /users/{id}/reset-password", h.requirePageAuth(true, h.handleUsersResetPassword))
 
 	mux.HandleFunc("GET /account", h.requirePageAuth(false, h.handleAccountGet))
 	mux.HandleFunc("POST /account/password", h.requirePageAuth(true, h.handleAccountPasswordPost))
+	mux.HandleFunc("POST /account/recovery-codes", h.requirePageAuth(true, h.handleAccountRecoveryCodesPost))
 	mux.HandleFunc("POST /account/preferences/global", h.requirePageAuth(true, h.handleAccountGlobalPreferencesPost))
 	mux.HandleFunc("POST /account/preferences/global/reset", h.requirePageAuth(true, h.handleAccountGlobalPreferencesResetPost))
 	mux.HandleFunc("POST /account/preferences/workspace", h.requirePageAuth(true, h.handleAccountWorkspacePreferencesPost))
@@ -550,14 +560,16 @@ type accountPersonalisationData struct {
 }
 
 type baseView struct {
-	Title                 string
-	ActiveNav             string
-	Brand                 branding.PlatformBrand
-	Theme                 branding.ThemeSelection
-	Workspace             domain.ResolvedWorkspace
-	ViewControls          viewControlMeta
-	AccountPrefs          *accountPersonalisationData
-	Actor                 service.Actor
+	Title                  string
+	ActiveNav              string
+	Brand                  branding.PlatformBrand
+	Theme                  branding.ThemeSelection
+	Workspace              domain.ResolvedWorkspace
+	ViewControls           viewControlMeta
+	AccountPrefs           *accountPersonalisationData
+	RecoverySummary        *service.RecoveryCodeSummary
+	GeneratedRecoveryCodes []string
+	Actor                  service.Actor
 	CSRFToken             string
 	Property              domain.Property
 	PropertyBranding      domain.PropertyBrandingView

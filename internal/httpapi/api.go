@@ -53,9 +53,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /readyz", h.handleReadyz)
 
 	mux.HandleFunc("POST /api/v1/auth/login", h.handleLogin)
+	mux.HandleFunc("POST /api/v1/auth/recover", h.handleRecoverPassword)
 	mux.HandleFunc("POST /api/v1/auth/logout", h.requireAuth(true, h.handleLogout))
 	mux.HandleFunc("GET /api/v1/auth/me", h.requireAuth(false, h.handleMe))
 	mux.HandleFunc("POST /api/v1/auth/change-password", h.requireAuth(true, h.handleChangePassword))
+	mux.HandleFunc("GET /api/v1/auth/recovery-codes", h.requireAuth(false, h.handleGetRecoveryCodes))
+	mux.HandleFunc("POST /api/v1/auth/recovery-codes", h.requireAuth(true, h.handleRegenerateRecoveryCodes))
 
 	mux.HandleFunc("GET /api/v1/properties", h.requireAuth(false, h.handleListProperties))
 	mux.HandleFunc("GET /api/v1/properties/{propertyID}", h.requireAuth(false, h.handleGetProperty))
@@ -93,6 +96,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/users", h.requireAuth(false, h.handleListUsers))
 	mux.HandleFunc("POST /api/v1/users", h.requireAuth(true, h.handleCreateUser))
 	mux.HandleFunc("PATCH /api/v1/users/{id}", h.requireAuth(true, h.handleUpdateUser))
+	mux.HandleFunc("POST /api/v1/users/{id}/reset-password", h.requireAuth(true, h.handleAdminResetUserPassword))
 
 	mux.HandleFunc("GET /api/v1/audit-logs", h.requireAuth(false, h.handleListAuditLogs))
 	mux.HandleFunc("POST /api/v1/properties/{propertyID}/audit-logs/{auditLogID}/redact", h.requireAuth(true, h.handleRedactAuditLog))
@@ -228,9 +232,86 @@ func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	httpx.SetSessionCookie(w, h.cfg, res.SessionToken)
+	resp := map[string]any{
+		"user":       res.User,
+		"csrf_token": res.CSRFToken,
+	}
+	if len(res.GeneratedRecoveryCodes) > 0 {
+		resp["generated_recovery_codes"] = res.GeneratedRecoveryCodes
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleRecoverPassword(w http.ResponseWriter, r *http.Request) {
+	if !httpx.IsSameOriginBrowserMutation(r, h.cfg) {
+		writeError(w, http.StatusForbidden, "origin_invalid", "cross-origin recovery requests are not permitted")
+		return
+	}
+	var body struct {
+		Email        string `json:"email"`
+		RecoveryCode string `json:"recovery_code"`
+		NewPassword  string `json:"new_password"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	meta := httpx.MetaFromContext(r.Context())
+	res, err := h.svc.RecoverPasswordWithCode(r.Context(), body.Email, body.RecoveryCode, body.NewPassword, meta.IPAddress, meta.UserAgent, meta.RequestID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	httpx.SetSessionCookie(w, h.cfg, res.SessionToken)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user":       res.User,
 		"csrf_token": res.CSRFToken,
+	})
+}
+
+func (h *Handler) handleGetRecoveryCodes(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	sum, err := h.svc.GetRecoveryCodeSummary(r.Context(), actor)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
+}
+
+func (h *Handler) handleRegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	codes, err := h.svc.RegenerateOwnRecoveryCodes(r.Context(), actor, body.CurrentPassword)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"recovery_codes": codes,
+	})
+}
+
+func (h *Handler) handleAdminResetUserPassword(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	id, ok := parseUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		TemporaryPassword string `json:"temporary_password"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := h.svc.AdminResetUserPassword(r.Context(), actor, id, body.TemporaryPassword); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":               "password_reset",
+		"must_rotate_password": true,
 	})
 }
 

@@ -1,9 +1,24 @@
 {{define "content"}}
 {{template "page_header" (dict "Title" "My Account" "Subtitle" (printf "%s · %s · Role: %s" .Actor.FullName .Actor.Email .Actor.Role))}}
 
+{{if .GeneratedRecoveryCodes}}
+<div class="card card-narrow mb-3" role="region" aria-labelledby="new-recovery-codes-heading">
+  <div class="mb-1"><span class="badge badge-warn">Save Now — Shown Once</span></div>
+  <h2 id="new-recovery-codes-heading">Your One-Time Password Recovery Codes</h2>
+  <p class="subtitle mb-2">
+    Store these codes in your password manager or download them now. Each code works once on <code>/login/recover</code> if you ever forget your password — no email delivery required.
+  </p>
+  <pre id="recovery-codes-plain" class="mono p-2 mb-2">{{joinStrings .GeneratedRecoveryCodes "\n"}}</pre>
+  <div class="days-row">
+    <button type="button" id="copy-recovery-codes-btn" class="btn btn-primary btn-sm">Copy Codes</button>
+    <button type="button" id="download-recovery-codes-btn" data-account-email="{{.Actor.Email}}" class="btn btn-secondary btn-sm">Download .txt</button>
+  </div>
+</div>
+{{end}}
+
 <div class="card card-narrow mb-3">
   <h2>{{if .Actor.MustRotatePassword}}Set Your New Personal Password{{else}}Change Password{{end}}</h2>
-  <p class="subtitle mb-2">Updating your password revokes all other active sessions for your account.</p>
+  <p class="subtitle mb-2">Updating your password revokes all other active sessions for your account.{{if .Actor.MustRotatePassword}} One-time recovery codes will be generated automatically once you set your password.{{end}}</p>
   <form method="post" action="/account/password" class="grid">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <div class="field">
@@ -20,6 +35,39 @@
     </div>
   </form>
 </div>
+
+{{if not .Actor.MustRotatePassword}}
+<div class="card card-narrow mb-3">
+  <div class="page-header mb-2">
+    <div>
+      <h2>Password Recovery Codes</h2>
+      <p class="subtitle">Reset your password directly on <code>/login/recover</code> without needing email access.</p>
+    </div>
+    {{with .RecoverySummary}}
+    <div>
+      {{if gt .UnusedCount 2}}
+      <span class="badge badge-ok">{{.UnusedCount}} of {{.TotalCount}} unused</span>
+      {{else if gt .UnusedCount 0}}
+      <span class="badge badge-warn">{{.UnusedCount}} of {{.TotalCount}} unused</span>
+      {{else}}
+      <span class="badge badge-err">0 recovery codes active</span>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  <form method="post" action="/account/recovery-codes" class="grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="field">
+      <label for="recovery_current_password">Confirm Current Password to Generate New Codes</label>
+      <input id="recovery_current_password" name="current_password" type="password" autocomplete="current-password" required>
+      <span class="field-hint">Generating a new set immediately invalidates any previously issued recovery codes.</span>
+    </div>
+    <div>
+      <button type="submit" class="btn btn-secondary">Generate New Recovery Codes</button>
+    </div>
+  </form>
+</div>
+{{end}}
 
 {{with .AccountPrefs}}
 <section aria-labelledby="personalisation-heading">

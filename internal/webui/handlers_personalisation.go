@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sort"
@@ -25,7 +26,7 @@ func permittedAdminRoutesForRole(role domain.Role) []domain.AdminRouteOption {
 	return out
 }
 
-func (h *Handler) renderAccountPage(w http.ResponseWriter, actor service.Actor, base baseView) {
+func (h *Handler) renderAccountPage(ctx context.Context, w http.ResponseWriter, actor service.Actor, base baseView) {
 	var propPayload domain.PropertyWorkspacePayload
 	if base.Workspace.PropertyWorkspace != nil {
 		propPayload = base.Workspace.PropertyWorkspace.Payload
@@ -33,6 +34,11 @@ func (h *Handler) renderAccountPage(w http.ResponseWriter, actor service.Actor, 
 	var routes []domain.AdminRouteOption
 	if !actor.MustRotatePassword {
 		routes = permittedAdminRoutesForRole(actor.Role)
+		if h.svc != nil {
+			if sum, err := h.svc.GetRecoveryCodeSummary(ctx, actor); err == nil {
+				base.RecoverySummary = &sum
+			}
+		}
 	}
 	base.AccountPrefs = &accountPersonalisationData{
 		Enabled:           !actor.MustRotatePassword,

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html {{template "html_attrs" .}}>
+<head>
+{{template "head_assets" .}}
+  <title>Reset Password — {{.Brand.FullName}}</title>
+</head>
+<body>
+  <main class="login-page">
+    <div class="login-card">
+      <div class="login-logo-wrap">
+        <img src="{{.Brand.Assets.FullLogo}}" alt="{{.Brand.Assets.AltText}}" class="login-logo">
+      </div>
+      <h1>Reset Password</h1>
+      <p class="subtitle">Enter your account email and one unused recovery code to set a new password immediately — no email required.</p>
+      {{if .Error}}<div class="alert alert-err mt-3" role="alert" id="recover-error">{{.Error}}</div>{{end}}
+      <form method="post" action="/login/recover" class="grid mt-3">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required value="{{.Email}}"{{if .Error}} aria-invalid="true" aria-describedby="recover-error"{{end}}>
+        </div>
+        <div class="field">
+          <label for="recovery_code">One-Time Recovery Code</label>
+          <input id="recovery_code" name="recovery_code" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" required{{if .Error}} aria-invalid="true" aria-describedby="recover-error"{{end}}>
+        </div>
+        <div class="field">
+          <label for="new_password">New Password</label>
+          <input id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="12" aria-describedby="recover-password-hint" required>
+          <span id="recover-password-hint" class="field-hint">Minimum 12 characters.</span>
+        </div>
+        <button type="submit" class="btn btn-primary mt-1">Reset password &amp; sign in</button>
+      </form>
+      <div class="mt-3">
+        <a href="/login">Back to sign in</a>
+      </div>
+      <div class="login-footer">{{.Brand.AttributionText}}</div>
+    </div>
+  </main>
+</body>
+</html>
