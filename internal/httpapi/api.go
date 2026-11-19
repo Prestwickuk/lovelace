@@ -110,6 +110,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerReportRoutes(mux)
 	h.registerWorkspaceRoutes(mux)
 	h.registerPropertyBrandingRoutes(mux)
+	h.registerBackupRoutes(mux)
 	h.registerPublicRoutes(mux)
 	h.registerPublicPortalRoutes(mux)
 }

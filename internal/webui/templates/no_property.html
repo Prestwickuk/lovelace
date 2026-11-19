@@ -9,6 +9,7 @@
   <div class="days-row mt-3">
     {{if .CanCreateProperty}}
     <a href="/onboarding" class="btn btn-primary">Start Guided Property Setup Wizard →</a>
+    <a href="/settings/backups" class="btn btn-secondary">Restore from Backup (.zip)</a>
     {{end}}
     <a href="/account" class="btn btn-secondary">My Account</a>
     {{if .CanManageUsers}}<a href="/users" class="btn btn-secondary">Admin Users</a>{{end}}

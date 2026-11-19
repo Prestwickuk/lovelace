@@ -357,6 +357,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 			}
 		},
 		"formatDecimalMoney": domain.FormatMinorAsDecimal,
+		"formatByteSize":     domain.FormatByteSize,
 	}
 
 	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html", "templates/partials.html")
@@ -405,6 +406,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 		"reports.html",
 		"no_property.html",
 		"onboarding.html",
+		"backups.html",
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
@@ -491,6 +493,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerWorkspaceRoutes(mux)
 	h.registerPropertyBrandingRoutes(mux)
 	h.registerOnboardingRoutes(mux)
+	h.registerBackupRoutes(mux)
 }
 
 type pageHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -537,6 +540,7 @@ func isPropertyIndependentAdminPath(p string) bool {
 	return p == "/account" || strings.HasPrefix(p, "/account/") ||
 		p == "/users" || strings.HasPrefix(p, "/users/") ||
 		p == "/onboarding" || strings.HasPrefix(p, "/onboarding/") ||
+		p == "/settings/backups" || strings.HasPrefix(p, "/settings/backups/") ||
 		p == "/property/switch" ||
 		p == "/audit-logs" || p == "/logout"
 }
@@ -937,7 +941,7 @@ func navSectionForActive(activeNav string) string {
 		return "guests"
 	case "blocks", "releases", "unit-types", "units", "extras", "rates", "reports":
 		return "inventory"
-	case "property", "onboarding", "channel-manager", "users", "audit", "account":
+	case "property", "onboarding", "backups", "channel-manager", "users", "audit", "account":
 		return "settings"
 	default:
 		return ""

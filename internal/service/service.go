@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/tirbach/tir-bach/internal/auth"
+	"github.com/tirbach/tir-bach/internal/backup"
 	"github.com/tirbach/tir-bach/internal/channels"
 	"github.com/tirbach/tir-bach/internal/config"
 	"github.com/tirbach/tir-bach/internal/domain"
@@ -144,6 +145,31 @@ type Service struct {
 	channelAdapterCfg   channels.AdapterConfig
 	channelConnLocks    map[uuid.UUID]*sync.Mutex
 	channelSyncWorkerID string
+
+	backupMu       sync.Mutex
+	backupCloudCfg backup.CloudClientConfig
+}
+
+// SetBackupCloudConfig injects test-only cloud backup HTTP/clock overrides.
+// Production always enforces HTTPS + public-IP SSRF checks.
+func (s *Service) SetBackupCloudConfig(cfg backup.CloudClientConfig) {
+	s.backupMu.Lock()
+	defer s.backupMu.Unlock()
+	s.backupCloudCfg = cfg
+}
+
+func (s *Service) effectiveBackupCloudConfig() backup.CloudClientConfig {
+	s.backupMu.Lock()
+	cfg := s.backupCloudCfg
+	s.backupMu.Unlock()
+	if s.cfg.IsProduction() || s.cfg.IsStaging() {
+		cfg.AllowLoopbackHTTPForTests = false
+		cfg.GCSTokenURLOverride = ""
+	}
+	if cfg.Clock == nil && s.nowOverride != nil {
+		cfg.Clock = s.nowOverride
+	}
+	return cfg
 }
 
 // SetChannelAdapterConfig injects channel adapter HTTP/clock/test endpoint overrides.
