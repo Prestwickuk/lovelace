@@ -16,6 +16,18 @@
 </div>
 {{end}}
 
+{{if and (not .Actor.MustRotatePassword) .CanCreateProperty (not (isNonZeroUUID .Property.ID))}}
+<div class="card card-narrow mb-3">
+  <h2>Next Step — Set Up Your First Property</h2>
+  <p class="subtitle mb-2">
+    Ready to configure your campsite, holiday let, Airbnb, or boutique hotel? Our guided wizard walks you through accommodation, pricing, house rules, and optional staff logins step by step.
+  </p>
+  <div>
+    <a href="/onboarding" class="btn btn-primary">Launch Property Setup Wizard →</a>
+  </div>
+</div>
+{{end}}
+
 <div class="card card-narrow mb-3">
   <h2>{{if .Actor.MustRotatePassword}}Set Your New Personal Password{{else}}Change Password{{end}}</h2>
   <p class="subtitle mb-2">Updating your password revokes all other active sessions for your account.{{if .Actor.MustRotatePassword}} One-time recovery codes will be generated automatically once you set your password.{{end}}</p>

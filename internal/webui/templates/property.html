@@ -4,6 +4,14 @@
     <h1>Site Settings</h1>
     <p class="subtitle">Core property profile, check-in/out windows, currency and VAT configuration.</p>
   </div>
+  <div class="days-row">
+    {{if .CanWriteProperty}}
+    <a href="/onboarding?property_id={{.Property.ID}}" class="btn btn-secondary btn-sm">Open Setup Wizard</a>
+    {{end}}
+    {{if .CanCreateProperty}}
+    <a href="/onboarding?new=1" class="btn btn-primary btn-sm">+ Add Another Property</a>
+    {{end}}
+  </div>
 </div>
 
 <div class="card">

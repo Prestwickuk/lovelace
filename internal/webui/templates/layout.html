@@ -23,6 +23,20 @@
         <div class="brand-property-label">{{if .PropertyBranding.HeaderLabel}}{{.PropertyBranding.HeaderLabel}}{{else}}Active Property{{end}}</div>
         <div class="brand-title">{{if .PropertyBranding.DisplayName}}{{.PropertyBranding.DisplayName}}{{else if .Property.Name}}{{.Property.Name}}{{else}}{{.Brand.ConsoleTitle}}{{end}}</div>
         {{if .PropertyBranding.RegionLabel}}<div class="brand-sub">{{.PropertyBranding.RegionLabel}}</div>{{else if .Property.Region}}<div class="brand-sub">{{.Property.Region}}</div>{{end}}
+        {{if gt (len .AllProperties) 1}}
+        <form method="post" action="/property/switch" class="mt-2">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <label for="sidebar_property_switch" class="sr-only">Switch active property</label>
+          <div class="sidebar-prop-switch">
+            <select id="sidebar_property_switch" name="property_id" class="sidebar-prop-select">
+              {{range .AllProperties}}
+              <option value="{{.ID}}" {{if eq .ID $.Property.ID}}selected{{end}}>{{.Name}}</option>
+              {{end}}
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">Switch</button>
+          </div>
+        </form>
+        {{end}}
       </div>
     </div>
     <nav class="nav" aria-label="Administrative navigation">
@@ -88,6 +102,9 @@
       </details>
       <details class="nav-group" {{if navSectionOpen .ActiveNav "settings" .Workspace}}open{{end}}>
         <summary class="nav-section">Settings</summary>
+        {{if .CanWriteProperty}}
+        <a href="/onboarding" class="{{if eq .ActiveNav "onboarding"}}active{{end}}" {{if eq .ActiveNav "onboarding"}}aria-current="page"{{end}}>Setup Wizard</a>
+        {{end}}
         {{if .CanReadProperty}}
         <a href="/property" class="{{if eq .ActiveNav "property"}}active{{end}}" {{if eq .ActiveNav "property"}}aria-current="page"{{end}}>Site Settings</a>
         {{end}}
@@ -117,6 +134,12 @@
     {{if .Actor.MustRotatePassword}}
     <div class="alert alert-err" role="alert">
       <strong>Password rotation required:</strong> Please set a new personal password below before accessing other administrative sections.
+    </div>
+    {{end}}
+    {{if and .OnboardingIncomplete .CanWriteProperty (ne .ActiveNav "onboarding")}}
+    <div class="alert alert-info" role="status">
+      <strong>Property setup in progress:</strong> You are on Step {{.OnboardingStep}} of 6 for <strong>{{.Property.Name}}</strong>.
+      <a href="/onboarding?property_id={{.Property.ID}}" class="ml-2"><strong>Resume Guided Setup →</strong></a>
     </div>
     {{end}}
     {{if .Flash}}<div class="alert alert-ok" role="status" aria-live="polite">{{.Flash}}</div>{{end}}

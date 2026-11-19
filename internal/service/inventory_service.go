@@ -61,6 +61,12 @@ func (s *Service) UpdateProperty(ctx context.Context, actor Actor, p domain.Prop
 			return err
 		}
 		p.Slug = before.Slug // Slug is immutable after creation
+		if len(p.Settings) == 0 {
+			p.Settings = before.Settings
+		}
+		if len(p.BrandingConfig) == 0 {
+			p.BrandingConfig = before.BrandingConfig
+		}
 		updated, err = s.store.UpdateProperty(ctx, tx, p)
 		if err != nil {
 			return err
