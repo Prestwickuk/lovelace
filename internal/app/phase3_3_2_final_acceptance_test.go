@@ -526,11 +526,27 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"idle_expires_at": nowStr, "absolute_expires_at": nowStr,
 			"revoked_at": nil, "created_at": nowStr,
 		},
+		"backup_target": {
+			"id": uid, "provider": "AWS_S3",
+			"encrypt_archive": true, "schedule_enabled": true,
+			"schedule_interval_hours": 24, "retention_count": 14,
+			"is_active": true, "last_status": "SUCCEEDED",
+			"last_verified_at": nowStr, "last_backup_at": nowStr,
+			"version": 1, "created_at": nowStr, "updated_at": nowStr,
+		},
+		"backup_run": {
+			"id": uid, "target_id": uid,
+			"run_kind": "CLOUD_MANUAL", "provider": "AWS_S3",
+			"status": "SUCCEEDED", "encrypted": true,
+			"archive_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			"size_bytes":     4096, "table_count": 20, "row_count": 150, "attachment_count": 2,
+			"started_at": nowStr, "completed_at": nowStr,
+		},
 	}
 
 	supportedTypes := service.SupportedAuditResourceTypes()
-	if len(supportedTypes) != 45 {
-		t.Fatalf("expected 45 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
+	if len(supportedTypes) != 47 {
+		t.Fatalf("expected 47 supported audit resource types, got %d (%v)", len(supportedTypes), supportedTypes)
 	}
 
 	for _, rt := range supportedTypes {

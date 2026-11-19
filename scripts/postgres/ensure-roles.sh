@@ -156,6 +156,14 @@ BEGIN
         EXECUTE 'REVOKE ALL ON TABLE public.admin_recovery_codes FROM PUBLIC';
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_recovery_codes TO %I', v_app);
     END IF;
+    IF to_regclass('public.backup_storage_targets') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.backup_storage_targets FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.backup_storage_targets TO %I', v_app);
+    END IF;
+    IF to_regclass('public.backup_runs') IS NOT NULL THEN
+        EXECUTE 'REVOKE ALL ON TABLE public.backup_runs FROM PUBLIC';
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.backup_runs TO %I', v_app);
+    END IF;
 
     -- Harden append-only audit and redaction overlay privileges idempotently across reruns.
     IF to_regclass('public.audit_logs') IS NOT NULL THEN

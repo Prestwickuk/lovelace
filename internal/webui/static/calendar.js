@@ -328,4 +328,20 @@
     peakToggle.addEventListener("change", syncPeak);
     syncPeak();
   }
+
+  // Backups: toggle cloud credential inputs based on selected provider
+  var btProvider = document.getElementById("bt_provider");
+  if (btProvider) {
+    var s3Box = document.getElementById("bt_creds_s3");
+    var gcsBox = document.getElementById("bt_creds_gcs");
+    var azBox = document.getElementById("bt_creds_azure");
+    var syncBackupProvider = function () {
+      var p = btProvider.value;
+      if (s3Box) s3Box.classList.toggle("hidden", p !== "AWS_S3" && p !== "S3_COMPATIBLE");
+      if (gcsBox) gcsBox.classList.toggle("hidden", p !== "GCS");
+      if (azBox) azBox.classList.toggle("hidden", p !== "AZURE_BLOB");
+    };
+    btProvider.addEventListener("change", syncBackupProvider);
+    syncBackupProvider();
+  }
 })();

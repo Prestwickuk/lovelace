@@ -276,6 +276,18 @@ var auditEnumSets = map[string]map[string]bool{
 	"report_export_format": {
 		"csv": true, "json": true,
 	},
+	"backup_provider": {
+		"LOCAL_ZIP": true, "AWS_S3": true, "S3_COMPATIBLE": true, "GCS": true, "AZURE_BLOB": true,
+	},
+	"backup_target_status": {
+		"NEVER_RUN": true, "VERIFIED": true, "SUCCEEDED": true, "FAILED": true,
+	},
+	"backup_run_kind": {
+		"LOCAL_DOWNLOAD": true, "CLOUD_MANUAL": true, "CLOUD_SCHEDULED": true, "VERIFY_ARCHIVE": true, "RESTORE_EMPTY_DB": true,
+	},
+	"backup_run_status": {
+		"RUNNING": true, "SUCCEEDED": true, "FAILED": true,
+	},
 }
 
 var auditMovedCountsAllowedKeys = map[string]bool{
@@ -376,6 +388,22 @@ var auditResourceAllowlists = map[string]map[string]auditFieldRule{
 		"release_at": rTS, "released_manually_at": rTSNull, "released_manually_by": rUUIDNull,
 		"is_active": rBool, "created_by": rUUIDNull, "updated_by": rUUIDNull,
 		"cancelled_at": rTSNull, "cancelled_by": rUUIDNull,
+		"version": rVersion, "created_at": rTS, "updated_at": rTS,
+	},
+	"backup_run": {
+		"redacted": rRedacted, "id": rUUID, "target_id": rUUIDNull,
+		"run_kind": rEnum("backup_run_kind"), "provider": rEnum("backup_provider"),
+		"status": rEnum("backup_run_status"), "encrypted": rBool,
+		"archive_sha256": rSHA256, "size_bytes": rSizeByte,
+		"table_count": rCount, "row_count": rCount, "attachment_count": rCount,
+		"started_at": rTS, "completed_at": rTSNull,
+	},
+	"backup_target": {
+		"redacted": rRedacted, "id": rUUID, "provider": rEnum("backup_provider"),
+		"encrypt_archive": rBool, "schedule_enabled": rBool,
+		"schedule_interval_hours": rCount, "retention_count": rDays1_36,
+		"is_active": rBool, "last_status": rEnum("backup_target_status"),
+		"last_verified_at": rTSNull, "last_backup_at": rTSNull,
 		"version": rVersion, "created_at": rTS, "updated_at": rTS,
 	},
 	"blockout_group": {

@@ -187,6 +187,15 @@ func main() {
 						}
 					})
 				}
+				if tickCount%4 == 1 {
+					runStep(60*time.Second, func(wCtx context.Context) {
+						if ran, err := svc.SweepScheduledBackups(wCtx); err != nil {
+							slog.Warn("scheduled cloud backup sweep error", "error", err)
+						} else if ran > 0 {
+							slog.Info("completed scheduled cloud backups", "count", ran)
+						}
+					})
+				}
 			}
 		}
 	}()

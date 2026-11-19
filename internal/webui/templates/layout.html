@@ -111,6 +111,9 @@
         {{if .CanReadChannels}}
         <a href="/settings/integrations/channel-manager" class="{{if eq .ActiveNav "channel-manager"}}active{{end}}" {{if eq .ActiveNav "channel-manager"}}aria-current="page"{{end}}>Channel Manager</a>
         {{end}}
+        {{if .CanCreateProperty}}
+        <a href="/settings/backups" class="{{if eq .ActiveNav "backups"}}active{{end}}" {{if eq .ActiveNav "backups"}}aria-current="page"{{end}}>Backups &amp; Cloud Sync</a>
+        {{end}}
         {{if .CanManageUsers}}
         <a href="/users" class="{{if eq .ActiveNav "users"}}active{{end}}" {{if eq .ActiveNav "users"}}aria-current="page"{{end}}>Admin Users</a>
         {{end}}

@@ -1,0 +1,332 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>Backups &amp; Cloud Storage</h1>
+    <p class="subtitle">Download portable local .zip snapshots, sync encrypted backups to AWS S3, Cloudflare R2, Google Cloud Storage, or Azure Blob, and verify or restore into a fresh environment.</p>
+  </div>
+</div>
+
+{{with .VerificationReport}}
+<div class="card mb-3" role="region" aria-labelledby="verify-report-heading">
+  <div class="mb-1"><span class="badge badge-ok">✓ Integrity Verified</span> {{if .Encrypted}}<span class="badge badge-info">AES-256-GCM Encrypted</span>{{else}}<span class="badge badge-muted">Standard .zip</span>{{end}}</div>
+  <h2 id="verify-report-heading">Backup Archive Verification Passed</h2>
+  <p class="subtitle mb-2">Every declared table snapshot and attachment blob matched its recorded SHA-256 digest.</p>
+  <div class="form-grid">
+    <div><span class="field-hint">Created At</span><div><strong>{{formatTime .CreatedAt}} UTC</strong></div></div>
+    <div><span class="field-hint">Archive Size</span><div><strong>{{formatByteSize .ArchiveSizeBytes}}</strong></div></div>
+    <div><span class="field-hint">Tables / Total Rows</span><div><strong>{{.TableCount}} tables · {{.TotalRows}} rows</strong></div></div>
+    <div><span class="field-hint">Attachments / Verified Files</span><div><strong>{{.AttachmentCount}} blobs · {{.VerifiedFileCount}} files</strong></div></div>
+    <div class="field-full"><span class="field-hint">Archive SHA-256</span><div class="mono">{{.ArchiveSHA256}}</div></div>
+  </div>
+</div>
+{{end}}
+
+<div class="card mb-3">
+  <h2>1. Download Local Portable Backup (.zip)</h2>
+  <p class="subtitle mb-2">
+    Exports a consistent point-in-time snapshot of your properties, accommodation, rates, reservations, guest CRM records, maintenance logs, and uploaded attachments, plus a <code>manifest.json</code> with per-file SHA-256 checksums. Active session tokens, recovery code hashes, password hashes, and server encryption keys are automatically excluded.
+  </p>
+  <form method="post" action="/settings/backups/export">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-grid">
+      <div class="field">
+        <label for="exp_passphrase">Optional Archive Encryption Passphrase (min 12 chars)</label>
+        <input id="exp_passphrase" name="archive_passphrase" type="password" minlength="12" autocomplete="new-password" placeholder="Leave blank for standard .zip, or set passphrase for .zip.enc">
+        <span class="field-hint">When provided, seals the .zip with Argon2id + AES-256-GCM (<code>.zip.enc</code>).</span>
+      </div>
+      <div class="field">
+        <label for="exp_current_pw">Confirm Your Current Admin Password</label>
+        <input id="exp_current_pw" name="current_password" type="password" autocomplete="current-password" required>
+      </div>
+    </div>
+    <div class="days-row mt-3">
+      <button type="submit" class="btn btn-primary">Download Local Backup Archive</button>
+    </div>
+  </form>
+</div>
+
+<div class="card mb-3">
+  <h2>2. Cloud Bucket Destinations (AWS S3 · Cloudflare R2 · Google Cloud · Azure Blob)</h2>
+  <p class="subtitle mb-3">
+    Configure off-site cloud buckets for one-click or scheduled automatic backups with automatic retention pruning. Cloud credentials are encrypted at rest with <code>AES-256-GCM</code> and never displayed in plaintext.
+  </p>
+
+  {{if .Overview.Targets}}
+  <div class="table-wrap mb-3">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Provider &amp; Bucket</th>
+          <th>Credentials</th>
+          <th>Schedule &amp; Retention</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Overview.Targets}}
+        <tr>
+          <td>
+            <strong>{{.Name}}</strong>
+            {{if .EncryptArchive}}<div class="field-hint">Encrypted (.zip.enc)</div>{{else}}<div class="field-hint">Standard (.zip)</div>{{end}}
+          </td>
+          <td>
+            <div>{{.Provider.Label}}</div>
+            <div class="mono subtitle">{{.BucketOrContainer}} · {{.KeyPrefix}}</div>
+          </td>
+          <td class="mono">{{if .CredentialHint}}{{.CredentialHint}}{{else}}Encrypted{{end}}</td>
+          <td>
+            {{if and .IsActive .ScheduleEnabled}}
+            <span class="badge badge-info">Every {{.ScheduleIntervalHours}}h</span>
+            {{else}}
+            <span class="badge badge-muted">Manual only</span>
+            {{end}}
+            <div class="field-hint">Keep newest {{.RetentionCount}}</div>
+          </td>
+          <td>
+            {{if eq .LastStatus "SUCCEEDED"}}
+            <span class="badge badge-ok">SUCCEEDED</span>
+            {{else if eq .LastStatus "VERIFIED"}}
+            <span class="badge badge-info">VERIFIED</span>
+            {{else if eq .LastStatus "FAILED"}}
+            <span class="badge badge-err">FAILED</span>
+            {{else}}
+            <span class="badge badge-muted">NEVER RUN</span>
+            {{end}}
+            {{if .LastBackupAt}}<div class="field-hint">Last backup: {{formatTime .LastBackupAt}}</div>{{end}}
+            {{if .LastErrorSummary}}<div class="field-error">{{.LastErrorSummary}}</div>{{end}}
+          </td>
+          <td>
+            <div class="days-row">
+              <form method="post" action="/settings/backups/targets/{{.ID}}/verify" class="inline">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <button type="submit" class="btn btn-secondary btn-sm">Test Connection</button>
+              </form>
+              <a href="/settings/backups?edit={{.ID}}#cloud-target-form" class="btn btn-secondary btn-sm">Edit</a>
+            </div>
+            <details class="mt-1">
+              <summary class="field-hint">Run Backup Now / Remove…</summary>
+              <form method="post" action="/settings/backups/targets/{{.ID}}/run" class="mt-1">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <label for="run_pw_{{.ID}}">Current Admin Password</label>
+                <input id="run_pw_{{.ID}}" name="current_password" type="password" autocomplete="current-password" required>
+                <button type="submit" class="btn btn-primary btn-sm mt-1">Upload Backup Now</button>
+              </form>
+              <form method="post" action="/settings/backups/targets/{{.ID}}/delete" class="mt-1">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <label for="del_pw_{{.ID}}">Confirm Password to Remove</label>
+                <input id="del_pw_{{.ID}}" name="current_password" type="password" autocomplete="current-password" required>
+                <button type="submit" class="btn btn-danger btn-sm mt-1">Remove Destination</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  <fieldset id="cloud-target-form" class="branding-fieldset">
+    <legend>{{if .EditingTarget}}Edit Cloud Destination: {{.EditingTarget.Name}}{{else}}+ Add Cloud Storage Destination{{end}}</legend>
+    <form method="post" action="/settings/backups/targets" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      {{if .EditingTarget}}
+      <input type="hidden" name="target_id" value="{{.EditingTarget.ID}}">
+      <input type="hidden" name="version" value="{{.EditingTarget.Version}}">
+      {{end}}
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="bt_name">Destination Label</label>
+          <input id="bt_name" name="name" type="text" required placeholder="e.g. Off-Site Nightly S3 Backup" value="{{if .EditingTarget}}{{.EditingTarget.Name}}{{end}}">
+        </div>
+        <div class="field">
+          <label for="bt_provider">Cloud Provider</label>
+          <select id="bt_provider" name="provider">
+            <option value="AWS_S3" {{if and .EditingTarget (eq .EditingTarget.Provider "AWS_S3")}}selected{{end}}>Amazon S3 (AWS)</option>
+            <option value="S3_COMPATIBLE" {{if and .EditingTarget (eq .EditingTarget.Provider "S3_COMPATIBLE")}}selected{{end}}>S3-Compatible (Cloudflare R2 / Backblaze B2 / Wasabi)</option>
+            <option value="GCS" {{if and .EditingTarget (eq .EditingTarget.Provider "GCS")}}selected{{end}}>Google Cloud Storage (GCP)</option>
+            <option value="AZURE_BLOB" {{if and .EditingTarget (eq .EditingTarget.Provider "AZURE_BLOB")}}selected{{end}}>Microsoft Azure Blob Storage</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="bt_bucket">Bucket or Container Name</label>
+          <input id="bt_bucket" name="bucket_or_container" type="text" required placeholder="e.g. my-lovelace-backups" value="{{if .EditingTarget}}{{.EditingTarget.BucketOrContainer}}{{end}}">
+        </div>
+        <div class="field">
+          <label for="bt_prefix">Folder / Key Prefix</label>
+          <input id="bt_prefix" name="key_prefix" type="text" value="{{if .EditingTarget}}{{.EditingTarget.KeyPrefix}}{{else}}lovelace-backups/{{end}}">
+        </div>
+        <div class="field" id="bt_region_wrap">
+          <label for="bt_region">Region (Required for AWS S3, e.g. eu-west-2)</label>
+          <input id="bt_region" name="region" type="text" placeholder="eu-west-2" value="{{if .EditingTarget}}{{.EditingTarget.Region}}{{else}}eu-west-2{{end}}">
+        </div>
+        <div class="field" id="bt_endpoint_wrap">
+          <label for="bt_endpoint">Custom HTTPS Endpoint URL (Required for R2 / S3-Compatible)</label>
+          <input id="bt_endpoint" name="endpoint_url" type="text" placeholder="https://<account>.r2.cloudflarestorage.com" value="{{if .EditingTarget}}{{.EditingTarget.EndpointURL}}{{end}}">
+        </div>
+      </div>
+
+      <div id="bt_creds_s3" class="form-grid mt-2">
+        <div class="field">
+          <label for="bt_s3_ak">Access Key ID {{if .EditingTarget}}(Leave blank to keep existing){{end}}</label>
+          <input id="bt_s3_ak" name="access_key_id" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="bt_s3_sk">Secret Access Key {{if .EditingTarget}}(Leave blank to keep existing){{end}}</label>
+          <input id="bt_s3_sk" name="secret_access_key" type="password" autocomplete="new-password">
+        </div>
+      </div>
+
+      <div id="bt_creds_gcs" class="form-grid mt-2 hidden">
+        <div class="field field-full">
+          <label for="bt_gcs_sa">GCP Service Account JSON Key {{if .EditingTarget}}(Leave blank to keep existing){{end}}</label>
+          <textarea id="bt_gcs_sa" name="service_account_json" rows="3" placeholder='{"type":"service_account","client_email":"...","private_key":"-----BEGIN PRIVATE KEY-----..."}'></textarea>
+        </div>
+      </div>
+
+      <div id="bt_creds_azure" class="form-grid mt-2 hidden">
+        <div class="field">
+          <label for="bt_az_acct">Azure Storage Account Name</label>
+          <input id="bt_az_acct" name="account_name" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="bt_az_key">Account Key (Base64) {{if .EditingTarget}}(or leave blank to keep existing){{end}}</label>
+          <input id="bt_az_key" name="account_key" type="password" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="bt_az_sas">Or Container SAS Token (Optional alternative to Account Key)</label>
+          <input id="bt_az_sas" name="sas_token" type="password" autocomplete="new-password" placeholder="sv=2021-08-06&amp;ss=b...">
+        </div>
+      </div>
+
+      <div class="form-grid mt-2">
+        <div class="checkbox-row">
+          <input id="bt_encrypt" name="encrypt_archive" type="checkbox" value="true" {{if or (not .EditingTarget) .EditingTarget.EncryptArchive}}checked{{end}}>
+          <label for="bt_encrypt">Encrypt Cloud Archives with AES-256-GCM (.zip.enc)</label>
+        </div>
+        <div class="field">
+          <label for="bt_passphrase">Archive Encryption Passphrase (min 12 chars) {{if .EditingTarget}}(Leave blank to keep existing){{end}}</label>
+          <input id="bt_passphrase" name="archive_passphrase" type="password" minlength="12" autocomplete="new-password">
+        </div>
+        <div class="checkbox-row">
+          <input id="bt_sched" name="schedule_enabled" type="checkbox" value="true" {{if and .EditingTarget .EditingTarget.ScheduleEnabled}}checked{{end}}>
+          <label for="bt_sched">Enable Scheduled Automatic Backups</label>
+        </div>
+        <div class="field">
+          <label for="bt_interval">Backup Every (Hours, 1–720)</label>
+          <input id="bt_interval" name="schedule_interval_hours" type="number" min="1" max="720" value="{{if .EditingTarget}}{{.EditingTarget.ScheduleIntervalHours}}{{else}}24{{end}}">
+        </div>
+        <div class="field">
+          <label for="bt_retention">Keep Most Recent Backups (1–365)</label>
+          <input id="bt_retention" name="retention_count" type="number" min="1" max="365" value="{{if .EditingTarget}}{{.EditingTarget.RetentionCount}}{{else}}14{{end}}">
+        </div>
+        <div class="checkbox-row">
+          <input id="bt_active" name="is_active" type="checkbox" value="true" {{if or (not .EditingTarget) .EditingTarget.IsActive}}checked{{end}}>
+          <label for="bt_active">Destination Active</label>
+        </div>
+        <div class="field">
+          <label for="bt_curr_pw">Confirm Current Admin Password to Save</label>
+          <input id="bt_curr_pw" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+      </div>
+
+      <div class="days-row mt-3">
+        <button type="submit" class="btn btn-primary">{{if .EditingTarget}}Update Cloud Destination{{else}}Save Cloud Destination{{end}}</button>
+        {{if .EditingTarget}}<a href="/settings/backups" class="btn btn-secondary">Cancel Edit</a>{{end}}
+      </div>
+    </form>
+  </fieldset>
+</div>
+
+<div class="card mb-3">
+  <h2>3. Verify Backup Integrity &amp; Safe Empty-Environment Restore</h2>
+  <div class="wizard-summary-grid mt-2">
+    <div class="property-preview-panel">
+      <h3>Verify a Backup File (Read-Only Check)</h3>
+      <p class="field-hint mb-2">Upload any <code>.zip</code> or encrypted <code>.zip.enc</code> archive to verify its manifest and every file's SHA-256 checksum without altering your database.</p>
+      <form method="post" action="/settings/backups/verify" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <div class="field mb-2">
+          <label for="ver_file">Backup Archive (.zip or .zip.enc)</label>
+          <input id="ver_file" name="archive" type="file" accept=".zip,.enc,application/octet-stream" required>
+        </div>
+        <div class="field mb-2">
+          <label for="ver_pass">Decryption Passphrase (if .zip.enc)</label>
+          <input id="ver_pass" name="archive_passphrase" type="password" autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-secondary">Verify Archive Checksums</button>
+      </form>
+    </div>
+
+    <div class="property-preview-panel">
+      <h3>Restore Backup Into Empty Environment</h3>
+      {{if .Overview.CanRestoreEmptyDB}}
+      <p class="field-hint mb-2">This environment currently has <strong>0 properties and 0 bookings</strong>, so safe full restore is unlocked. Your current Owner Admin login and session will be preserved.</p>
+      <form method="post" action="/settings/backups/restore" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <div class="field mb-2">
+          <label for="res_file">Backup Archive (.zip or .zip.enc)</label>
+          <input id="res_file" name="archive" type="file" accept=".zip,.enc,application/octet-stream" required>
+        </div>
+        <div class="field mb-2">
+          <label for="res_pass">Decryption Passphrase (if .zip.enc)</label>
+          <input id="res_pass" name="archive_passphrase" type="password" autocomplete="off">
+        </div>
+        <div class="field mb-2">
+          <label for="res_curr_pw">Confirm Your Current Admin Password</label>
+          <input id="res_curr_pw" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Verify &amp; Restore Into Empty Database</button>
+      </form>
+      {{else}}
+      <div class="alert alert-info mt-2" role="status">
+        <strong>Active Data Protection Active:</strong> Because this environment already contains live property or booking records, destructive in-place overwrite is disabled. To restore a backup, deploy a fresh empty database, sign in as Owner Admin, and upload your archive here.
+      </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+{{if .Overview.RecentRuns}}
+<div class="card">
+  <h2>Recent Backup &amp; Verification Activity</h2>
+  <div class="table-wrap mt-2">
+    <table>
+      <thead>
+        <tr>
+          <th>Started (UTC)</th>
+          <th>Operation</th>
+          <th>Provider</th>
+          <th>Status</th>
+          <th>Size / Contents</th>
+          <th>Object / SHA-256</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Overview.RecentRuns}}
+        <tr>
+          <td class="mono">{{formatTime .StartedAt}}</td>
+          <td>{{.RunKind}} {{if .Encrypted}}<span class="badge badge-info">Encrypted</span>{{end}}</td>
+          <td>{{.Provider}}</td>
+          <td>
+            {{if eq .Status "SUCCEEDED"}}<span class="badge badge-ok">SUCCEEDED</span>
+            {{else if eq .Status "FAILED"}}<span class="badge badge-err">FAILED</span>
+            {{else}}<span class="badge badge-warn">{{.Status}}</span>{{end}}
+          </td>
+          <td>{{formatByteSize .SizeBytes}} · {{.RowCount}} rows · {{.AttachmentCount}} files</td>
+          <td>
+            {{if .ObjectKey}}<div class="mono">{{.ObjectKey}}</div>{{end}}
+            {{if .ArchiveSHA256}}<div class="mono field-hint">{{.ArchiveSHA256}}</div>{{end}}
+            {{if .ErrorSummary}}<div class="field-error">{{.ErrorSummary}}</div>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+{{end}}
