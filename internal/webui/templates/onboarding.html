@@ -1,0 +1,786 @@
+{{define "content"}}
+<div class="page-header">
+  <div>
+    <h1>{{if .IsNewProperty}}Set Up Your Property{{else}}Guided Setup — {{.TargetProperty.Name}}{{end}}</h1>
+    <p class="subtitle">Step-by-step setup for your accommodation, pricing, house rules, and team. Progress is saved automatically at every step.</p>
+  </div>
+  {{if not .IsNewProperty}}
+  <div class="days-row">
+    <a href="/" class="btn btn-secondary btn-sm">Save for Later &amp; Open Console</a>
+  </div>
+  {{end}}
+</div>
+
+<nav aria-label="Property setup progress" class="card mb-3">
+  <ol class="wizard-stepper">
+    {{range .Steps}}
+    <li class="wizard-step wizard-step-{{.State}}">
+      {{if .Href}}
+      <a href="{{.Href}}" class="wizard-step-link" {{if eq .State "active"}}aria-current="step"{{end}}>
+        <span class="wizard-step-badge">{{if eq .State "done"}}✓{{else}}{{.Number}}{{end}}</span>
+        <span class="wizard-step-label">{{.Label}}</span>
+      </a>
+      {{else}}
+      <span class="wizard-step-link" {{if eq .State "active"}}aria-current="step"{{end}}>
+        <span class="wizard-step-badge">{{.Number}}</span>
+        <span class="wizard-step-label">{{.Label}}</span>
+      </span>
+      {{end}}
+    </li>
+    {{end}}
+  </ol>
+</nav>
+
+{{if eq .Step 1}}
+<div class="card">
+  <h2>Step 1 — Property Type &amp; Identity</h2>
+  <p class="subtitle mb-3">Choose what best describes your place. We will tailor console labels, check-in times, and starter templates automatically — and you can change anything later.</p>
+
+  <form method="post" action="/onboarding/step1" id="onboarding-step1-form">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{if not .IsNewProperty}}
+    <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+    {{end}}
+
+    <fieldset class="branding-fieldset mb-3">
+      <legend>What kind of place are you setting up?</legend>
+      <div class="wizard-preset-grid mt-2">
+        {{range .Presets}}
+        <label class="wizard-preset-card {{if eq $.SelectedPreset .Preset}}wizard-preset-selected{{end}}">
+          <div class="wizard-preset-head">
+            <input
+              type="radio"
+              name="preset"
+              value="{{.Preset}}"
+              {{if eq $.SelectedPreset .Preset}}checked{{end}}
+              data-preset-checkin="{{.DefaultCheckIn}}"
+              data-preset-checkout="{{.DefaultCheckOut}}"
+              data-preset-unit-singular="{{.Terminology.UnitSingular}}"
+              data-preset-unit-plural="{{.Terminology.UnitPlural}}"
+              data-preset-guest-singular="{{.Terminology.GuestSingular}}"
+              data-preset-guest-plural="{{.Terminology.GuestPlural}}"
+              data-preset-stay-label="{{.Terminology.StayLabel}}">
+            <strong>{{.Title}}</strong>
+          </div>
+          <span class="field-hint">{{.Subtitle}}</span>
+        </label>
+        {{end}}
+      </div>
+    </fieldset>
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="wiz_name">Property / Business Name</label>
+        <input id="wiz_name" name="name" type="text" required placeholder="e.g. Meadowbrook Glamping or Harbour View Cottage" value="{{.TargetProperty.Name}}">
+      </div>
+      <div class="field">
+        <label for="wiz_slug">Public URL Slug {{if not .IsNewProperty}}(Fixed after creation){{end}}</label>
+        {{if .IsNewProperty}}
+        <input id="wiz_slug" name="slug" type="text" placeholder="e.g. meadowbrook-glamping" value="{{.TargetProperty.Slug}}" aria-describedby="wiz_slug_hint">
+        <span id="wiz_slug_hint" class="field-hint">Lowercase letters, numbers, and hyphens. Generated automatically from your name if left blank.</span>
+        {{else}}
+        <input id="wiz_slug" type="text" value="{{.TargetProperty.Slug}}" disabled>
+        {{end}}
+      </div>
+
+      <div class="field field-full">
+        <label for="wiz_tagline">Short Tagline (Optional)</label>
+        <input id="wiz_tagline" name="tagline" type="text" maxlength="140" placeholder="e.g. Peaceful coastal cottage two minutes from the harbour" value="{{.TargetProperty.Tagline}}">
+      </div>
+
+      <div class="field">
+        <label for="wiz_town">Town / Village</label>
+        <input id="wiz_town" name="town" type="text" placeholder="e.g. St Davids" value="{{.TargetProperty.Town}}">
+      </div>
+      <div class="field">
+        <label for="wiz_region">County / Region</label>
+        <input id="wiz_region" name="region" type="text" maxlength="80" placeholder="e.g. Pembrokeshire, Wales" value="{{.TargetProperty.Region}}">
+      </div>
+      <div class="field">
+        <label for="wiz_address1">Address Line 1 (Optional)</label>
+        <input id="wiz_address1" name="address_line1" type="text" value="{{.TargetProperty.AddressLine1}}">
+      </div>
+      <div class="field">
+        <label for="wiz_postcode">Postcode / ZIP</label>
+        <input id="wiz_postcode" name="postcode" type="text" placeholder="e.g. SA62 6QN" value="{{.TargetProperty.Postcode}}">
+      </div>
+
+      <div class="field">
+        <label for="wiz_country">Country</label>
+        <select id="wiz_country" name="country_code">
+          <option value="GB" {{if eq .TargetProperty.CountryCode "GB"}}selected{{end}}>United Kingdom (GB)</option>
+          <option value="IE" {{if eq .TargetProperty.CountryCode "IE"}}selected{{end}}>Ireland (IE)</option>
+          <option value="US" {{if eq .TargetProperty.CountryCode "US"}}selected{{end}}>United States (US)</option>
+          <option value="CA" {{if eq .TargetProperty.CountryCode "CA"}}selected{{end}}>Canada (CA)</option>
+          <option value="AU" {{if eq .TargetProperty.CountryCode "AU"}}selected{{end}}>Australia (AU)</option>
+          <option value="NZ" {{if eq .TargetProperty.CountryCode "NZ"}}selected{{end}}>New Zealand (NZ)</option>
+          <option value="FR" {{if eq .TargetProperty.CountryCode "FR"}}selected{{end}}>France (FR)</option>
+          <option value="ES" {{if eq .TargetProperty.CountryCode "ES"}}selected{{end}}>Spain (ES)</option>
+          <option value="DE" {{if eq .TargetProperty.CountryCode "DE"}}selected{{end}}>Germany (DE)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="wiz_currency">Currency</label>
+        <select id="wiz_currency" name="currency">
+          <option value="GBP" {{if eq .TargetProperty.Currency "GBP"}}selected{{end}}>GBP (£ British Pound)</option>
+          <option value="EUR" {{if eq .TargetProperty.Currency "EUR"}}selected{{end}}>EUR (€ Euro)</option>
+          <option value="USD" {{if eq .TargetProperty.Currency "USD"}}selected{{end}}>USD ($ US Dollar)</option>
+          <option value="CAD" {{if eq .TargetProperty.Currency "CAD"}}selected{{end}}>CAD ($ Canadian Dollar)</option>
+          <option value="AUD" {{if eq .TargetProperty.Currency "AUD"}}selected{{end}}>AUD ($ Australian Dollar)</option>
+          <option value="NZD" {{if eq .TargetProperty.Currency "NZD"}}selected{{end}}>NZD ($ New Zealand Dollar)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="wiz_timezone">Local Timezone</label>
+        <select id="wiz_timezone" name="timezone">
+          <option value="Europe/London" {{if eq .TargetProperty.Timezone "Europe/London"}}selected{{end}}>Europe/London (UK)</option>
+          <option value="Europe/Dublin" {{if eq .TargetProperty.Timezone "Europe/Dublin"}}selected{{end}}>Europe/Dublin</option>
+          <option value="Europe/Paris" {{if eq .TargetProperty.Timezone "Europe/Paris"}}selected{{end}}>Europe/Paris (CET)</option>
+          <option value="America/New_York" {{if eq .TargetProperty.Timezone "America/New_York"}}selected{{end}}>America/New_York (Eastern)</option>
+          <option value="America/Chicago" {{if eq .TargetProperty.Timezone "America/Chicago"}}selected{{end}}>America/Chicago (Central)</option>
+          <option value="America/Denver" {{if eq .TargetProperty.Timezone "America/Denver"}}selected{{end}}>America/Denver (Mountain)</option>
+          <option value="America/Los_Angeles" {{if eq .TargetProperty.Timezone "America/Los_Angeles"}}selected{{end}}>America/Los_Angeles (Pacific)</option>
+          <option value="Australia/Sydney" {{if eq .TargetProperty.Timezone "Australia/Sydney"}}selected{{end}}>Australia/Sydney</option>
+          <option value="Pacific/Auckland" {{if eq .TargetProperty.Timezone "Pacific/Auckland"}}selected{{end}}>Pacific/Auckland</option>
+          <option value="UTC" {{if eq .TargetProperty.Timezone "UTC"}}selected{{end}}>UTC</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="wiz_checkin">Standard Check-In Time</label>
+        <input id="wiz_checkin" name="check_in_time" type="time" required value="{{.TargetProperty.CheckInTime}}">
+      </div>
+      <div class="field">
+        <label for="wiz_checkout">Standard Check-Out Time</label>
+        <input id="wiz_checkout" name="check_out_time" type="time" required value="{{.TargetProperty.CheckOutTime}}">
+      </div>
+
+      <div class="field">
+        <label for="wiz_email">Guest Contact Email</label>
+        <input id="wiz_email" name="contact_email" type="email" placeholder="bookings@example.com" value="{{.TargetProperty.ContactEmail}}">
+      </div>
+      <div class="field">
+        <label for="wiz_phone">Guest Contact Phone (Optional)</label>
+        <input id="wiz_phone" name="contact_phone" type="text" placeholder="+44 1234 567890" value="{{.TargetProperty.ContactPhone}}">
+      </div>
+    </div>
+
+    <details class="mt-3 branding-fieldset">
+      <summary><strong>Optional: Customise Console Labels &amp; Brand Colours</strong></summary>
+      <p class="field-hint mt-1 mb-2">Pre-filled automatically from your chosen property type above. Leave hex colours blank to use the accessible default palette.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="wiz_unit_singular">Accommodation Label (Singular)</label>
+          <input id="wiz_unit_singular" name="unit_singular" type="text" maxlength="24" value="{{.TargetBranding.ResolvedTerms.UnitSingular}}">
+        </div>
+        <div class="field">
+          <label for="wiz_unit_plural">Accommodation Label (Plural)</label>
+          <input id="wiz_unit_plural" name="unit_plural" type="text" maxlength="24" value="{{.TargetBranding.ResolvedTerms.UnitPlural}}">
+        </div>
+        <div class="field">
+          <label for="wiz_stay_label">Booking Label</label>
+          <input id="wiz_stay_label" name="stay_label" type="text" maxlength="24" value="{{.TargetBranding.ResolvedTerms.StayLabel}}">
+        </div>
+        <input type="hidden" id="wiz_guest_singular" name="guest_singular" value="{{.TargetBranding.ResolvedTerms.GuestSingular}}">
+        <input type="hidden" id="wiz_guest_plural" name="guest_plural" value="{{.TargetBranding.ResolvedTerms.GuestPlural}}">
+        <div class="field">
+          <label for="wiz_primary_color">Primary Brand Hex (Optional)</label>
+          <input id="wiz_primary_color" name="primary_color" type="text" placeholder="#2F4F4A" value="{{.TargetBranding.PrimaryColor}}">
+        </div>
+        <div class="field">
+          <label for="wiz_secondary_color">Secondary Accent Hex (Optional)</label>
+          <input id="wiz_secondary_color" name="secondary_color" type="text" placeholder="#6B4E14" value="{{.TargetBranding.SecondaryColor}}">
+        </div>
+      </div>
+    </details>
+
+    <div class="days-row mt-3">
+      <button type="submit" class="btn btn-primary">{{if .IsNewProperty}}Create Property &amp; Continue to Step 2 →{{else}}Save &amp; Continue to Step 2 →{{end}}</button>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{if eq .Step 2}}
+{{if .UnitTypes}}
+<div class="card mb-3">
+  <div class="page-header mb-2">
+    <div>
+      <h2>Configured {{.TargetBranding.ResolvedTerms.UnitPlural}} ({{len .Units}} Total Bookable)</h2>
+      <p class="subtitle">You can add more accommodation types below, or continue straight to Step 3.</p>
+    </div>
+    <form method="post" action="/onboarding/step2/next">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+      <button type="submit" class="btn btn-primary">Continue to Step 3: Pricing &amp; Extras →</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Bookable {{.TargetBranding.ResolvedTerms.UnitPlural}}</th>
+          <th>Max Guests</th>
+          <th>Min Stay</th>
+          <th>Base Nightly Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .UnitTypes}}
+        <tr>
+          <td><strong>{{.Name}}</strong> <span class="mono subtitle">({{.Code}})</span></td>
+          <td><span class="badge badge-muted">{{.Category}}</span></td>
+          <td>{{index $.UnitCountByType .ID}}</td>
+          <td>{{.MaxGuests}} ({{.MaxAdults}} adults)</td>
+          <td>{{.MinNights}}n</td>
+          <td class="mono">{{formatMoneyCur $.TargetProperty.Currency .BaseNightlyRatePence}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <h2>Step 2 — Add Accommodation &amp; Generate Bookable {{.TargetBranding.ResolvedTerms.UnitPlural}}</h2>
+  <p class="subtitle mb-2">
+    Click a quick-fill template below to populate sensible defaults, or enter your own details. Setting quantity to e.g. <strong>6</strong> creates all 6 individual pitches/rooms at once!
+  </p>
+
+  {{if .PresetSpec.AccommodationTemplates}}
+  <div class="mb-3">
+    <span class="field-hint"><strong>Quick-fill starter templates:</strong></span>
+    <div class="days-row mt-1">
+      {{range .PresetSpec.AccommodationTemplates}}
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm wizard-starter-btn"
+        data-starter-name="{{.Name}}"
+        data-starter-code="{{.Code}}"
+        data-starter-category="{{.Category}}"
+        data-starter-desc="{{.Description}}"
+        data-starter-prefix="{{.UnitPrefix}}"
+        data-starter-qty="{{.DefaultQuantity}}"
+        data-starter-zone="{{.Zone}}"
+        data-starter-base-adults="{{.BaseCapacityAdults}}"
+        data-starter-max-adults="{{.MaxAdults}}"
+        data-starter-max-children="{{.MaxChildren}}"
+        data-starter-max-infants="{{.MaxInfants}}"
+        data-starter-max-guests="{{.MaxGuests}}"
+        data-starter-pets="{{if .PetsAllowed}}true{{else}}false{{end}}"
+        data-starter-max-pets="{{.MaxPets}}"
+        data-starter-price="{{formatDecimalMoney .BaseNightlyPence}}"
+        data-starter-min-nights="{{.MinNights}}"
+        data-starter-max-nights="{{.MaxNights}}"
+        data-starter-amenities="{{.AmenitiesCSV}}">
+        + {{.Label}}
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  <form method="post" action="/onboarding/step2/unit-batch" id="onboarding-step2-form">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="ut_name">Accommodation Name</label>
+        <input id="ut_name" name="name" type="text" required placeholder="e.g. Entire Holiday Cottage, Meadow Tent Pitch, Double Room">
+      </div>
+      <div class="field">
+        <label for="ut_category">Category</label>
+        <select id="ut_category" name="category">
+          <option value="cabin" {{if eq .SelectedPreset "airbnb_cottage"}}selected{{end}}>Cottage / Cabin / Holiday Home</option>
+          <option value="glamping" {{if eq .SelectedPreset "campsite"}}selected{{end}}>Glamping (Bell Tent / Yurt / Pod)</option>
+          <option value="tent_pitch">Tent Pitch (Non-Electric)</option>
+          <option value="touring_pitch">Touring / Campervan / Hook-Up Pitch</option>
+          <option value="other" {{if eq .SelectedPreset "hotel_bnb"}}selected{{end}}>Hotel / B&amp;B Room or Suite</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="ut_quantity">How many of this {{.TargetBranding.ResolvedTerms.UnitSingular}} do you have?</label>
+        <input id="ut_quantity" name="quantity" type="number" min="1" max="50" required value="1">
+        <span class="field-hint">Use 1 for a single Airbnb/cottage, or up to 50 to number pitches/rooms automatically.</span>
+      </div>
+      <div class="field">
+        <label for="ut_price">Base Nightly Price ({{.TargetProperty.Currency}})</label>
+        <input id="ut_price" name="base_nightly_rate" type="text" inputmode="decimal" required placeholder="95.00" value="95.00">
+      </div>
+
+      <div class="field">
+        <label for="ut_prefix">Short {{.TargetBranding.ResolvedTerms.UnitSingular}} Code Prefix (Optional)</label>
+        <input id="ut_prefix" name="unit_prefix" type="text" maxlength="12" placeholder="e.g. GP, RM, COT">
+        <span class="field-hint">Creates codes like GP-01, GP-02 (or COT for a single unit).</span>
+      </div>
+      <div class="field">
+        <label for="ut_zone">Area / Floor / Field (Optional)</label>
+        <input id="ut_zone" name="zone" type="text" placeholder="e.g. Main Meadow, First Floor, Harbourside">
+      </div>
+
+      <div class="field">
+        <label for="ut_base_adults">Adults Included in Base Price</label>
+        <input id="ut_base_adults" name="base_capacity_adults" type="number" min="1" max="24" required value="2">
+      </div>
+      <div class="field">
+        <label for="ut_max_adults">Max Adults</label>
+        <input id="ut_max_adults" name="max_adults" type="number" min="1" max="24" required value="2">
+      </div>
+      <div class="field">
+        <label for="ut_max_children">Max Children</label>
+        <input id="ut_max_children" name="max_children" type="number" min="0" max="24" required value="2">
+      </div>
+      <div class="field">
+        <label for="ut_max_infants">Max Infants</label>
+        <input id="ut_max_infants" name="max_infants" type="number" min="0" max="12" required value="1">
+      </div>
+      <div class="field">
+        <label for="ut_max_guests">Max Total Guests</label>
+        <input id="ut_max_guests" name="max_guests" type="number" min="1" max="30" required value="4">
+      </div>
+
+      <div class="field">
+        <label for="ut_min_nights">Minimum Nights</label>
+        <input id="ut_min_nights" name="min_nights" type="number" min="1" max="365" required value="2">
+      </div>
+      <div class="field">
+        <label for="ut_max_nights">Maximum Nights</label>
+        <input id="ut_max_nights" name="max_nights" type="number" min="1" max="365" required value="28">
+      </div>
+
+      <div class="checkbox-row">
+        <input id="ut_pets" name="pets_allowed" type="checkbox" value="true">
+        <label for="ut_pets">Pets Welcome</label>
+      </div>
+      <div class="field">
+        <label for="ut_max_pets">Max Pets (if allowed)</label>
+        <input id="ut_max_pets" name="max_pets" type="number" min="0" max="10" value="1">
+      </div>
+
+      <div class="field field-full">
+        <label for="ut_amenities">Key Amenities (comma-separated, optional)</label>
+        <input id="ut_amenities" name="amenities" type="text" placeholder="e.g. wifi, parking, king-bed, wood-burner, en-suite">
+      </div>
+      <div class="field field-full">
+        <label for="ut_desc">Guest-Facing Description (Optional)</label>
+        <textarea id="ut_desc" name="description" rows="2" placeholder="Describe beds, facilities, views, or pitch dimensions..."></textarea>
+      </div>
+      <input type="hidden" id="ut_code" name="code" value="">
+    </div>
+
+    <div class="days-row mt-3">
+      <button type="submit" name="after_action" value="continue" class="btn btn-primary">Save Accommodation &amp; Continue to Step 3 →</button>
+      <button type="submit" name="after_action" value="add_more" class="btn btn-secondary">Save &amp; Add Another Type</button>
+      <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=1" class="btn btn-secondary">← Back to Step 1</a>
+    </div>
+  </form>
+
+  {{if not .UnitTypes}}
+  <form method="post" action="/onboarding/step2/next" class="mt-2">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+    <button type="submit" class="btn btn-secondary btn-sm">Skip for now (I will add accommodation later)</button>
+  </form>
+  {{end}}
+</div>
+{{end}}
+
+{{if eq .Step 3}}
+<div class="card">
+  <h2>Step 3 — Pricing, Seasonal Uplifts &amp; Add-On Extras</h2>
+  <p class="subtitle mb-3">
+    Your default tariff (<strong>{{if .DefaultPlan.Name}}{{.DefaultPlan.Name}}{{else}}Standard Flexible Tariff{{end}}</strong>) is active. Configure optional extra-guest fees, weekend/peak season pricing, and optional add-ons below.
+  </p>
+
+  <form method="post" action="/onboarding/step3">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+
+    <fieldset class="branding-fieldset mb-3">
+      <legend>Extra Guest Nightly Charges &amp; Tax / VAT</legend>
+      <p class="field-hint mt-1 mb-2">Leave extra-guest rates at 0.00 if your nightly price covers the whole cottage/room/pitch regardless of party size.</p>
+      <div class="form-grid">
+        <div class="field">
+          <label for="s3_extra_adult">Extra Adult per Night ({{.TargetProperty.Currency}})</label>
+          <input id="s3_extra_adult" name="extra_adult_nightly" type="text" inputmode="decimal" value="{{formatDecimalMoney .Policy.ExtraAdultNightlyPence}}">
+        </div>
+        <div class="field">
+          <label for="s3_child">Child per Night ({{.TargetProperty.Currency}})</label>
+          <input id="s3_child" name="child_nightly" type="text" inputmode="decimal" value="{{formatDecimalMoney .Policy.ChildNightlyPence}}">
+        </div>
+        <div class="field">
+          <label for="s3_infant">Infant per Night ({{.TargetProperty.Currency}})</label>
+          <input id="s3_infant" name="infant_nightly" type="text" inputmode="decimal" value="{{formatDecimalMoney .Policy.InfantNightlyPence}}">
+        </div>
+        <div class="checkbox-row">
+          <input id="s3_vat_reg" name="vat_registered" type="checkbox" value="true" {{if .TargetProperty.VATRegistered}}checked{{end}}>
+          <label for="s3_vat_reg">VAT Registered Business</label>
+        </div>
+        <div class="field">
+          <label for="s3_vat_num">VAT Registration Number (if VAT registered)</label>
+          <input id="s3_vat_num" name="vat_number" type="text" placeholder="e.g. GB123456789" value="{{.TargetProperty.VATNumber}}">
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="branding-fieldset mb-3">
+      <legend>Optional: Add a Weekend or Peak Season Rate Uplift</legend>
+      {{if .RateRules}}
+      <p class="field-hint mt-1 mb-2">Already configured rate rules: {{range $i, $r := .RateRules}}{{if $i}}, {{end}}<strong>{{$r.Name}}</strong> ({{formatMoneyCur $.TargetProperty.Currency $r.NightlyRatePence}}){{end}}.</p>
+      {{end}}
+      <div class="checkbox-row pt-1 mb-2">
+        <input id="s3_add_peak" name="add_peak_rule" type="checkbox" value="true">
+        <label for="s3_add_peak">Create a weekend or peak-season rate rule now</label>
+      </div>
+      <div id="s3_peak_fields" class="form-grid hidden">
+        <div class="field">
+          <label for="s3_peak_name">Rule Name</label>
+          <input id="s3_peak_name" name="peak_rule_name" type="text" value="Peak Summer / Weekend Tariff">
+        </div>
+        <div class="field">
+          <label for="s3_peak_ut">Applies To</label>
+          <select id="s3_peak_ut" name="peak_unit_type_id">
+            <option value="">All active accommodation types</option>
+            {{range .UnitTypes}}
+            <option value="{{.ID}}">{{.Name}} (Base: {{formatMoneyCur $.TargetProperty.Currency .BaseNightlyRatePence}})</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label for="s3_peak_start">From Date</label>
+          <input id="s3_peak_start" name="peak_start_date" type="date" value="{{.DefaultPeakStart}}">
+        </div>
+        <div class="field">
+          <label for="s3_peak_end">Until Date (Check-out)</label>
+          <input id="s3_peak_end" name="peak_end_date" type="date" value="{{.DefaultPeakEnd}}">
+        </div>
+        <div class="field">
+          <label for="s3_peak_days">Nights Covered</label>
+          <select id="s3_peak_days" name="peak_days_preset">
+            <option value="weekend">Friday &amp; Saturday nights only</option>
+            <option value="all">Every night in date range</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="s3_peak_price">Override Nightly Price ({{.TargetProperty.Currency}})</label>
+          <input id="s3_peak_price" name="peak_nightly_rate" type="text" inputmode="decimal" placeholder="135.00" value="135.00">
+        </div>
+        <div class="field">
+          <label for="s3_peak_min">Minimum Stay Override (Optional)</label>
+          <input id="s3_peak_min" name="peak_min_nights" type="number" min="0" max="60" placeholder="e.g. 3">
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="branding-fieldset mb-3">
+      <legend>Optional Guest Add-Ons &amp; Extras</legend>
+      <p class="field-hint mt-1 mb-2">Tick any suggested extras you would like guests or staff to be able to add to a booking, and adjust the price if needed.</p>
+      <div class="grid">
+        {{range .PresetSpec.SuggestedExtras}}
+        <div class="wizard-extra-row">
+          <div class="wizard-extra-main">
+            {{if index $.ExistingExtraCodes .Code}}
+            <span class="badge badge-ok">✓ Already Added</span>
+            <strong>{{.Name}}</strong>
+            {{else}}
+            <label class="wizard-extra-check">
+              <input type="checkbox" name="suggested_extras" value="{{.Code}}">
+              <strong>{{.Name}}</strong>
+            </label>
+            {{end}}
+            <span class="field-hint">{{.Description}} ({{.PricingModel}})</span>
+          </div>
+          {{if not (index $.ExistingExtraCodes .Code)}}
+          <div class="wizard-extra-price">
+            <label for="extra_price_{{.Code}}">Price ({{$.TargetProperty.Currency}})</label>
+            <input id="extra_price_{{.Code}}" name="extra_price_{{.Code}}" type="text" inputmode="decimal" value="{{formatDecimalMoney .PricePence}}">
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+
+      <details class="mt-3">
+        <summary><strong>+ Add a Custom Extra / Fee</strong></summary>
+        <div class="form-grid mt-2">
+          <div class="field">
+            <label for="custom_extra_name">Extra Name</label>
+            <input id="custom_extra_name" name="custom_extra_name" type="text" placeholder="e.g. EV Charger Pass, Hot Tub Logs">
+          </div>
+          <div class="field">
+            <label for="custom_extra_price">Price ({{.TargetProperty.Currency}})</label>
+            <input id="custom_extra_price" name="custom_extra_price" type="text" inputmode="decimal" placeholder="15.00">
+          </div>
+          <div class="field">
+            <label for="custom_extra_pricing_model">How is it billed?</label>
+            <select id="custom_extra_pricing_model" name="custom_extra_pricing_model">
+              <option value="per_stay">Once per stay</option>
+              <option value="per_night">Per night</option>
+              <option value="per_person_per_stay">Per guest per stay</option>
+              <option value="per_person_per_night">Per guest per night</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="custom_extra_max_quantity">Max Quantity per Booking</label>
+            <input id="custom_extra_max_quantity" name="custom_extra_max_quantity" type="number" min="1" max="20" value="2">
+          </div>
+          <div class="field field-full">
+            <label for="custom_extra_description">Short Description (Optional)</label>
+            <input id="custom_extra_description" name="custom_extra_description" type="text">
+          </div>
+        </div>
+      </details>
+    </fieldset>
+
+    <div class="days-row mt-3">
+      <button type="submit" class="btn btn-primary">Save Pricing &amp; Continue to Step 4 →</button>
+      <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=2" class="btn btn-secondary">← Back to Step 2</a>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{if eq .Step 4}}
+<div class="card">
+  <h2>Step 4 — Deposits, Cancellation &amp; House Rules</h2>
+  <p class="subtitle mb-3">Set how deposits and balances work, and review the plain-English house rules shown on booking confirmations and arrival emails.</p>
+
+  <form method="post" action="/onboarding/step4">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+
+    <fieldset class="branding-fieldset mb-3">
+      <legend>Deposits, Balances &amp; Check-In Times</legend>
+      <div class="form-grid mt-2">
+        <div class="field">
+          <label for="s4_deposit_mode">Deposit Requirement</label>
+          <select id="s4_deposit_mode" name="deposit_mode">
+            <option value="FULL" {{if eq .Policy.DepositMode "FULL"}}selected{{end}}>Full balance upfront (100%)</option>
+            <option value="PERCENTAGE" {{if eq .Policy.DepositMode "PERCENTAGE"}}selected{{end}}>Percentage deposit (e.g. 30% now, balance before arrival)</option>
+            <option value="FIXED" {{if eq .Policy.DepositMode "FIXED"}}selected{{end}}>Fixed deposit amount per booking</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="s4_deposit_pct">Deposit Percentage (%)</label>
+          <input id="s4_deposit_pct" name="deposit_percentage" type="number" min="0" max="100" value="{{.Policy.DepositPercentage}}">
+        </div>
+        <div class="field">
+          <label for="s4_deposit_fixed">Fixed Deposit ({{.TargetProperty.Currency}}, if Fixed mode)</label>
+          <input id="s4_deposit_fixed" name="deposit_fixed" type="text" inputmode="decimal" value="{{formatDecimalMoney .Policy.DepositFixedPence}}">
+        </div>
+        <div class="field">
+          <label for="s4_balance_days">Remaining Balance Due (Days Before Arrival)</label>
+          <input id="s4_balance_days" name="balance_due_days_before_arrival" type="number" min="0" max="365" value="{{.Policy.BalanceDueDaysBeforeArrival}}">
+        </div>
+        <div class="field">
+          <label for="s4_hold_mins">Checkout Basket Hold Duration (Minutes, 5–120)</label>
+          <input id="s4_hold_mins" name="hold_duration_minutes" type="number" min="5" max="120" value="{{if .Policy.HoldDurationMinutes}}{{.Policy.HoldDurationMinutes}}{{else}}15{{end}}">
+        </div>
+        <div class="field">
+          <label for="s4_terms_ver">Terms &amp; Conditions Version Label</label>
+          <input id="s4_terms_ver" name="booking_terms_version" type="text" required value="{{if .Policy.BookingTermsVersion}}{{.Policy.BookingTermsVersion}}{{else}}v1.0{{end}}">
+        </div>
+        <div class="field">
+          <label for="s4_checkin">Check-In From</label>
+          <input id="s4_checkin" name="check_in_time" type="time" required value="{{.TargetProperty.CheckInTime}}">
+        </div>
+        <div class="field">
+          <label for="s4_checkout">Check-Out By</label>
+          <input id="s4_checkout" name="check_out_time" type="time" required value="{{.TargetProperty.CheckOutTime}}">
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="branding-fieldset mb-3">
+      <legend>Guest House Rules &amp; Policies</legend>
+      <div class="form-grid mt-2">
+        <div class="field field-full">
+          <label for="s4_cancel">Cancellation Policy</label>
+          <textarea id="s4_cancel" name="cancellation_policy" rows="2">{{.Policy.CancellationPolicy}}</textarea>
+        </div>
+        <div class="field field-full">
+          <label for="s4_quiet">Quiet Hours &amp; Neighbour Policy</label>
+          <textarea id="s4_quiet" name="quiet_hours" rows="2">{{.Policy.QuietHours}}</textarea>
+        </div>
+        <div class="field field-full">
+          <label for="s4_fire">Smoking, Fire-Pits, Wood-Burners &amp; BBQs</label>
+          <textarea id="s4_fire" name="fire_policy" rows="2">{{.Policy.FirePolicy}}</textarea>
+        </div>
+        <div class="field field-full">
+          <label for="s4_pet">Dogs &amp; Pets Policy</label>
+          <textarea id="s4_pet" name="pet_policy" rows="2">{{.Policy.PetPolicy}}</textarea>
+        </div>
+        <div class="field field-full">
+          <label for="s4_privacy">Guest Privacy Notice Summary</label>
+          <textarea id="s4_privacy" name="privacy_notice" rows="2">{{.Policy.PrivacyNotice}}</textarea>
+        </div>
+        <div class="field">
+          <label for="s4_terms_url">External Booking Terms URL (Optional)</label>
+          <input id="s4_terms_url" name="booking_terms_url" type="text" placeholder="https://..." value="{{.Policy.BookingTermsURL}}">
+        </div>
+        <div class="field">
+          <label for="s4_priv_url">External Privacy Policy URL (Optional)</label>
+          <input id="s4_priv_url" name="privacy_policy_url" type="text" placeholder="https://..." value="{{.Policy.PrivacyPolicyURL}}">
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="days-row mt-3">
+      <button type="submit" class="btn btn-primary">Save Rules &amp; Continue to Step 5 →</button>
+      <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=3" class="btn btn-secondary">← Back to Step 3</a>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{if eq .Step 5}}
+<div class="card mb-3">
+  <div class="page-header mb-2">
+    <div>
+      <h2>Step 5 — Team &amp; Staff Accounts (Optional)</h2>
+      <p class="subtitle">Running the property yourself? Your Owner Admin login already has full access — click <strong>Continue to Review</strong> whenever you are ready.</p>
+    </div>
+    <form method="post" action="/onboarding/step5/next">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+      <button type="submit" class="btn btn-primary">Continue to Step 6: Review &amp; Finish →</button>
+    </form>
+  </div>
+
+  {{if .TeamUsers}}
+  <div class="table-wrap mb-3">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Scope</th>
+          <th>Password Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .TeamUsers}}
+        <tr>
+          <td><strong>{{.FullName}}</strong></td>
+          <td class="mono">{{.Email}}</td>
+          <td><span class="badge badge-info">{{.Role}}</span></td>
+          <td>{{if .PropertyID}}This property only{{else}}All properties (Global Owner){{end}}</td>
+          <td>{{if .MustRotatePassword}}<span class="badge badge-warn">Changes on first sign-in</span>{{else}}<span class="badge badge-ok">Personal password active</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  {{if .CanManageUsers}}
+  <fieldset class="branding-fieldset">
+    <legend>Add a Team Member for {{.TargetProperty.Name}}</legend>
+    <p class="field-hint mt-1 mb-2">Share the temporary password with your colleague. On their first sign-in they will be required to choose their own private password and save their own one-time recovery codes.</p>
+    <form method="post" action="/onboarding/step5/user">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="s5_name">Full Name</label>
+          <input id="s5_name" name="full_name" type="text" required placeholder="e.g. Sam Davies">
+        </div>
+        <div class="field">
+          <label for="s5_email">Sign-In Email</label>
+          <input id="s5_email" name="email" type="email" required placeholder="sam@example.com">
+        </div>
+        <div class="field">
+          <label for="s5_role">Role</label>
+          <select id="s5_role" name="role">
+            <option value="manager">Manager (Bookings, rates, inventory, housekeeping &amp; reports)</option>
+            <option value="staff">Front Desk / Reception Staff (Bookings, calendar &amp; guest comms)</option>
+            <option value="housekeeping_staff">Housekeeping (Changeovers &amp; unit readiness)</option>
+            <option value="maintenance_staff">Maintenance (Work orders, inspections &amp; facilities)</option>
+            <option value="viewer">Read-Only Viewer</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="s5_pw">Initial Temporary Password (min 12 chars)</label>
+          <input id="s5_pw" name="password" type="password" minlength="12" autocomplete="new-password" required>
+        </div>
+      </div>
+      <div class="days-row mt-3">
+        <button type="submit" class="btn btn-secondary">+ Add Team Member</button>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=4" class="btn btn-secondary">← Back to Step 4</a>
+      </div>
+    </form>
+  </fieldset>
+  {{end}}
+</div>
+{{end}}
+
+{{if eq .Step 6}}
+<div class="card mb-3">
+  <h2>Step 6 — Review Summary &amp; Finish Setup</h2>
+  <p class="subtitle mb-3">Review your configuration below. Everything can be edited later at any time from the sidebar.</p>
+
+  <div class="wizard-summary-grid mb-3">
+    <div class="property-preview-panel">
+      <div class="page-header mb-1">
+        <h3>1. Property Profile</h3>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=1" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
+      <p><strong>{{.TargetProperty.Name}}</strong> <span class="mono subtitle">({{.TargetProperty.Slug}})</span></p>
+      <p class="field-hint">{{if .TargetProperty.Town}}{{.TargetProperty.Town}}, {{end}}{{if .TargetProperty.Region}}{{.TargetProperty.Region}} · {{end}}{{.TargetProperty.CountryCode}} · {{.TargetProperty.Currency}} · {{.TargetProperty.Timezone}}</p>
+      <p class="field-hint">Labels: {{.TargetBranding.ResolvedTerms.UnitSingular}} / {{.TargetBranding.ResolvedTerms.UnitPlural}} · {{.TargetBranding.ResolvedTerms.StayLabel}}</p>
+    </div>
+
+    <div class="property-preview-panel">
+      <div class="page-header mb-1">
+        <h3>2. Accommodation</h3>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=2" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
+      {{if .UnitTypes}}
+      <p><strong>{{len .UnitTypes}}</strong> category(ies) · <strong>{{len .Units}}</strong> bookable {{.TargetBranding.ResolvedTerms.UnitPlural}}</p>
+      <p class="field-hint">{{range $i, $ut := .UnitTypes}}{{if $i}}, {{end}}{{$ut.Name}} ({{index $.UnitCountByType $ut.ID}}){{end}}</p>
+      {{else}}
+      <p><span class="badge badge-warn">None added yet</span></p>
+      <p class="field-hint">You can add {{.TargetBranding.ResolvedTerms.UnitPlural}} now in Step 2 or later under Inventory.</p>
+      {{end}}
+    </div>
+
+    <div class="property-preview-panel">
+      <div class="page-header mb-1">
+        <h3>3. Pricing &amp; Extras</h3>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=3" class="btn btn-secondary btn-sm">Edit</a>
+      </div>
+      <p>Default Plan: <strong>{{if .DefaultPlan.Name}}{{.DefaultPlan.Name}}{{else}}Standard Flexible Tariff{{end}}</strong></p>
+      <p class="field-hint">{{len .RateRules}} seasonal/weekend rule(s) · {{len .Extras}} optional extra(s) · {{if .TargetProperty.VATRegistered}}VAT Registered ({{.TargetProperty.VATNumber}}){{else}}Not VAT registered{{end}}</p>
+    </div>
+
+    <div class="property-preview-panel">
+      <div class="page-header mb-1">
+        <h3>4. Rules, Deposits &amp; Team</h3>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=4" class="btn btn-secondary btn-sm">Edit Rules</a>
+      </div>
+      <p>Check-in <strong>{{.TargetProperty.CheckInTime}}</strong> · Check-out <strong>{{.TargetProperty.CheckOutTime}}</strong> · Deposit: <strong>{{.Policy.DepositMode}}</strong></p>
+      <p class="field-hint">{{len .TeamUsers}} admin/staff account(s) with access · <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=5">Manage Team</a></p>
+    </div>
+  </div>
+
+  <div class="alert alert-info mb-3" role="status">
+    <strong>Safe Dark-by-Default Launch Mode:</strong>
+    Your admin console, booking calendar, manual/telephone reservations, housekeeping, maintenance, and email templates are ready immediately. Online card payments (Stripe Checkout: <strong>{{if .Policy.StripeEnabled}}Enabled{{else}}Off{{end}}</strong>) and the self-service Guest Portal (<strong>{{if and .GlobalPortalEnabled .Policy.GuestPortalEnabled}}Enabled{{else}}Off{{end}}</strong>) remain safely switched off until you choose to enable them in <a href="/property">Site Settings</a>.
+  </div>
+
+  <form method="post" action="/onboarding/complete">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+    <div class="days-row">
+      <button type="submit" class="btn btn-primary">Finish Setup &amp; Open Operations Centre →</button>
+      <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=5" class="btn btn-secondary">← Back to Step 5</a>
+    </div>
+  </form>
+</div>
+{{end}}
+{{end}}

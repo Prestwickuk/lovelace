@@ -356,6 +356,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 				return "·"
 			}
 		},
+		"formatDecimalMoney": domain.FormatMinorAsDecimal,
 	}
 
 	loginTmpl, err := template.New("login.html").Funcs(funcs).ParseFS(embeddedFS, "templates/login.html", "templates/partials.html")
@@ -403,6 +404,7 @@ func NewWithTheme(svc *service.Service, cfg config.Config, theme branding.ThemeS
 		"comms_settings.html",
 		"reports.html",
 		"no_property.html",
+		"onboarding.html",
 	}
 	pages := make(map[string]*template.Template, len(pageNames))
 	for _, name := range pageNames {
@@ -488,6 +490,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	h.registerReportRoutes(mux)
 	h.registerWorkspaceRoutes(mux)
 	h.registerPropertyBrandingRoutes(mux)
+	h.registerOnboardingRoutes(mux)
 }
 
 type pageHandler func(w http.ResponseWriter, r *http.Request, actor service.Actor)
@@ -533,7 +536,45 @@ func (h *Handler) requirePageAuth(checkCSRF bool, next pageHandler) http.Handler
 func isPropertyIndependentAdminPath(p string) bool {
 	return p == "/account" || strings.HasPrefix(p, "/account/") ||
 		p == "/users" || strings.HasPrefix(p, "/users/") ||
+		p == "/onboarding" || strings.HasPrefix(p, "/onboarding/") ||
+		p == "/property/switch" ||
 		p == "/audit-logs" || p == "/logout"
+}
+
+const activePropertyCookieName = "lovelace_active_property"
+
+func selectActiveProperty(r *http.Request, props []domain.Property) domain.Property {
+	if len(props) == 0 {
+		return domain.Property{}
+	}
+	if r != nil {
+		if c, err := r.Cookie(activePropertyCookieName); err == nil {
+			if targetID, perr := uuid.Parse(strings.TrimSpace(c.Value)); perr == nil {
+				for _, p := range props {
+					if p.ID == targetID {
+						return p
+					}
+				}
+			}
+		}
+	}
+	return props[0]
+}
+
+func (h *Handler) setActivePropertyCookie(w http.ResponseWriter, propertyID uuid.UUID) {
+	maxAge := int(h.cfg.SessionTTL.Seconds())
+	if maxAge <= 0 {
+		maxAge = 30 * 24 * 3600
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     activePropertyCookieName,
+		Value:    propertyID.String(),
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 type viewControlMeta struct {
@@ -572,6 +613,10 @@ type baseView struct {
 	Actor                  service.Actor
 	CSRFToken              string
 	Property               domain.Property
+	AllProperties          []domain.Property
+	CanCreateProperty      bool
+	OnboardingIncomplete   bool
+	OnboardingStep         int
 	PropertyBranding       domain.PropertyBrandingView
 	PropertyTerms          branding.AdminTerminology
 	PropertyCSSHref        string
@@ -621,7 +666,11 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 	ws := domain.DefaultResolvedWorkspace()
 	ws.Theme = theme
 	var prop domain.Property
+	var allProps []domain.Property
 	var propBranding domain.PropertyBrandingView
+	canCreateProperty := false
+	onboardingIncomplete := false
+	onboardingStep := 1
 	propTerms := branding.DefaultAdminTerminology()
 	propCSSHref := ""
 	brandingDraft := propertyBrandingDraft{EffectiveTerms: propTerms}
@@ -630,6 +679,7 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 	flashErr := r.URL.Query().Get("err")
 
 	if h.svc != nil && !actor.MustRotatePassword {
+		canCreateProperty = h.svc.CanCreateProperty(ctx, actor)
 		props, err := h.svc.ListProperties(ctx, actor)
 		if err != nil {
 			if !errors.Is(err, domain.ErrPasswordRotationRequired) {
@@ -637,7 +687,12 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 			}
 			actor.MustRotatePassword = true
 		} else if len(props) > 0 {
-			prop = props[0]
+			allProps = props
+			prop = selectActiveProperty(r, props)
+			if st, ok := domain.DecodeOnboardingState(prop.Settings); ok && !st.IsComplete() {
+				onboardingIncomplete = true
+				onboardingStep = st.CurrentStep
+			}
 		}
 		if !actor.MustRotatePassword {
 			var propPtr *uuid.UUID
@@ -720,6 +775,10 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		Actor:                 actor,
 		CSRFToken:             actor.CSRFToken,
 		Property:              prop,
+		AllProperties:         allProps,
+		CanCreateProperty:     canCreateProperty,
+		OnboardingIncomplete:  onboardingIncomplete,
+		OnboardingStep:        onboardingStep,
 		PropertyBranding:      propBranding,
 		PropertyTerms:         propTerms,
 		PropertyCSSHref:       propCSSHref,
@@ -878,7 +937,7 @@ func navSectionForActive(activeNav string) string {
 		return "guests"
 	case "blocks", "releases", "unit-types", "units", "extras", "rates", "reports":
 		return "inventory"
-	case "property", "channel-manager", "users", "audit", "account":
+	case "property", "onboarding", "channel-manager", "users", "audit", "account":
 		return "settings"
 	default:
 		return ""

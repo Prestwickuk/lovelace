@@ -79,7 +79,7 @@ func (h *Handler) handlePropertyBrandingCSS(w http.ResponseWriter, r *http.Reque
 		_, _ = io.WriteString(w, branding.RenderPropertyCSS(branding.ResolvedPropertyPalette{}))
 		return
 	}
-	prop := props[0]
+	prop := selectActiveProperty(r, props)
 
 	if r.URL.Query().Get("preview") == "1" && auth.HasPermission(actor.Role, auth.PermPropertyWrite) {
 		pHex := r.URL.Query().Get("primary_color")
@@ -109,7 +109,8 @@ func (h *Handler) handlePropertyLogoGet(w http.ResponseWriter, r *http.Request, 
 		http.NotFound(w, r)
 		return
 	}
-	view, rc, err := h.svc.OpenAdminPropertyLogo(r.Context(), actor, props[0].ID)
+	activeProp := selectActiveProperty(r, props)
+	view, rc, err := h.svc.OpenAdminPropertyLogo(r.Context(), actor, activeProp.ID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
