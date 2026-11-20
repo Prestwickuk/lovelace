@@ -265,7 +265,7 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
 3. **Compile Binaries & Run Migrations:**
    ```bash
    cd /opt/lovelace
-   CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/tirbach-server ./cmd/server
+   CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/noteG-server ./cmd/server
    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/tirbach-migrate ./cmd/migrate
 
    MIGRATION_DATABASE_URL="postgres://lovelace_migrator:<MIGRATOR_PW>@127.0.0.1:5432/lovelace?sslmode=disable" \
@@ -295,7 +295,7 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
    sudo chmod 750 /var/lib/lovelace/attachments
    ```
 6. **Create `systemd` Units (`/etc/systemd/system/lovelace-app.service` & `lovelace-public-web.service`):**
-   - Run `/usr/local/bin/tirbach-server` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/app.env` (`TIRBACH_LISTEN_ADDR=127.0.0.1:8080`).
+   - Run `/usr/local/bin/noteG-server` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/app.env` (`TIRBACH_LISTEN_ADDR=127.0.0.1:8080`).
    - Run `/usr/bin/node /opt/lovelace/apps/public-web/.next/standalone/server.js` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/web.env` (`HOSTNAME=127.0.0.1`, `PORT=3000`).
    - Place behind Caddy or Nginx identically to Section 4 above.
 

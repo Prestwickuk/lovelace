@@ -41,7 +41,7 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
 ## 1. Local & Self-Hosted Linux Server (Docker Compose, Caddy/Nginx & `systemd`)
 
 ### 1.1 Combining `docker-compose.yml` and `docker-compose.dev.yml` by Mistake
-- **Symptom:** Containers fail to start, connect with wrong credentials, or `tirbach-server` exits immediately complaining about `tir_bach_dev_password` or `TIRBACH_AUTO_SEED must be false in production`.
+- **Symptom:** Containers fail to start, connect with wrong credentials, or `noteG-server` exits immediately complaining about `tir_bach_dev_password` or `TIRBACH_AUTO_SEED must be false in production`.
 - **Root Cause:** Running `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` merges development placeholder secrets into a `TIRBACH_ENV=production` container, which Lovelace's fail-closed config loader (`internal/config/config.go`) intentionally rejects.
 - **Fix:** Always run **either** `docker compose -f docker-compose.dev.yml up -d --build` (local dev only) **or** `docker compose up -d --build` (production only) — never both together.
 
@@ -63,7 +63,7 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
      docker compose up -d --no-deps db-bootstrap app
      ```
 
-### 1.3 `tirbach-server` Exits Immediately on Startup (Fail-Closed Production Guards)
+### 1.3 `noteG-server` Exits Immediately on Startup (Fail-Closed Production Guards)
 Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Lovelace refuses to start in `TIRBACH_ENV=production` if any security invariant is violated:
 
 | Startup Log Error | Exact Fix |
@@ -145,7 +145,7 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
 - **Symptom:** Your SMTP provider (Resend / SES / Postmark) has a brief 2-minute outage or an expired API key; suddenly AWS ECS / Cloud Run / Azure starts killing and restarting `lovelace-app` every 60 seconds!
 - **Root Cause:** `/readyz` checks external dependencies (including SMTP when `TIRBACH_REQUIRE_EMAIL=true`) and returns `503` when degraded. If a container orchestrator uses `/readyz` as a **container kill/liveness probe**, an email outage causes container restarts!
 - **Fix:**
-  - Point **container liveness / healthcheck probes** at **`/healthz`** (or `tirbach-server -healthcheck`, which hits `/healthz`).
+  - Point **container liveness / healthcheck probes** at **`/healthz`** (or `noteG-server -healthcheck`, which hits `/healthz`).
   - Point **external uptime alerts & deployment gates** at **`/readyz`**.
 
 ---

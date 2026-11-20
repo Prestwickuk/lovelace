@@ -169,7 +169,7 @@ jobs:
           SQL
           PGHOST=127.0.0.1 PGPORT=5432 POSTGRES_DB=lovelace_e2e_test POSTGRES_BOOTSTRAP_USER=postgres LOVELACE_MIGRATOR_PASSWORD=ci-only-migrator-password LOVELACE_APP_PASSWORD=ci-only-app-password ./scripts/postgres/ensure-roles.sh
           go run ./cmd/migrate
-          go build -o /tmp/tirbach-server ./cmd/server
+          go build -o /tmp/noteG-server ./cmd/server
           TIRBACH_ENV=development \
           TIRBACH_LISTEN_ADDR=127.0.0.1:8080 \
           TIRBACH_COOKIE_SECURE=false \
@@ -187,7 +187,7 @@ jobs:
           TIRBACH_STRIPE_WEBHOOK_SECRET="whsec_ci_e2e_sandbox" \
           TIRBACH_EMAIL_FROM="bookings@tirbach.wales" \
           TIRBACH_ATTACHMENT_DIR="/tmp/lovelace-e2e-attachments" \
-          /tmp/tirbach-server >/tmp/tirbach-server.log 2>&1 &
+          /tmp/noteG-server >/tmp/noteG-server.log 2>&1 &
           GO_PID=$!
           trap 'kill $GO_PID ${NEXT_PID:-} 2>/dev/null || true' EXIT
           for i in $(seq 1 40); do

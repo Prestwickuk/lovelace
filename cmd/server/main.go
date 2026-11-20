@@ -211,7 +211,7 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("LOVELACE Booking System server listening", "addr", cfg.ListenAddr, "env", cfg.AppEnv)
+		slog.Info("LOVELACE Booking System server listening", "server", "noteG-server", "addr", cfg.ListenAddr, "env", cfg.AppEnv)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("http server failed", "error", err)
 			stop()

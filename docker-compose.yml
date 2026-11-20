@@ -126,7 +126,7 @@ services:
     ports:
       - "${TIRBACH_BIND_ADDR:-127.0.0.1}:${TIRBACH_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD", "/usr/local/bin/tirbach-server", "-healthcheck"]
+      test: ["CMD", "/usr/local/bin/noteG-server", "-healthcheck"]
       interval: 15s
       timeout: 5s
       start_period: 15s
