@@ -9,9 +9,9 @@
     "assets_dir": "internal/webui/static/brand"
   },
   "default_property": {
-    "slug": "tir-bach",
-    "name": "Tir Bach Campsite",
-    "region": "Pembrokeshire, Wales"
+    "slug": "demo-property",
+    "name": "Meadowbrook Estate",
+    "region": "Countryside"
   },
   "stack": {
     "go": "1.24",
@@ -34,8 +34,8 @@
         "internal/auth",
         "internal/domain"
       ],
-      "test_role": "tir_bach_test_runner",
-      "test_db": "tir_bach_test"
+      "test_role": "lovelace_test_runner",
+      "test_db": "lovelace_test"
     },
     "docker_upgrade_0002_to_0003": "PASS",
     "pg_dump_and_pg_restore": "PASS",

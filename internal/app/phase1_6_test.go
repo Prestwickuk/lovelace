@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPhase1_6DatabasePrivilegeIsolationAndReadOnlyVerify(t *testing.T) {
@@ -42,7 +42,7 @@ func TestPhase1_6DatabasePrivilegeIsolationAndReadOnlyVerify(t *testing.T) {
 func TestPhase1_6InventoryLifecycleDateEditsReconciliationAndSmoobu(t *testing.T) {
 	srv, store, prop := setupTestServer(t)
 	ownerClient := newClient(t)
-	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if code != http.StatusOK {
 		t.Fatalf("owner login failed: %d", code)
 	}
@@ -476,7 +476,7 @@ func TestPhase1_6InventoryLifecycleDateEditsReconciliationAndSmoobu(t *testing.T
 func TestPhase1_6_1PreservesReleasedInventoryAndExplicitReinstate(t *testing.T) {
 	srv, store, prop := setupTestServer(t)
 	ownerClient := newClient(t)
-	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if code != http.StatusOK {
 		t.Fatalf("owner login failed: %d", code)
 	}

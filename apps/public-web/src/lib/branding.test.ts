@@ -19,8 +19,8 @@ describe("Public branding sanitization helpers", () => {
   it("maps public logo URLs strictly to same-origin BFF route", () => {
     const branding: PublicPropertyBranding = {
       schema_version: 1,
-      display_name: "Tir Bach Campsite",
-      tagline: "Coastal glamping",
+      display_name: "Meadowbrook Estate",
+      tagline: "Countryside glamping",
       primary_color: "#2F4F4A",
       primary_on_color: "#FFFFFF",
       primary_hover_color: "#213B37",
@@ -28,14 +28,14 @@ describe("Public branding sanitization helpers", () => {
       secondary_on_color: "#FFFFFF",
       has_custom_palette: true,
       has_logo: true,
-      logo_url: "/api/public/v1/properties/tir-bach/logo?v=4",
-      logo_alt: "Tir Bach emblem",
+      logo_url: "/api/public/v1/properties/demo-property/logo?v=4",
+      logo_alt: "Meadowbrook emblem",
       logo_version: 4,
     };
-    expect(getPublicLogoSrc(branding, "tir-bach")).toBe(
-      "/api/public/property/logo?property=tir-bach&v=4",
+    expect(getPublicLogoSrc(branding, "demo-property")).toBe(
+      "/api/public/property/logo?property=demo-property&v=4",
     );
-    expect(getPublicLogoSrc({ ...branding, has_logo: false }, "tir-bach")).toBeNull();
+    expect(getPublicLogoSrc({ ...branding, has_logo: false }, "demo-property")).toBeNull();
   });
 
   it("builds bounded CSS custom property map only for valid hex palettes", () => {

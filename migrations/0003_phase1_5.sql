@@ -62,7 +62,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'TRUNCATE'
        AND current_database() ~ '(_test|-test)$'
-       AND current_setting('tirbach.test_reset_token', true) = 'allow_test_reset' THEN
+       AND current_setting('lovelace.test_reset_token', true) = 'allow_test_reset' THEN
         RETURN NULL;
     END IF;
     RAISE EXCEPTION 'audit_logs is append-only; % operations are prohibited', TG_OP;

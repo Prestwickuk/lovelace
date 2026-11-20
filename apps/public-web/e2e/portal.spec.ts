@@ -49,7 +49,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
     request,
   }) => {
     runSql(
-      `UPDATE property_booking_policies SET guest_portal_enabled = FALSE WHERE property_id = (SELECT id FROM properties WHERE slug = 'tir-bach')`,
+      `UPDATE property_booking_policies SET guest_portal_enabled = FALSE WHERE property_id = (SELECT id FROM properties WHERE slug = 'demo-property')`,
     );
 
     await page.goto("/");
@@ -70,7 +70,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
 
     const chResp = await request.post("/api/public/portal/auth/challenge", {
       headers: { Origin: PUBLIC_ORIGIN },
-      data: { email: "pilot.guest@example.wales", purpose: "LOGIN" },
+      data: { email: "pilot.guest@example.com", purpose: "LOGIN" },
     });
     expect(chResp.status()).toBe(404);
     expect(chResp.headers()["cache-control"]).toContain("no-store");
@@ -81,7 +81,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
     request,
   }) => {
     runSql(
-      `UPDATE property_booking_policies SET guest_portal_enabled = TRUE WHERE property_id = (SELECT id FROM properties WHERE slug = 'tir-bach')`,
+      `UPDATE property_booking_policies SET guest_portal_enabled = TRUE WHERE property_id = (SELECT id FROM properties WHERE slug = 'demo-property')`,
     );
 
     const queryTokResp = await request.get(
@@ -92,7 +92,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
 
     const evilOriginResp = await request.post("/api/public/portal/auth/challenge", {
       headers: { Origin: "https://evil.example.org" },
-      data: { email: "pilot.guest@example.wales" },
+      data: { email: "pilot.guest@example.com" },
     });
     expect(evilOriginResp.status()).toBe(403);
 
@@ -104,7 +104,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
           "X-Forwarded-Host": "evil.example.org",
           "X-Forwarded-Proto": "https",
         },
-        data: { email: "pilot.guest@example.wales" },
+        data: { email: "pilot.guest@example.com" },
       },
     );
     expect(spoofedForwardedHostResp.status()).toBe(403);
@@ -116,14 +116,14 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
           Host: "evil.example.org",
           Origin: "http://evil.example.org",
         },
-        data: { email: "pilot.guest@example.wales" },
+        data: { email: "pilot.guest@example.com" },
       },
     );
     expect(spoofedHostHeaderResp.status()).toBe(403);
 
     const adminCookieResp = await request.get("/api/public/portal/bookings", {
       headers: {
-        Cookie: "tirbach_session=forged-admin-session-token",
+        Cookie: "lovelace_session=forged-admin-session-token",
       },
     });
     expect(adminCookieResp.status()).toBe(401);
@@ -147,11 +147,11 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
     });
 
     runSql(
-      `UPDATE property_booking_policies SET guest_portal_enabled = TRUE WHERE property_id = (SELECT id FROM properties WHERE slug = 'tir-bach')`,
+      `UPDATE property_booking_policies SET guest_portal_enabled = TRUE WHERE property_id = (SELECT id FROM properties WHERE slug = 'demo-property')`,
     );
 
     // 1. Create a genuine confirmed direct booking via public BFF + sandbox checkout.
-    const uniqueEmail = `ceryn.portal.${Date.now()}@example.wales`;
+    const uniqueEmail = `ceryn.portal.${Date.now()}@example.com`;
     const arr = futureDate(95);
     const dep = futureDate(97);
     let unitCode = "meadow-pitch-ehu";
@@ -234,10 +234,10 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
       reservation_reference: string;
     };
     const directRef = confJson.reservation_reference;
-    expect(directRef).toMatch(/^TB-/);
+    expect(directRef).toMatch(/^LV-/);
 
     // Seed an OTA (AIRBNB) stay and internal CRM note on the same canonical guest to verify D4 & DTO redaction.
-    const otaRef = `TB-OTA-${Date.now().toString().slice(-6)}`;
+    const otaRef = `LV-OTA-${Date.now().toString().slice(-6)}`;
     const safeEmailSql = uniqueEmail.replace(/'/g, "''");
     runSql(`
       DO $$
@@ -247,7 +247,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
         v_admin_id UUID;
         v_res_id UUID := gen_random_uuid();
       BEGIN
-        SELECT id INTO v_prop_id FROM properties WHERE slug = 'tir-bach';
+        SELECT id INTO v_prop_id FROM properties WHERE slug = 'demo-property';
         SELECT guest_id INTO v_guest_id FROM reservations WHERE property_id = v_prop_id AND reference = '${directRef}';
         SELECT id INTO v_admin_id FROM admin_users WHERE property_id = v_prop_id LIMIT 1;
 
@@ -394,10 +394,10 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
       page.getByText("Cancellation request recorded for review by our reservations team."),
     ).toBeVisible();
 
-    // 8. Profile, Welsh language preference readiness (D10), Stay Preferences, & Support Thread.
+    // 8. Profile, language preference readiness (D10), Stay Preferences, & Support Thread.
     await page.getByRole("link", { name: "Profile & Enquiries" }).click();
     await expect(page).toHaveURL(/\/portal\/profile$/);
-    await page.selectOption("#prof-lang", "cy");
+    await page.selectOption("#prof-lang", "fr");
     await page.fill("#pref-key", "dogs");
     await page.fill("#pref-val", "1 border collie");
     await page.getByRole("button", { name: "Add Stay Preference" }).click();
@@ -463,7 +463,7 @@ test.describe.serial("Phase 3 Milestone 4 — Self-Service Public Guest Portal",
 
     // Reset property policy back to disabled-by-default after E2E suite completes.
     runSql(
-      `UPDATE property_booking_policies SET guest_portal_enabled = FALSE WHERE property_id = (SELECT id FROM properties WHERE slug = 'tir-bach')`,
+      `UPDATE property_booking_policies SET guest_portal_enabled = FALSE WHERE property_id = (SELECT id FROM properties WHERE slug = 'demo-property')`,
     );
 
     expect(consoleErrors).toEqual([]);

@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/tirbach/tir-bach/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/branding"
 )
 
 // OnboardingPreset identifies the hospitality business archetype selected during first-time setup.

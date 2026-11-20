@@ -187,7 +187,7 @@ export function PortalVerifyClient({
                 required
                 value={bookingRef}
                 onChange={(e) => setBookingRef(e.target.value)}
-                placeholder="e.g. TB-2026-AB12CD"
+                placeholder="e.g. LV-2026-AB12CD"
               />
             </div>
           ) : null}
@@ -227,7 +227,7 @@ export function PortalVerifyClient({
                 required
                 value={bookingRef}
                 onChange={(e) => setBookingRef(e.target.value)}
-                placeholder="e.g. TB-2026-AB12CD"
+                placeholder="e.g. LV-2026-AB12CD"
               />
             </div>
           ) : null}

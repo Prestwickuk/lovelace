@@ -15,10 +15,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPhase5_OccupancyRevenueChannelSeasonalForecastRetentionAndExports(t *testing.T) {
@@ -69,11 +69,11 @@ func TestPhase5_OccupancyRevenueChannelSeasonalForecastRetentionAndExports(t *te
 
 	var ownerID uuid.UUID
 	if err := migratorStore.Pool().QueryRow(ctx, `
-		SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales' LIMIT 1
+		SELECT id FROM admin_users WHERE email = 'owner@example.com' LIMIT 1
 	`).Scan(&ownerID); err != nil {
 		t.Fatalf("find owner id: %v", err)
 	}
-	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	// Build multi-hop canonical guest cluster g1 -> g2 -> g3 (canonical root), plus anonymized guest gAnon.
 	g3ID, g2ID, g1ID, gAnonID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
@@ -325,7 +325,7 @@ func TestPhase5_OccupancyRevenueChannelSeasonalForecastRetentionAndExports(t *te
 	}
 
 	client := newClient(t)
-	st, _ := apiLogin(t, client, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	st, _ := apiLogin(t, client, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if st != http.StatusOK {
 		t.Fatalf("login failed: %d", st)
 	}
@@ -565,13 +565,13 @@ func TestPhase5_RBACPropertyIsolationConcurrencyAndWebUI(t *testing.T) {
 		}
 	}
 
-	createAdminUser("viewer@tirbach.wales", domain.RoleViewer, &propA.ID)
-	createAdminUser("staff@tirbach.wales", domain.RoleStaff, &propA.ID)
-	createAdminUser("maint@tirbach.wales", domain.RoleMaintenanceStaff, &propA.ID)
-	createAdminUser("ownerb@tirbach.wales", domain.RoleOwnerAdmin, &propBID)
+	createAdminUser("viewer@example.com", domain.RoleViewer, &propA.ID)
+	createAdminUser("staff@example.com", domain.RoleStaff, &propA.ID)
+	createAdminUser("maint@example.com", domain.RoleMaintenanceStaff, &propA.ID)
+	createAdminUser("ownerb@example.com", domain.RoleOwnerAdmin, &propBID)
 
 	// Denied roles: staff & maintenance_staff -> 403 on API reports + Web UI /reports.
-	for _, email := range []string{"staff@tirbach.wales", "maint@tirbach.wales"} {
+	for _, email := range []string{"staff@example.com", "maint@example.com"} {
 		cl := newClient(t)
 		st, _ := apiLogin(t, cl, srv.URL, email, "Passw0rd!Test2026")
 		if st != http.StatusOK {
@@ -597,7 +597,7 @@ func TestPhase5_RBACPropertyIsolationConcurrencyAndWebUI(t *testing.T) {
 
 	// Viewer role: CAN read overview API and /reports UI, CANNOT export accounting feeds!
 	viewerClient := newClient(t)
-	if st, _ := apiLogin(t, viewerClient, srv.URL, "viewer@tirbach.wales", "Passw0rd!Test2026"); st != http.StatusOK {
+	if st, _ := apiLogin(t, viewerClient, srv.URL, "viewer@example.com", "Passw0rd!Test2026"); st != http.StatusOK {
 		t.Fatalf("viewer login status=%d", st)
 	}
 	vRead, err := viewerClient.Get(fmt.Sprintf("%s/api/v1/properties/%s/reports/overview?start_date=2026-07-01&end_date=2026-07-10", srv.URL, propA.ID))
@@ -628,7 +628,7 @@ func TestPhase5_RBACPropertyIsolationConcurrencyAndWebUI(t *testing.T) {
 
 	// Cross-property isolation: Owner B must get 403 on Property A reports & exports!
 	ownerBClient := newClient(t)
-	if st, _ := apiLogin(t, ownerBClient, srv.URL, "ownerb@tirbach.wales", "Passw0rd!Test2026"); st != http.StatusOK {
+	if st, _ := apiLogin(t, ownerBClient, srv.URL, "ownerb@example.com", "Passw0rd!Test2026"); st != http.StatusOK {
 		t.Fatalf("ownerB login status=%d", st)
 	}
 	isoResp, err := ownerBClient.Get(fmt.Sprintf("%s/api/v1/properties/%s/reports/overview?start_date=2026-07-01&end_date=2026-07-10", srv.URL, propA.ID))
@@ -642,7 +642,7 @@ func TestPhase5_RBACPropertyIsolationConcurrencyAndWebUI(t *testing.T) {
 
 	// Owner A Web UI + CSP check + concurrent reporting reads under -race!
 	ownerAClient := newClient(t)
-	if st, _ := apiLogin(t, ownerAClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026"); st != http.StatusOK {
+	if st, _ := apiLogin(t, ownerAClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026"); st != http.StatusOK {
 		t.Fatalf("ownerA login status=%d", st)
 	}
 	uiResp, err := ownerAClient.Get(srv.URL + "/reports?start_date=2026-07-01&end_date=2026-07-10")

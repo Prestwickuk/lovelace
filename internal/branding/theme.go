@@ -88,7 +88,7 @@ var accentCatalog = []AccentOption{
 	{
 		Key:             ThemeAccentOlive,
 		Label:           "Hedgerow Olive",
-		Description:     "Muted botanical olive accent inspired by Welsh hedgerows",
+		Description:     "Muted botanical olive accent inspired by country hedgerows",
 		LightSolidHex:   "#41512C",
 		LightHoverHex:   "#313E20",
 		LightInkHex:     "#384724",
@@ -100,7 +100,7 @@ var accentCatalog = []AccentOption{
 	},
 	{
 		Key:             ThemeAccentSlate,
-		Label:           "Pembrokeshire Slate",
+		Label:           "Coastal Slate",
 		Description:     "Restrained maritime slate blue for dense operational screens",
 		LightSolidHex:   "#2E475D",
 		LightHoverHex:   "#213547",

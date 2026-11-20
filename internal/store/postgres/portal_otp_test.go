@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func mustRandom32Bytes(t *testing.T) []byte {
@@ -36,11 +36,11 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 		t.Fatalf("uuidv7: %v", err)
 	}
 
-	digestA, err := postgres.HashPortalOTP(keyA, chID, "nia.portal@example.wales", "482910")
+	digestA, err := postgres.HashPortalOTP(keyA, chID, "nia.portal@example.com", "482910")
 	if err != nil {
 		t.Fatalf("HashPortalOTP(keyA) failed: %v", err)
 	}
-	digestB, err := postgres.HashPortalOTP(keyB, chID, "nia.portal@example.wales", "482910")
+	digestB, err := postgres.HashPortalOTP(keyB, chID, "nia.portal@example.com", "482910")
 	if err != nil {
 		t.Fatalf("HashPortalOTP(keyB) failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 	}
 
 	// Normalization determinism for the same key + challenge.
-	digestNormalized, err := postgres.HashPortalOTP(keyA, chID, "  Nia.Portal@Example.Wales \n", "\t482910 ")
+	digestNormalized, err := postgres.HashPortalOTP(keyA, chID, "  Nia.Portal@Example.Com \n", "\t482910 ")
 	if err != nil {
 		t.Fatalf("HashPortalOTP normalized input failed: %v", err)
 	}
@@ -58,14 +58,14 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 	}
 
 	// Context binding: different challenge ID or different email produces a different digest and fails verification.
-	digestOtherChallenge, err := postgres.HashPortalOTP(keyA, otherChID, "nia.portal@example.wales", "482910")
+	digestOtherChallenge, err := postgres.HashPortalOTP(keyA, otherChID, "nia.portal@example.com", "482910")
 	if err != nil {
 		t.Fatalf("HashPortalOTP(otherChID) failed: %v", err)
 	}
 	if digestOtherChallenge == digestA {
 		t.Fatal("expected different challenge ID to produce a distinct HMAC digest")
 	}
-	digestOtherEmail, err := postgres.HashPortalOTP(keyA, chID, "other.guest@example.wales", "482910")
+	digestOtherEmail, err := postgres.HashPortalOTP(keyA, chID, "other.guest@example.com", "482910")
 	if err != nil {
 		t.Fatalf("HashPortalOTP(otherEmail) failed: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 
 	ch := domain.GuestPortalChallenge{
 		ID:              chID,
-		NormalizedEmail: "nia.portal@example.wales",
+		NormalizedEmail: "nia.portal@example.com",
 		Purpose:         domain.PortalChallengeLogin,
 		OTPHash:         digestA,
 		OTPHashAlg:      domain.PortalOTPHashAlgHMACSHA256V1,
@@ -97,7 +97,7 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 	}
 	// Wrong email fails.
 	chWrongEmail := ch
-	chWrongEmail.NormalizedEmail = "other.guest@example.wales"
+	chWrongEmail.NormalizedEmail = "other.guest@example.com"
 	if ok, err := postgres.VerifyChallengeProof(keyA, chWrongEmail, "482910", "", ""); err != nil || ok {
 		t.Fatalf("expected VerifyChallengeProof with mismatched email to fail (ok=%v err=%v)", ok, err)
 	}
@@ -145,10 +145,10 @@ func TestPortalOTPHMAC_KeyIsolationNormalizationAndDomainSeparation(t *testing.T
 		make([]byte, 31),
 		overlongKey,
 		make([]byte, 32), // all-zero 32-byte key
-		[]byte("tirbach-dev-only-32byte-key-0001"),
+		[]byte("lovelace-dev-only-32byte-key-001"),
 		devHexKey,
 	} {
-		if _, err := postgres.HashPortalOTP(badKey, chID, "nia.portal@example.wales", "482910"); !errors.Is(err, postgres.ErrPortalOTPKeyInvalid) {
+		if _, err := postgres.HashPortalOTP(badKey, chID, "nia.portal@example.com", "482910"); !errors.Is(err, postgres.ErrPortalOTPKeyInvalid) {
 			t.Fatalf("expected ErrPortalOTPKeyInvalid on unsafe key (len=%d), got %v", len(badKey), err)
 		}
 		if ok, err := postgres.VerifyChallengeProof(badKey, ch, "482910", "", ""); ok || !errors.Is(err, postgres.ErrPortalOTPKeyInvalid) {
@@ -166,7 +166,7 @@ func TestPortalOTPHMAC_CannotValidateOrBruteForceWithoutHMACKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uuidv7: %v", err)
 	}
-	const normEmail = "offline.target@example.wales"
+	const normEmail = "offline.target@example.com"
 
 	// Mint the stored challenge digest using a server-held key that is not retained in the DB row.
 	var storedChallenge domain.GuestPortalChallenge

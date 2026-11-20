@@ -3,13 +3,13 @@ set -euo pipefail
 
 # Provision an isolated non-superuser PostgreSQL test database and role for
 # LOVELACE Booking System automated integration tests.
-# Never grants access to the development/production `tir_bach` database.
+# Never grants access to the development/production `lovelace` database.
 
-PG_CONTAINER="${PG_CONTAINER:-tir-bach-postgres}"
-PG_SUPERUSER="${PG_SUPERUSER:-tir_bach}"
-TEST_DB="${TEST_DB:-tir_bach_test}"
-TEST_USER="${TEST_USER:-tir_bach_test_runner}"
-TEST_PASS="${TEST_PASS:-tir_bach_test_runner_pw}"
+PG_CONTAINER="${PG_CONTAINER:-lovelace-postgres}"
+PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
+TEST_DB="${TEST_DB:-lovelace_test}"
+TEST_USER="${TEST_USER:-lovelace_test_runner}"
+TEST_PASS="${TEST_PASS:-lovelace_test_runner_pw}"
 
 if [[ ! "$TEST_DB" =~ ^[A-Za-z_][A-Za-z0-9_-]*(_test|-test|_test_[A-Za-z0-9_-]*)$ ]]; then
   echo "Refusing unsafe TEST_DB name '$TEST_DB' (must end with _test or -test)." >&2

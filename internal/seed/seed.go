@@ -9,12 +9,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
-// Options configures initial idempotent seeding for Tir Bach Campsite.
+// Options configures initial idempotent seeding for the sample demo property.
 type Options struct {
 	AdminEmail         string
 	AdminName          string
@@ -22,10 +22,10 @@ type Options struct {
 	MustRotatePassword bool
 }
 
-// EnsureBaseline idempotently seeds Tir Bach Campsite, initial inventory, default rate plan,
+// EnsureBaseline idempotently seeds a sample demo property, initial inventory, default rate plan,
 // and an owner_admin account if missing.
 func EnsureBaseline(ctx context.Context, store *postgres.Store, opts Options) (domain.Property, error) {
-	prop, err := store.GetPropertyBySlug(ctx, nil, "tir-bach")
+	prop, err := store.GetPropertyBySlug(ctx, nil, "demo-property")
 	if errors.Is(err, domain.ErrNotFound) {
 		propID, err := postgres.NewUUID()
 		if err != nil {
@@ -33,21 +33,21 @@ func EnsureBaseline(ctx context.Context, store *postgres.Store, opts Options) (d
 		}
 		prop, err = store.CreateProperty(ctx, nil, domain.Property{
 			ID:           propID,
-			Slug:         "tir-bach",
-			Name:         "Tir Bach Campsite",
-			Tagline:      "Coastal glamping & meadow camping in Pembrokeshire",
+			Slug:         "demo-property",
+			Name:         "Meadowbrook Estate",
+			Tagline:      "Countryside glamping, handcrafted cabins & meadow camping",
 			CountryCode:  "GB",
-			Region:       "Pembrokeshire, Wales",
-			Town:         "Newport",
-			Postcode:     "SA42 0QQ",
+			Region:       "Countryside",
+			Town:         "Market Town",
+			Postcode:     "AB1 2CD",
 			Timezone:     "Europe/London",
 			Currency:     "GBP",
 			CheckInTime:  "15:00",
 			CheckOutTime: "10:30",
-			ContactEmail: "hello@tirbach.wales",
+			ContactEmail: "hello@example.com",
 		})
 		if err != nil {
-			return domain.Property{}, fmt.Errorf("create tir-bach property: %w", err)
+			return domain.Property{}, fmt.Errorf("create demo-property: %w", err)
 		}
 	} else if err != nil {
 		return domain.Property{}, err
@@ -67,7 +67,7 @@ func EnsureBaseline(ctx context.Context, store *postgres.Store, opts Options) (d
 			}
 			name := opts.AdminName
 			if name == "" {
-				name = "Tir Bach Owner"
+				name = "Property Owner"
 			}
 			if _, err := store.CreateAdminUser(ctx, nil, domain.AdminUser{
 				ID:                 uid,
@@ -140,9 +140,9 @@ func seedInventory(ctx context.Context, store *postgres.Store, propID uuid.UUID)
 				ID:                   hutID,
 				PropertyID:           propID,
 				Code:                 "shepherds-hut",
-				Name:                 "Preseli Shepherd's Hut",
+				Name:                 "Woodland Shepherd's Hut",
 				Category:             domain.CategoryCabin,
-				Description:          "Handcrafted timber shepherd's hut with wood-burning stove and coastal valley views.",
+				Description:          "Handcrafted timber shepherd's hut with wood-burning stove and valley views.",
 				BaseCapacityAdults:   2,
 				MaxAdults:            2,
 				MaxChildren:          0,
@@ -215,7 +215,7 @@ func seedInventory(ctx context.Context, store *postgres.Store, propID uuid.UUID)
 		}{
 			{bellID, "BT-OAK", "Oak Bell Tent", "Top Meadow"},
 			{bellID, "BT-ASH", "Ash Bell Tent", "Top Meadow"},
-			{hutID, "SH-PRESELI", "Preseli Shepherd's Hut", "Orchard Ridge"},
+			{hutID, "SH-WOODLAND", "Woodland Shepherd's Hut", "Orchard Ridge"},
 			{grassID, "GP-01", "Meadow Pitch 01", "Wildflower Field"},
 			{grassID, "GP-02", "Meadow Pitch 02", "Wildflower Field"},
 			{ehID, "EH-01", "Hook-Up Pitch 01", "Lower Paddock"},
@@ -241,7 +241,7 @@ func seedInventory(ctx context.Context, store *postgres.Store, propID uuid.UUID)
 				PropertyID:   propID,
 				Code:         "firewood-basket",
 				Name:         "Seasoned Firewood & Kindling Basket",
-				Description:  "Locally coppiced Welsh hardwood logs, kindling, and natural firelighters.",
+				Description:  "Locally coppiced hardwood logs, kindling, and natural firelighters.",
 				PricingModel: domain.PricingPerStay,
 				PricePence:   1200,
 				MaxQuantity:  5,
@@ -261,9 +261,9 @@ func seedInventory(ctx context.Context, store *postgres.Store, propID uuid.UUID)
 			},
 			{
 				PropertyID:   propID,
-				Code:         "welsh-hamper",
-				Name:         "Pembrokeshire Breakfast Hamper",
-				Description:  "Local sourdough, Welsh salted butter, preserves, and free-range eggs.",
+				Code:         "breakfast-hamper",
+				Name:         "Artisan Breakfast Hamper",
+				Description:  "Local sourdough, farmhouse salted butter, preserves, and free-range eggs.",
 				PricingModel: domain.PricingPerStay,
 				PricePence:   2400,
 				MaxQuantity:  3,
@@ -284,7 +284,7 @@ func seedInventory(ctx context.Context, store *postgres.Store, propID uuid.UUID)
 			PropertyID:  propID,
 			Code:        "standard",
 			Name:        "Standard Flexible Tariff",
-			Description: "Default flexible seasonal rate plan for Tir Bach Campsite.",
+			Description: "Default flexible seasonal rate plan for Meadowbrook Estate.",
 			IsDefault:   true,
 			IsActive:    true,
 			Priority:    100,

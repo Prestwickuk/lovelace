@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 // DBTX abstracts *pgxpool.Pool and pgx.Tx for shared query helpers.
@@ -21,7 +21,7 @@ type DBTX interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// Store provides transactional PostgreSQL persistence for Tir Bach.
+// Store provides transactional PostgreSQL persistence for Lovelace.
 type Store struct {
 	pool *pgxpool.Pool
 }

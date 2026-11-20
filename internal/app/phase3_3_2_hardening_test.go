@@ -20,11 +20,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 // barrierMailer blocks inside Send until released by the test or ctx cancels,
@@ -90,7 +90,7 @@ func TestPhase332Hardening_OutboxDispatchAndAnonymisationBarrier(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("load owner: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestPhase332Hardening_OutboxDispatchAndAnonymisationBarrier(t *testing.T) {
 	}
 
 	// Operator reconciles via HTTP API: POST /api/v1/properties/{propertyID}/outbox/{outboxID}/reconcile.
-	adminClient, csrf := loginAdminClient(t, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	adminClient, csrf := loginAdminClient(t, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	recBody, _ := json.Marshal(map[string]string{
 		"resolution":    "CONFIRMED_FAILED",
 		"reason_code":   "SMTP_PRE_DATA_RESET",
@@ -293,7 +293,7 @@ func TestPhase332Hardening_QueueVsAnonymisationLockAndErrorScrubbing(t *testing.
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	// A1: Before-lock hook interleaving — SendGuestEmail starts BEFORE guest lock, AnonymizeGuest finishes first,
@@ -572,16 +572,16 @@ func TestPhase332Hardening_ExportCompletenessAndConsentRedaction(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	viewer, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "viewer-hard@tirbach.wales", FullName: "Viewer", Role: domain.RoleViewer, Password: "viewer-hard-password-2026",
+		Email: "viewer-hard@example.com", FullName: "Viewer", Role: domain.RoleViewer, Password: "viewer-hard-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("create viewer: %v", err)
 	}
 	disabledOwner, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "disabled-owner@tirbach.wales", FullName: "Disabled Owner", Role: domain.RoleOwnerAdmin, Password: "disabled-owner-pass-2026",
+		Email: "disabled-owner@example.com", FullName: "Disabled Owner", Role: domain.RoleOwnerAdmin, Password: "disabled-owner-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create disabledOwner: %v", err)
@@ -658,7 +658,7 @@ func TestPhase332Hardening_ExportCompletenessAndConsentRedaction(t *testing.T) {
 	}
 	_, err = store.Pool().Exec(ctx, `
 		INSERT INTO guest_enquiry_messages (id, property_id, enquiry_id, direction, sender_name, sender_email, body, is_internal, staff_user_id)
-		VALUES ($1, $2, $3, 'INTERNAL', 'Sian Evans', 'owner@tirbach.wales', 'Secret staff reservation-only enquiry msg', TRUE, $4)
+		VALUES ($1, $2, $3, 'INTERNAL', 'Sian Evans', 'owner@example.com', 'Secret staff reservation-only enquiry msg', TRUE, $4)
 	`, uuid.New(), prop.ID, enqResOnlyID, owner.ID)
 	if err != nil {
 		t.Fatalf("insert enquiry message: %v", err)
@@ -788,17 +788,17 @@ func TestPhase332Hardening_AuditFunctionSecurityRoleAndLongLineage(t *testing.T)
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	staffUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "staff-hard-audit@tirbach.wales", FullName: "Staff", Role: domain.RoleStaff, Password: "staff-hard-audit-2026",
+		Email: "staff-hard-audit@example.com", FullName: "Staff", Role: domain.RoleStaff, Password: "staff-hard-audit-2026",
 	})
 	rotateOwner, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "rotate-owner@tirbach.wales", FullName: "Rotate", Role: domain.RoleOwnerAdmin, Password: "rotate-owner-pass-2026",
+		Email: "rotate-owner@example.com", FullName: "Rotate", Role: domain.RoleOwnerAdmin, Password: "rotate-owner-pass-2026",
 	})
 	_, _ = store.Pool().Exec(ctx, `UPDATE admin_users SET must_rotate_password = TRUE WHERE id = $1`, rotateOwner.ID)
 	inactiveOwner, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "inactive-owner@tirbach.wales", FullName: "Inactive", Role: domain.RoleOwnerAdmin, Password: "inactive-owner-pass-2026",
+		Email: "inactive-owner@example.com", FullName: "Inactive", Role: domain.RoleOwnerAdmin, Password: "inactive-owner-pass-2026",
 	})
 	_, _ = store.Pool().Exec(ctx, `UPDATE admin_users SET is_active = FALSE WHERE id = $1`, inactiveOwner.ID)
 	prop2, _ := store.CreateProperty(ctx, nil, domain.Property{
@@ -1032,7 +1032,7 @@ func TestPhase332Hardening_AuditFunctionSecurityRoleAndLongLineage(t *testing.T)
 	defer appStore.Close()
 	appCfg := config.Config{
 		AppEnv: "test", DatabaseURL: appURL, EncryptionKey: testEncryptionKey,
-		SessionTTL: time.Hour, SessionIdleTTL: 30 * time.Minute, EmailFrom: "bookings@tirbach.wales",
+		SessionTTL: time.Hour, SessionIdleTTL: 30 * time.Minute, EmailFrom: "bookings@example.com",
 	}
 	appSvc := service.New(appStore, appCfg)
 	appSvc.SetClock(clk.Now)
@@ -1139,7 +1139,7 @@ func TestPhase332Hardening_WorkerLivenessFencingAndSMTPDeadlines(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{
 		UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role,
 		IPAddress: "127.0.0.1", UserAgent: "liveness-test",
@@ -1429,20 +1429,20 @@ func TestPhase332Hardening_ReconcileRBACEvidenceUIAndValidation(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{
 		UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role,
 		IPAddress: "127.0.0.1", UserAgent: "reconcile-test",
 	}
 
 	staffUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "rec.staff@tirbach.wales", FullName: "Rec Staff", Role: domain.RoleStaff, Password: "rec-staff-password-2026",
+		Email: "rec.staff@example.com", FullName: "Rec Staff", Role: domain.RoleStaff, Password: "rec-staff-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("create staff: %v", err)
 	}
 	mgrUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "rec.mgr@tirbach.wales", FullName: "Rec Manager", Role: domain.RoleManager, Password: "rec-mgr-password-2026",
+		Email: "rec.mgr@example.com", FullName: "Rec Manager", Role: domain.RoleManager, Password: "rec-mgr-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("create manager: %v", err)
@@ -1455,7 +1455,7 @@ func TestPhase332Hardening_ReconcileRBACEvidenceUIAndValidation(t *testing.T) {
 		t.Fatalf("create otherProp: %v", err)
 	}
 	_, err = svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		PropertyID: &otherProp.ID, Email: "rec.other@tirbach.wales", FullName: "Other Owner", Role: domain.RoleOwnerAdmin, Password: "rec-other-password-2026",
+		PropertyID: &otherProp.ID, Email: "rec.other@example.com", FullName: "Other Owner", Role: domain.RoleOwnerAdmin, Password: "rec-other-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("create other owner: %v", err)
@@ -1500,8 +1500,8 @@ func TestPhase332Hardening_ReconcileRBACEvidenceUIAndValidation(t *testing.T) {
 
 	staffClient, staffCSRF := loginAdminClient(t, srv.URL, staffUser.Email, "rec-staff-password-2026")
 	mgrClient, mgrCSRF := loginAdminClient(t, srv.URL, mgrUser.Email, "rec-mgr-password-2026")
-	otherClient, otherCSRF := loginAdminClient(t, srv.URL, "rec.other@tirbach.wales", "rec-other-password-2026")
-	ownerClient, ownerCSRF := loginAdminClient(t, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	otherClient, otherCSRF := loginAdminClient(t, srv.URL, "rec.other@example.com", "rec-other-password-2026")
+	ownerClient, ownerCSRF := loginAdminClient(t, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 
 	// 1. RBAC & UI gating:
 	// - Staff HTML view hides reconciliation button/form (even on DISPATCH_UNKNOWN items) AND hides Retry Send on DISPATCH_UNKNOWN.
@@ -1708,7 +1708,7 @@ func TestPhase332SignoffDispatchLeaseExpiryAndClockAuthority(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	queueForTest := func(email string) (domain.Guest, uuid.UUID) {
@@ -1879,7 +1879,7 @@ func TestPhase332SignoffHeartbeatAbortTimingAndLocalLocking(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	// 1. Validate canonical DefaultDispatchConfig and reject unsafe timing relationships.
@@ -1970,7 +1970,7 @@ func TestPhase332SignoffHeartbeatAbortTimingAndLocalLocking(t *testing.T) {
 		_, _ = store.Pool().Exec(context.Background(), `GRANT UPDATE ON TABLE public.email_outbox TO lovelace_app`)
 	})
 
-	workerSvc := service.New(workerStore, config.Config{EmailFrom: "bookings@tirbach.wales"})
+	workerSvc := service.New(workerStore, config.Config{EmailFrom: "bookings@example.com"})
 	workerSvc.SetClock(time.Now)
 	if err := workerSvc.SetDispatchConfig(service.DispatchConfig{
 		WorkerID: "hb-abort-worker", LeaseTTL: 4 * time.Second, HeartbeatInterval: 40 * time.Millisecond, TransportTimeout: 3 * time.Second,
@@ -2174,7 +2174,7 @@ func TestPhase332SignoffDBGuardsAndOperatorRotation(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	rotMgr, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &prop.ID, Email: "rot.mgr@example.test", FullName: "Rotating Manager",

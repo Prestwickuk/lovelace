@@ -186,8 +186,8 @@
     {{if .CanManageMaintenance}}
     <form method="post" action="{{if .EditingContractor}}/maintenance/contractors/{{.EditingContractor.ID}}/update{{else}}/maintenance/contractors{{end}}" class="form-grid mb-3">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-      <div class="field"><label>Contact Name</label><input name="name" type="text" required placeholder="Owen Davies" value="{{if .EditingContractor}}{{.EditingContractor.Name}}{{end}}"></div>
-      <div class="field"><label>Company</label><input name="company" type="text" placeholder="Pembrokeshire Heating Ltd" value="{{if .EditingContractor}}{{.EditingContractor.Company}}{{end}}"></div>
+      <div class="field"><label>Contact Name</label><input name="name" type="text" required placeholder="Alex Carter" value="{{if .EditingContractor}}{{.EditingContractor.Name}}{{end}}"></div>
+      <div class="field"><label>Company</label><input name="company" type="text" placeholder="Valley Heating &amp; Plumbing Ltd" value="{{if .EditingContractor}}{{.EditingContractor.Company}}{{end}}"></div>
       <div class="field"><label>Trade</label><input name="trade" type="text" placeholder="Gas Safe &amp; Plumbing" value="{{if .EditingContractor}}{{.EditingContractor.Trade}}{{end}}"></div>
       <div class="field"><label>Phone</label><input name="phone" type="text" value="{{if .EditingContractor}}{{.EditingContractor.Phone}}{{end}}"></div>
       <div class="field"><label>Email</label><input name="email" type="email" value="{{if .EditingContractor}}{{.EditingContractor.Email}}{{end}}"></div>

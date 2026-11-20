@@ -1,7 +1,7 @@
 {
   "phase": "1.6.1",
   "product": "LOVELACE Booking System",
-  "default_property": "Tir Bach Campsite",
+  "default_property": "Meadowbrook Estate",
   "status": "complete",
   "phase1_6_1_remediation": {
     "bootstrap_secret_leakage_fixed": true,

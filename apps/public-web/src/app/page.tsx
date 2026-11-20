@@ -32,8 +32,8 @@ export default async function HomePage() {
   return (
     <>
       <SiteHeader
-        propertyName={prop?.name || "Tir Bach Campsite"}
-        region={prop?.region || "Pembrokeshire, Wales"}
+        propertyName={prop?.name || "Meadowbrook Estate"}
+        region={prop?.region || "Countryside"}
         branding={prop?.branding}
         propertySlug={prop?.slug}
         portalEnabled={Boolean(prop?.policy?.guest_portal_enabled)}
@@ -42,17 +42,17 @@ export default async function HomePage() {
       <main>
         <section className="hero-section">
           <img
-            src="/images/hero-pembrokeshire.jpg"
-            alt={`${prop?.name || "Tir Bach Campsite"} overlooking ${prop?.region || "Pembrokeshire, Wales"}`}
+            src="/images/hero-landscape.jpg"
+            alt={`${prop?.name || "Meadowbrook Estate"} overlooking ${prop?.region || "the countryside"}`}
             className="hero-bg-img"
           />
           <div className="hero-scrim" aria-hidden="true" />
           <div className="container hero-content">
             <span className="hero-eyebrow">
-              {prop?.region || "Pembrokeshire, Wales"} · Direct Bookings
+              {prop?.region || "Direct Stays"} · Direct Bookings
             </span>
             <h1 className="hero-title">
-              {prop?.name || "Tir Bach Campsite"} — Coastal Stays &amp; Meadow Pitches
+              {prop?.name || "Meadowbrook Estate"} — Stays, Cabins &amp; Meadow Pitches
             </h1>
             <p className="hero-lead">
               {prop?.public_description ||
@@ -242,7 +242,7 @@ export default async function HomePage() {
                 <strong>Address:</strong>{" "}
                 {[prop?.address_line1, prop?.town, prop?.postcode, prop?.region]
                   .filter(Boolean)
-                  .join(", ") || "Pembrokeshire, Wales"}
+                  .join(", ") || "Confirmed in booking itinerary"}
                 <br />
                 <strong>Check-in:</strong> From {prop?.check_in_time || "15:00"} ·{" "}
                 <strong>Departure:</strong> By {prop?.check_out_time || "10:30"}

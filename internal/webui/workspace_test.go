@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestWorkspacePageRender_AllWidgetsEditAndAccessibilityCSP(t *testing.T) {
@@ -25,9 +25,9 @@ func TestWorkspacePageRender_AllWidgetsEditAndAccessibilityCSP(t *testing.T) {
 
 	prop := domain.Property{
 		ID:       uuid.New(),
-		Slug:     "tir-bach",
-		Name:     "Tir Bach Meadows",
-		Region:   "Pembrokeshire",
+		Slug:     "demo-property",
+		Name:     "Meadowbrook Meadows",
+		Region:   "Countryside",
 		Currency: "GBP",
 	}
 	utID := uuid.New()
@@ -205,7 +205,7 @@ func TestWorkspacePageRender_AllWidgetsEditAndAccessibilityCSP(t *testing.T) {
 			CanReadMaintenance:  true,
 			CanReadReports:      true,
 			CanReadChannels:     true,
-			Actor:               service.Actor{UserID: uuid.New(), FullName: "Carys Evans", Email: "carys@tirbach.wales", Role: domain.RoleManager},
+			Actor:               service.Actor{UserID: uuid.New(), FullName: "Carys Evans", Email: "carys@example.com", Role: domain.RoleManager},
 		},
 		Dashboard: WorkspacePageData{
 			WorkspaceDashboardData: service.WorkspaceDashboardData{
@@ -229,7 +229,7 @@ func TestWorkspacePageRender_AllWidgetsEditAndAccessibilityCSP(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		`Tir Bach Meadows — Personal Workspace`,
+		`Meadowbrook Meadows — Personal Workspace`,
 		`href="/workspace" class="active" aria-current="page"`,
 		`id="workspace-editor-heading"`,
 		`/workspace/widgets/add`,

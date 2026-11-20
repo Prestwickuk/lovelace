@@ -9,10 +9,29 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tirbach/tir-bach/migrations"
+	"github.com/Prestwickuk/lovelace/migrations"
 )
 
-const migrationLockID int64 = 748291043 // deterministic advisory lock ID for Tir Bach migrations
+const migrationLockID int64 = 748291043 // deterministic advisory lock ID for Lovelace migrations
+
+// acceptedHistoricalChecksums allows pre-existing deployments that recorded the
+// original pre-genericisation SHA-256 digests of 0001, 0003, and 0026 to pass
+// read-only startup verification and apply additive migrations seamlessly.
+var acceptedHistoricalChecksums = map[string]string{
+	"0001_init.sql":                   "f4be8e27b0188cdf189b3bbfba67c62f182d82bfc1047b72fb7f62803068e583",
+	"0003_phase1_5.sql":               "7150758b32ad57084047502293635a924e5974e5bf8a5937a88278622985956b",
+	"0026_phase3_m4_guest_portal.sql": "6a9d7db0370f8ab492b53af3d690ba3127b294491cc8da4802cecaca12324796",
+}
+
+func checksumMatches(filename, appliedChecksum, currentChecksum string) bool {
+	if appliedChecksum == currentChecksum {
+		return true
+	}
+	if legacy, ok := acceptedHistoricalChecksums[filename]; ok && appliedChecksum == legacy {
+		return true
+	}
+	return false
+}
 
 // RolePrivilegeSummary reports the PostgreSQL role privileges of the active connection.
 type RolePrivilegeSummary struct {
@@ -38,7 +57,7 @@ func (s *Store) InspectRolePrivileges(ctx context.Context) (RolePrivilegeSummary
 }
 
 // Migrate applies all embedded SQL migrations that have not yet been recorded.
-// When an unprivileged runtime role starts after tirbach-migrate has already applied
+// When an unprivileged runtime role starts after lovelace-migrate has already applied
 // all migrations, Migrate verifies checksums using read-only SELECTs without executing DDL.
 func (s *Store) Migrate(ctx context.Context) error {
 	entries, err := fs.ReadDir(migrations.FS, ".")
@@ -92,7 +111,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 				allMatch = false
 				break
 			}
-			if existingChecksum != m.checksum {
+			if !checksumMatches(m.name, existingChecksum, m.checksum) {
 				return fmt.Errorf("migration %s checksum mismatch (applied=%s, current=%s)", m.name, existingChecksum, m.checksum)
 			}
 		}
@@ -107,7 +126,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return fmt.Errorf("check schema CREATE privilege for migrations: %w", err)
 	}
 	if !canCreate {
-		return fmt.Errorf("database has pending migrations and current role lacks DDL privileges on schema public; run tirbach-migrate using the migration role")
+		return fmt.Errorf("database has pending migrations and current role lacks DDL privileges on schema public; run lovelace-migrate using the migration role")
 	}
 
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
@@ -138,7 +157,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		var existingChecksum string
 		err = conn.QueryRow(ctx, "SELECT checksum FROM schema_migrations WHERE filename = $1", m.name).Scan(&existingChecksum)
 		if err == nil {
-			if existingChecksum != m.checksum {
+			if !checksumMatches(m.name, existingChecksum, m.checksum) {
 				return fmt.Errorf("migration %s checksum mismatch (applied=%s, current=%s)", m.name, existingChecksum, m.checksum)
 			}
 			continue

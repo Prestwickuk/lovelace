@@ -187,7 +187,7 @@ var registry = []ProviderDefinition{
 		PhaseTarget:    "Phase 4",
 		Capabilities:   []string{"listing_discovery", "rate_sync", "reservation_import", "webhooks"},
 		Fields: []FieldSpec{
-			{Name: "account_id", Label: "Lodgify Account Identifier", InputType: "text", Required: false, Secret: false, Placeholder: "tirbach", HelpText: "Optional account slug for operator reference."},
+			{Name: "account_id", Label: "Lodgify Account Identifier", InputType: "text", Required: false, Secret: false, Placeholder: "meadowbrook", HelpText: "Optional account slug for operator reference."},
 			{Name: "api_key", Label: "Lodgify Public API Key (X-ApiKey)", InputType: "password", Required: true, Secret: true, Placeholder: "ldg_...", HelpText: "Found in Lodgify Settings → Public API; sent via X-ApiKey header and encrypted at rest."},
 			{Name: "webhook_secret", Label: "Webhook Secret / HMAC Key (Optional)", InputType: "password", Required: false, Secret: true, Placeholder: "Strong random webhook secret", HelpText: "Verifies incoming Lodgify webhooks via shared header or X-Lodgify-Signature HMAC before v2 booking hydration."},
 		},

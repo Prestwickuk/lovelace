@@ -16,8 +16,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func mustJSON(t *testing.T, v any) []byte {
@@ -74,14 +74,14 @@ func TestPhase3Milestone2MaintenanceLifecycleAndInventoryIntegration(t *testing.
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	techUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "tech@tirbach.wales",
+		Email:    "tech@example.com",
 		FullName: "Dafydd Technician",
 		Role:     domain.RoleMaintenanceStaff,
 		Password: "maint-tech-pass-2026",
@@ -412,14 +412,14 @@ func TestPhase3Milestone2AttachmentsRBACAndPublicIsolation(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	_, err = svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "hk@tirbach.wales",
+		Email:    "hk@example.com",
 		FullName: "Ffion Housekeeper",
 		Role:     domain.RoleHousekeepingStaff,
 		Password: "hk-pass-secure-2026",
@@ -428,7 +428,7 @@ func TestPhase3Milestone2AttachmentsRBACAndPublicIsolation(t *testing.T) {
 		t.Fatalf("create housekeeping user: %v", err)
 	}
 	_, err = svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "eng@tirbach.wales",
+		Email:    "eng@example.com",
 		FullName: "Bryn Engineer",
 		Role:     domain.RoleMaintenanceStaff,
 		Password: "eng-pass-secure-2026",
@@ -437,7 +437,7 @@ func TestPhase3Milestone2AttachmentsRBACAndPublicIsolation(t *testing.T) {
 		t.Fatalf("create maintenance user: %v", err)
 	}
 	_, err = svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "mgr@tirbach.wales",
+		Email:    "mgr@example.com",
 		FullName: "Nia Manager",
 		Role:     domain.RoleManager,
 		Password: "mgr-pass-secure-2026",
@@ -446,7 +446,7 @@ func TestPhase3Milestone2AttachmentsRBACAndPublicIsolation(t *testing.T) {
 		t.Fatalf("create manager user: %v", err)
 	}
 	_, err = svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "view@tirbach.wales",
+		Email:    "view@example.com",
 		FullName: "Aled Viewer",
 		Role:     domain.RoleViewer,
 		Password: "view-pass-secure-2026",
@@ -459,10 +459,10 @@ func TestPhase3Milestone2AttachmentsRBACAndPublicIsolation(t *testing.T) {
 	locs, _ := svc.ListMaintenanceLocations(ctx, ownerActor, prop.ID, false)
 	units, _ := svc.ListUnits(ctx, ownerActor, prop.ID, nil)
 
-	hkClient, hkCSRF := loginAdminClient(t, srv.URL, "hk@tirbach.wales", "hk-pass-secure-2026")
-	engClient, engCSRF := loginAdminClient(t, srv.URL, "eng@tirbach.wales", "eng-pass-secure-2026")
-	mgrClient, mgrCSRF := loginAdminClient(t, srv.URL, "mgr@tirbach.wales", "mgr-pass-secure-2026")
-	viewClient, viewCSRF := loginAdminClient(t, srv.URL, "view@tirbach.wales", "view-pass-secure-2026")
+	hkClient, hkCSRF := loginAdminClient(t, srv.URL, "hk@example.com", "hk-pass-secure-2026")
+	engClient, engCSRF := loginAdminClient(t, srv.URL, "eng@example.com", "eng-pass-secure-2026")
+	mgrClient, mgrCSRF := loginAdminClient(t, srv.URL, "mgr@example.com", "mgr-pass-secure-2026")
+	viewClient, viewCSRF := loginAdminClient(t, srv.URL, "view@example.com", "view-pass-secure-2026")
 
 	// 1. Viewer cannot report a maintenance issue.
 	viewCreateResp := authedJSON(t, viewClient, http.MethodPost, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/maintenance", viewCSRF, mustJSON(t, map[string]any{
@@ -616,7 +616,7 @@ func TestPhase3Milestone2AttachmentsRBACAndPublicIsolation(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	webClient := &http.Client{Jar: jar}
 	if _, err := webClient.PostForm(srv.URL+"/login", url.Values{
-		"email":    {"mgr@tirbach.wales"},
+		"email":    {"mgr@example.com"},
 		"password": {"mgr-pass-secure-2026"},
 	}); err != nil {
 		t.Fatalf("web login: %v", err)
@@ -649,7 +649,7 @@ func TestPhase3Milestone2PreventativeSchedulesIdempotent(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -738,14 +738,14 @@ func TestPhase3Milestone2HousekeepingRegressClearStartedState(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	cleaner1, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "cleaner1@tirbach.wales",
+		Email:    "cleaner1@example.com",
 		FullName: "Cleaner One",
 		Role:     domain.RoleHousekeepingStaff,
 		Password: "cleaner-1-pass-2026",
@@ -754,7 +754,7 @@ func TestPhase3Milestone2HousekeepingRegressClearStartedState(t *testing.T) {
 		t.Fatalf("create cleaner1: %v", err)
 	}
 	cleaner2, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "cleaner2@tirbach.wales",
+		Email:    "cleaner2@example.com",
 		FullName: "Cleaner Two",
 		Role:     domain.RoleStaff,
 		Password: "cleaner-2-pass-2026",

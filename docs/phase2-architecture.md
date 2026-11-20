@@ -2,7 +2,7 @@
 
 **Milestone Status:** Step 2 Architecture Specification  
 **Administrative Application:** Existing Go SSR Console + `/api/v1/*` (`LOVELACE Booking System`)  
-**Public Application:** Standalone Next.js + React + TypeScript Frontend (`apps/public-web/`, branded per property e.g. `Tir Bach Campsite`)  
+**Public Application:** Standalone Next.js + React + TypeScript Frontend (`apps/public-web/`, branded per property e.g. `Meadowbrook Estate`)  
 **Shared Authority:** Go Backend Services + PostgreSQL 17 (`inventory_claims` GiST Exclusions)
 
 ---
@@ -11,12 +11,12 @@
 
 | Layer | Public Booking Application (`apps/public-web`) | Administrative Application (`internal/webui`) |
 |---|---|---|
-| **Brand Identity** | Property-specific (Tir Bach Campsite + subtle *"Booking system powered by LOVELACE"* footer) | Always `LOVELACE Booking System` |
+| **Brand Identity** | Property-specific (Meadowbrook Estate + subtle *"Booking system powered by LOVELACE"* footer) | Always `LOVELACE Booking System` |
 | **Stack** | Next.js (App Router), React, TypeScript | Existing Go `html/template` SSR |
-| **Deployment / Origin** | Standalone single container (`https://book.tirbach.wales`, local `http://127.0.0.1:3000`) | Standalone single Go server (`admin.<platform>`, local `http://127.0.0.1:8080`) |
+| **Deployment / Origin** | Standalone single container (`https://book.example.com`, local `http://127.0.0.1:3000`) | Standalone single Go server (`admin.<platform>`, local `http://127.0.0.1:8080`) |
 | **API Surface Consumed** | Public-only `/api/public/v1/*` via Next.js server-side BFF (`X-Lovelace-Public-Key` / server-side fetch; browser never holds secrets) | Admin-only `/api/v1/*` protected by Argon2id session cookie + CSRF + RBAC |
 | **Direct DB Access** | **Prohibited** (`apps/public-web` has no `DATABASE_URL` or pg driver) | Go backend via `lovelace_app` DML-only role |
-| **Browser Cookies / Auth** | No admin cookies; confirmation lookup uses high-entropy signed/opaque retrieval token (`token` query/header) + booking reference | `tirbach_session` (`HttpOnly`, `SameSite=Lax`, `Secure` in prod) + CSRF token |
+| **Browser Cookies / Auth** | No admin cookies; confirmation lookup uses high-entropy signed/opaque retrieval token (`token` query/header) + booking reference | `lovelace_session` (`HttpOnly`, `SameSite=Lax`, `Secure` in prod) + CSRF token |
 
 ---
 
@@ -33,8 +33,8 @@ Public routes are mounted cleanly under `/api/public/v1/...` (separate middlewar
 - `POST /api/public/v1/checkout` — Validates active non-expired hold + terms acceptance, creates an idempotent `payment_attempts` row and a Stripe Checkout Session (server-side secret key), returning `checkout_url`, `payment_attempt_id`, and `hold_expires_at`.
 - `POST /api/public/v1/webhooks/stripe` — Raw-body Stripe `Stripe-Signature` HMAC-SHA256 verification, deduplicated via `payment_webhook_events(event_id)`. Drives state transitions idempotently.
 - `POST /api/public/v1/booking/holds/{id}/cancel` — Explicitly releases an abandoned/cancelled hold (`booking_holds.status='CANCELLED'`, `inventory_claims.status='RELEASED'`).
-- `GET /api/public/v1/booking-confirmation?ref=TB-...&token=...` — Verifies constant-time hashed `confirmation_access_tokens` (or retrieves hold status while webhook settles) and returns booking reference, stay details, itemized price snapshot, and payment history.
-- `POST /api/public/v1/booking-confirmation/cancel-request?ref=TB-...&token=...` — Allows verified customer to submit a cancellation request (auto-cancels eligible unpaid/policy-compliant direct bookings or flags cancellation request in admin queue).
+- `GET /api/public/v1/booking-confirmation?ref=LV-...&token=...` — Verifies constant-time hashed `confirmation_access_tokens` (or retrieves hold status while webhook settles) and returns booking reference, stay details, itemized price snapshot, and payment history.
+- `POST /api/public/v1/booking-confirmation/cancel-request?ref=LV-...&token=...` — Allows verified customer to submit a cancellation request (auto-cancels eligible unpaid/policy-compliant direct bookings or flags cancellation request in admin queue).
 
 ---
 
@@ -79,7 +79,7 @@ POST /api/public/v1/webhooks/stripe ──► Verify HMAC Sig & Dedupe event_id 
 
 ## 5. Email Confirmation & Retries
 
-- `email_outbox` stores Tir Bach–branded text + HTML receipts (with subtle *"Booking system powered by LOVELACE"* footer) in the same DB transaction as reservation confirmation.
+- `email_outbox` stores Meadowbrook–branded text + HTML receipts (with subtle *"Booking system powered by LOVELACE"* footer) in the same DB transaction as reservation confirmation.
 - A background Go outbox dispatcher delivers pending emails (`smtp` or configurable local/log sink in dev/test) with exponential retry backoff (`attempts`, `next_attempt_at`, `last_error`). Email delivery failures never roll back or invalidate confirmed bookings.
 
 ---

@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/httpx"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/httpx"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func (h *Handler) registerPublicRoutes(mux *http.ServeMux) {
@@ -155,7 +155,7 @@ func (h *Handler) handlePublicGetProperty(w http.ResponseWriter, r *http.Request
 func (h *Handler) handlePublicListAccommodation(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(r.URL.Query().Get("property"))
 	if slug == "" {
-		slug = "tir-bach"
+		slug = "demo-property"
 	}
 	catalog, err := h.svc.ListPublicAccommodation(r.Context(), slug)
 	if err != nil {
@@ -168,7 +168,7 @@ func (h *Handler) handlePublicListAccommodation(w http.ResponseWriter, r *http.R
 func (h *Handler) handlePublicGetAccommodationDetail(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(r.URL.Query().Get("property"))
 	if slug == "" {
-		slug = "tir-bach"
+		slug = "demo-property"
 	}
 	code := strings.TrimSpace(r.PathValue("code"))
 	detail, err := h.svc.GetPublicAccommodationDetail(r.Context(), slug, code)
@@ -193,7 +193,7 @@ func (h *Handler) handlePublicAvailabilitySearch(w http.ResponseWriter, r *http.
 		return
 	}
 	if strings.TrimSpace(body.PropertySlug) == "" {
-		body.PropertySlug = "tir-bach"
+		body.PropertySlug = "demo-property"
 	}
 	arr, err := domain.ParseDate(body.ArrivalDate)
 	if err != nil {
@@ -236,7 +236,7 @@ func (h *Handler) handlePublicPricingQuote(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if strings.TrimSpace(body.PropertySlug) == "" {
-		body.PropertySlug = "tir-bach"
+		body.PropertySlug = "demo-property"
 	}
 	arr, err := domain.ParseDate(body.ArrivalDate)
 	if err != nil {
@@ -278,7 +278,7 @@ func (h *Handler) handlePublicCreateHold(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if strings.TrimSpace(body.PropertySlug) == "" {
-		body.PropertySlug = "tir-bach"
+		body.PropertySlug = "demo-property"
 	}
 	arr, err := domain.ParseDate(body.ArrivalDate)
 	if err != nil {

@@ -11,7 +11,7 @@
 LOVELACE operates as a multi-property hospitality operations platform with two distinct user audiences and branding requirements:
 
 1. **Administrative operators (`admin_users`)** using the Go server-rendered console (`internal/webui`, `:8080`), who require high-density operational workflows, strict RBAC, multi-property context, auditability, and — in the **PROPOSED / FUTURE** Personalisation & Workspace Experience (PWE) workstream — role-appropriate workspaces, themes, density controls, dashboards, and restrained property-identifying chrome.
-2. **Prospective and booked guests** using the standalone Next.js public storefront (`apps/public-web/`, `:3000`), who expect a property-first guest experience (e.g., *Tir Bach Campsite*) with minimal *"Powered by LOVELACE Booking System"* attribution.
+2. **Prospective and booked guests** using the standalone Next.js public storefront (`apps/public-web/`, `:3000`), who expect a property-first guest experience (e.g., *Meadowbrook Estate*) with minimal *"Powered by LOVELACE Booking System"* attribution.
 
 As LOVELACE delivers **PWE-1 through PWE-5** (Implemented), adding property branding (`PWE-4`), workspace profiles (`PWE-5`), and user/workspace customisation (`PWE-1`–`PWE-3`, `PWE-5`) creates architectural risk if public storefront concerns, admin UI preferences, or executable presentation payloads cross application, tenancy, or security boundaries.
 
@@ -22,7 +22,7 @@ As LOVELACE delivers **PWE-1 through PWE-5** (Implemented), adding property bran
 LOVELACE establishes the following permanent architectural and configuration boundaries:
 
 ### 2.1 Permanent Two-Application Deployment & Component Boundary
-- **LOVELACE Admin (`internal/webui` + `/api/v1/*`)** remains a Go `html/template` server-rendered application embedded in the Go monolith, served on the administrative origin under strict Content Security Policy (`default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'`), Argon2id cookie sessions (`tirbach_session`), and per-session CSRF validation.
+- **LOVELACE Admin (`internal/webui` + `/api/v1/*`)** remains a Go `html/template` server-rendered application embedded in the Go monolith, served on the administrative origin under strict Content Security Policy (`default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'`), Argon2id cookie sessions (`lovelace_session`), and per-session CSRF validation.
 - **Public Guest Storefront (`apps/public-web/`)** remains an independently built and deployed Next.js / React / TypeScript application on separate origin(s) with its own server-side BFF (`X-Lovelace-Public-Key`), completely isolated authentication boundary, and **zero** direct PostgreSQL access (`DATABASE_URL` and DB drivers prohibited).
 - **No shared UI component library or CSS bundle:** Go SSR templates (`/static/*.css`) and Next.js (`apps/public-web/`) maintain separate design implementations and release lifecycles. Neither build may import templates, components, assets, or routing code from the other.
 

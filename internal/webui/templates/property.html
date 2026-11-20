@@ -153,7 +153,7 @@
       </div>
       <div class="checkbox-row">
         <input id="guest_portal_enabled" name="guest_portal_enabled" type="checkbox" value="true" {{if and .GlobalPortalEnabled .Policy.GuestPortalEnabled}}checked{{end}} {{if or (not .CanWriteProperty) (not .GlobalPortalEnabled)}}disabled{{end}}>
-        <label for="guest_portal_enabled" class="m-0">Enable Self-Service Guest Portal (Staging / Pilot Policy Gate){{if not .GlobalPortalEnabled}} — <em>locked off while TIRBACH_GUEST_PORTAL_ENABLED=false</em>{{end}}</label>
+        <label for="guest_portal_enabled" class="m-0">Enable Self-Service Guest Portal (Staging / Pilot Policy Gate){{if not .GlobalPortalEnabled}} — <em>locked off while LOVELACE_GUEST_PORTAL_ENABLED=false</em>{{end}}</label>
       </div>
       <div class="field field-full">
         <label for="cancellation_policy">Cancellation Policy</label>

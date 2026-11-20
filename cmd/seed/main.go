@@ -8,17 +8,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/seed"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/seed"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func main() {
-	email := flag.String("admin-email", os.Getenv("TIRBACH_ADMIN_EMAIL"), "Initial owner_admin email")
-	name := flag.String("admin-name", os.Getenv("TIRBACH_ADMIN_NAME"), "Initial owner_admin full name")
-	password := flag.String("admin-password", os.Getenv("TIRBACH_ADMIN_PASSWORD"), "Initial owner_admin password (min 12 chars)")
-	adminOnly := flag.Bool("admin-only", strings.EqualFold(strings.TrimSpace(os.Getenv("TIRBACH_SEED_ADMIN_ONLY")), "true"), "Bootstrap initial owner_admin only (must_rotate_password=true) without seeding demo property data")
+	email := flag.String("admin-email", os.Getenv("LOVELACE_ADMIN_EMAIL"), "Initial owner_admin email")
+	name := flag.String("admin-name", os.Getenv("LOVELACE_ADMIN_NAME"), "Initial owner_admin full name")
+	password := flag.String("admin-password", os.Getenv("LOVELACE_ADMIN_PASSWORD"), "Initial owner_admin password (min 12 chars)")
+	adminOnly := flag.Bool("admin-only", strings.EqualFold(strings.TrimSpace(os.Getenv("LOVELACE_SEED_ADMIN_ONLY")), "true"), "Bootstrap initial owner_admin only (must_rotate_password=true) without seeding demo property data")
 	flag.Parse()
 
 	cfg, err := config.Load()

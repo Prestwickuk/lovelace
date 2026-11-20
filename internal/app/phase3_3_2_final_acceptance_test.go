@@ -14,10 +14,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func TestPhase332FinalAcceptance_DirectDBAllowlistSecurity(t *testing.T) {
@@ -25,7 +25,7 @@ func TestPhase332FinalAcceptance_DirectDBAllowlistSecurity(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestPhase332FinalAcceptance_DirectDBAllowlistSecurity(t *testing.T) {
 		{"excessive object key count", guestAuditID, string(hugeKeysJSON), ""},
 		{"excessive array length", resAuditID, string(hugeArrayJSON), ""},
 		{"excessive string length", resAuditID, string(longStrJSON), longString},
-		{"control character newline in code", resAuditID, `{"reference":"TB-1\nINJECT"}`, "INJECT"},
+		{"control character newline in code", resAuditID, `{"reference":"LV-1\nINJECT"}`, "INJECT"},
 	}
 
 	assertNoPIIEcho := func(err error, label, leak string) {
@@ -249,7 +249,7 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 
 	appSvc := service.New(appStore, config.Config{
 		AppEnv: "test", DatabaseURL: appURL, EncryptionKey: testEncryptionKey,
-		SessionTTL: time.Hour, SessionIdleTTL: 30 * time.Minute, EmailFrom: "bookings@tirbach.wales",
+		SessionTTL: time.Hour, SessionIdleTTL: 30 * time.Minute, EmailFrom: "bookings@example.com",
 	})
 	appSvc.SetClock(clk.Now)
 
@@ -363,7 +363,7 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"version": 1, "created_at": nowStr, "updated_at": nowStr,
 		},
 		"confirmation_access_token": {
-			"reference": "TB-2026-0001",
+			"reference": "LV-2026-0001",
 		},
 		"email_outbox": {
 			"actor_id": owner.ID.String(), "reconciled_at": nowStr, "resolution": "CONFIRMED_SENT",
@@ -454,7 +454,7 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"payment_attempt": uid,
 		},
 		"property": {
-			"id": prop.ID.String(), "slug": "tir-bach", "country_code": "GB",
+			"id": prop.ID.String(), "slug": "demo-property", "country_code": "GB",
 			"timezone": "Europe/London", "currency": "GBP", "check_in_time": "15:00",
 			"check_out_time": "10:00", "vat_registered": true, "version": 1,
 			"created_at": nowStr, "updated_at": nowStr,
@@ -493,7 +493,7 @@ func TestPhase332FinalAcceptance_AllResourceTypesRedactionAndImmutability(t *tes
 			"currency": "GBP", "row_count": 4, "created_at": nowStr,
 		},
 		"reservation": {
-			"reservation_id": uid, "reference": "TB-2026-0099", "guest_id": uid2,
+			"reservation_id": uid, "reference": "LV-2026-0099", "guest_id": uid2,
 			"channel_code": "DIRECT", "arrival_date": "2026-07-01", "departure_date": "2026-07-04",
 			"nights": 3, "adults": 2, "children": 0, "infants": 0,
 			"status": "CONFIRMED", "payment_status": "PAID", "total_pence": 36000,

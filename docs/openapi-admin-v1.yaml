@@ -6,7 +6,7 @@ info:
     Authenticated administrative API for the LOVELACE Operations Centre, 5-stage Daily
     Changeover Board (Phase 3 Milestone 1), Maintenance Management & Facilities
     (Phase 3 Milestone 2), and Guest Management & Communications CRM (Phase 3 Milestone 3).
-    Requires valid admin session cookie (`tirbach_session`) and `X-CSRF-Token` header on
+    Requires valid admin session cookie (`lovelace_session`) and `X-CSRF-Token` header on
     all state-changing admin requests. Delivery webhooks use HMAC-SHA256 `X-Email-Signature`.
     Strictly separate from `/api/public/v1/*`.
 servers:
@@ -787,7 +787,7 @@ components:
     adminSessionCookie:
       type: apiKey
       in: cookie
-      name: tirbach_session
+      name: lovelace_session
   parameters:
     PropertyID:
       name: propertyID

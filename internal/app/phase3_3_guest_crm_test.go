@@ -16,10 +16,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func signEmailWebhookBody(secret string, raw []byte) string {
@@ -33,7 +33,7 @@ func TestPhase3Milestone3GuestProfileSegmentationAndMerge(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestPhase3Milestone3GuestProfileSegmentationAndMerge(t *testing.T) {
 	pastStay, err := svc.CreateReservation(ctx, ownerActor, domain.Reservation{
 		PropertyID:    prop.ID,
 		GuestName:     "Lowri Returning",
-		GuestEmail:    "lowri@pembrokeshire.test",
+		GuestEmail:    "lowri@countryside.test",
 		GuestPhone:    "+44 7700 900222",
 		ChannelCode:   "DIRECT",
 		ArrivalDate:   today.AddDate(0, 0, -5),
@@ -124,7 +124,7 @@ func TestPhase3Milestone3GuestProfileSegmentationAndMerge(t *testing.T) {
 	if _, err := svc.CreateReservation(ctx, ownerActor, domain.Reservation{
 		PropertyID:    prop.ID,
 		GuestName:     "Lowri Returning",
-		GuestEmail:    "lowri@pembrokeshire.test",
+		GuestEmail:    "lowri@countryside.test",
 		ChannelCode:   "DIRECT",
 		ArrivalDate:   today.AddDate(0, 0, 20),
 		DepartureDate: today.AddDate(0, 0, 22),
@@ -234,7 +234,7 @@ func TestPhase3Milestone3NotesVsPreferencesAndTemplateIsolation(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	units, _ := svc.ListUnits(ctx, ownerActor, prop.ID, nil)
 
@@ -387,7 +387,7 @@ func TestPhase3Milestone3EnquiriesMaintenanceCommsWebhookAndAutomation(t *testin
 		PublicOrigin:        "http://127.0.0.1:3000",
 		PublicAPISecret:     "pub-p33-auto",
 		StripeWebhookSecret: "whsec_test_lovelace_phase2_secret",
-		EmailFrom:           "bookings@tirbach.wales",
+		EmailFrom:           "bookings@example.com",
 		EmailWebhookSecret:  emailSecret,
 	}
 	svc := service.New(store, cfg)
@@ -402,7 +402,7 @@ func TestPhase3Milestone3EnquiriesMaintenanceCommsWebhookAndAutomation(t *testin
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	cats, _ := svc.ListMaintenanceCategories(ctx, ownerActor, prop.ID, false)
 	units, _ := svc.ListUnits(ctx, ownerActor, prop.ID, nil)
@@ -442,7 +442,7 @@ func TestPhase3Milestone3EnquiriesMaintenanceCommsWebhookAndAutomation(t *testin
 		t.Fatalf("dispatch booking confirmation: %v", err)
 	}
 
-	guests, err := svc.ListGuests(ctx, ownerActor, prop.ID, domain.GuestDirectoryFilter{Query: "carys@example.wales"})
+	guests, err := svc.ListGuests(ctx, ownerActor, prop.ID, domain.GuestDirectoryFilter{Query: "carys@example.com"})
 	if err != nil || len(guests) != 1 {
 		t.Fatalf("expected booked guest Carys in CRM directory, got len=%d err=%v", len(guests), err)
 	}
@@ -620,7 +620,7 @@ func TestPhase3Milestone3EnquiriesMaintenanceCommsWebhookAndAutomation(t *testin
 		PropertyID:    prop.ID,
 		GuestID:       carysID,
 		GuestName:     "Carys Pritchard",
-		GuestEmail:    "carys@example.wales",
+		GuestEmail:    "carys@example.com",
 		ChannelCode:   "DIRECT",
 		ArrivalDate:   clk.Now().AddDate(0, 0, 6),
 		DepartureDate: clk.Now().AddDate(0, 0, 8),
@@ -653,14 +653,14 @@ func TestPhase3Milestone3GDPRConsentExportAnonymizeRBACIsolationAndWebUI(t *test
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	// Provision multi-role users & isolated Property B.
-	staffUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmstaff@tirbach.wales", FullName: "Ceri Staff", Role: domain.RoleStaff, Password: "crm-staff-pass-2026"})
-	viewerUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmviewer@tirbach.wales", FullName: "Iwan Viewer", Role: domain.RoleViewer, Password: "crm-viewer-pass-2026"})
-	hkUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmhk@tirbach.wales", FullName: "Nia Cleaner", Role: domain.RoleHousekeepingStaff, Password: "crm-hk-pass-2026"})
-	mntUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmmnt@tirbach.wales", FullName: "Trystan Fixer", Role: domain.RoleMaintenanceStaff, Password: "crm-mnt-pass-2026"})
+	staffUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmstaff@example.com", FullName: "Ceri Staff", Role: domain.RoleStaff, Password: "crm-staff-pass-2026"})
+	viewerUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmviewer@example.com", FullName: "Iwan Viewer", Role: domain.RoleViewer, Password: "crm-viewer-pass-2026"})
+	hkUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmhk@example.com", FullName: "Nia Cleaner", Role: domain.RoleHousekeepingStaff, Password: "crm-hk-pass-2026"})
+	mntUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{Email: "crmmnt@example.com", FullName: "Trystan Fixer", Role: domain.RoleMaintenanceStaff, Password: "crm-mnt-pass-2026"})
 
 	propB, err := store.CreateProperty(ctx, nil, domain.Property{
 		ID:           uuid.New(),
@@ -789,7 +789,7 @@ func TestPhase3Milestone3GDPRConsentExportAnonymizeRBACIsolationAndWebUI(t *test
 	viewerClient, _ := loginAdminClient(t, srv.URL, viewerUser.Email, "crm-viewer-pass-2026")
 	staffClient, staffCSRF := loginAdminClient(t, srv.URL, staffUser.Email, "crm-staff-pass-2026")
 	bClient, _ := loginAdminClient(t, srv.URL, propBStaff.Email, "prop-b-manager-pass-2026")
-	ownerClient, _ := loginAdminClient(t, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	ownerClient, _ := loginAdminClient(t, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	_, _ = hkCSRF, mntCSRF
 
 	// Housekeeping & maintenance staff have zero Guest CRM access + GuestCRM.Visible == false on Ops Centre.

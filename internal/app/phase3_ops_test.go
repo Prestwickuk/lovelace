@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
@@ -25,7 +25,7 @@ func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
 
 	// Provision a staff operator and a read-only viewer for RBAC & assignment tests.
 	staffUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "warden@tirbach.wales",
+		Email:    "warden@example.com",
 		FullName: "Morfudd Warden",
 		Role:     domain.RoleStaff,
 		Password: "warden-ops-pass-2026",
@@ -42,7 +42,7 @@ func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
 		t.Fatalf("create staff user: %v", err)
 	}
 	viewerUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "auditor@tirbach.wales",
+		Email:    "auditor@example.com",
 		FullName: "Iwan Viewer",
 		Role:     domain.RoleViewer,
 		Password: "viewer-ops-pass-2026",
@@ -170,7 +170,7 @@ func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
 	}
 
 	// Sign in as staff operator via API and verify Operations Centre summary.
-	staffClient, staffCSRF := loginAdminClient(t, srv.URL, "warden@tirbach.wales", "warden-ops-pass-2026")
+	staffClient, staffCSRF := loginAdminClient(t, srv.URL, "warden@example.com", "warden-ops-pass-2026")
 	opsBefore := fetchOpsJSON(t, staffClient, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/operations?date="+todayStr)
 
 	if opsBefore.Summary.ArrivalsTotal != 1 || opsBefore.Summary.DeparturesTotal != 1 || opsBefore.Summary.InHouseStays != 1 {
@@ -339,7 +339,7 @@ func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
 	}
 
 	// 8. Verify RBAC: Viewer can read Operations Centre (200) but cannot mutate housekeeping (403).
-	viewerClient, viewerCSRF := loginAdminClient(t, srv.URL, "auditor@tirbach.wales", "viewer-ops-pass-2026")
+	viewerClient, viewerCSRF := loginAdminClient(t, srv.URL, "auditor@example.com", "viewer-ops-pass-2026")
 	vOpsResp, err := viewerClient.Get(srv.URL + "/api/v1/properties/" + prop.ID.String() + "/operations?date=" + todayStr)
 	if err != nil {
 		t.Fatalf("viewer ops GET: %v", err)
@@ -363,7 +363,7 @@ func TestPhase3Milestone1OperationsCentreWorkflow(t *testing.T) {
 		},
 	}
 	loginForm := url.Values{}
-	loginForm.Set("email", "warden@tirbach.wales")
+	loginForm.Set("email", "warden@example.com")
 	loginForm.Set("password", "warden-ops-pass-2026")
 	wLogin, err := webClient.PostForm(srv.URL+"/login", loginForm)
 	if err != nil {
@@ -503,14 +503,14 @@ func TestPhase31HousekeepingInspectionTimestampsAndReclean(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	managerUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "manager-p31@tirbach.wales",
+		Email:    "manager-p31@example.com",
 		FullName: "Nia Manager",
 		Role:     domain.RoleManager,
 		Password: "manager-ops-pass-2026",
@@ -621,14 +621,14 @@ func TestPhase31PaymentExceptionDestinationAndRBAC(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	owner2User, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "owner2-p31@tirbach.wales",
+		Email:    "owner2-p31@example.com",
 		FullName: "Sian Owner Two",
 		Role:     domain.RoleOwnerAdmin,
 		Password: "owner2-ops-pass-2026",
@@ -637,7 +637,7 @@ func TestPhase31PaymentExceptionDestinationAndRBAC(t *testing.T) {
 		t.Fatalf("create owner2: %v", err)
 	}
 	viewerUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "viewer-p31@tirbach.wales",
+		Email:    "viewer-p31@example.com",
 		FullName: "Bryn Viewer",
 		Role:     domain.RoleViewer,
 		Password: "viewer-ops-pass-2026",
@@ -803,7 +803,7 @@ func TestPhase31InquiryPendingConfirmedClassification(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestPhase31InquiryPendingConfirmedClassification(t *testing.T) {
 
 	// Render Operations Centre HTML to verify separate panels.
 	opViewer, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email:    "ops-p31-inq@tirbach.wales",
+		Email:    "ops-p31-inq@example.com",
 		FullName: "Seren Operator",
 		Role:     domain.RoleManager,
 		Password: "manager-inq-pass-2026",

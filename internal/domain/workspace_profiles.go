@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/tirbach/tir-bach/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/branding"
 )
 
 // Stable code-defined PWE-5 Workspace Profile identifiers.

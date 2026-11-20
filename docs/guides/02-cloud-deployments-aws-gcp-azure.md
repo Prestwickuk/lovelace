@@ -6,7 +6,7 @@ This guide covers deploying Lovelace on managed cloud infrastructure across **Am
 
 ## Shared Prerequisite: Initializing Managed PostgreSQL 17
 
-All three major clouds provide managed PostgreSQL 17 where the initial admin account (`postgres` / `rds_superuser` / `cloudsqlsuperuser` / `azure_pg_admin`) is **not** a full OS superuser. Follow these exact steps once after creating your managed PostgreSQL 17 instance so `scripts/postgres/ensure-roles.sh` and `tirbach-migrate` succeed cleanly:
+All three major clouds provide managed PostgreSQL 17 where the initial admin account (`postgres` / `rds_superuser` / `cloudsqlsuperuser` / `azure_pg_admin`) is **not** a full OS superuser. Follow these exact steps once after creating your managed PostgreSQL 17 instance so `scripts/postgres/ensure-roles.sh` and `lovelace-migrate` succeed cleanly:
 
 ### 1. Cloud-Specific Extension Pre-Check
 - **AWS RDS / Aurora PostgreSQL 17:** `pgcrypto` and `btree_gist` are pre-allowlisted by default.
@@ -64,7 +64,7 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
 ### Recommended AWS Architecture
 - **Compute:** **Amazon ECS on AWS Fargate** (`1` task for `lovelace-app` at `0.5–1 vCPU / 1–2 GB`, `1` task for `lovelace-public-web` at `0.5 vCPU / 1 GB`)
 - **Database:** **Amazon RDS for PostgreSQL 17** (`db.t4g.medium`, Multi-AZ in production, Private Subnets, Storage Encrypted)
-- **Attachments Volume:** **Amazon EFS** with an **EFS Access Point** enforcing POSIX user `uid=100, gid=101` (`tirbach:tirbach` in Alpine) and root directory `/lovelace-attachments` (`0750`) mounted at `/var/lib/lovelace/attachments` on `lovelace-app`
+- **Attachments Volume:** **Amazon EFS** with an **EFS Access Point** enforcing POSIX user `uid=100, gid=101` (`lovelace:lovelace` in Alpine) and root directory `/lovelace-attachments` (`0750`) mounted at `/var/lib/lovelace/attachments` on `lovelace-app`
 - **Ingress & TLS:** **Application Load Balancer (ALB)** with AWS Certificate Manager (ACM) HTTPS listener (`:443`) routing:
   - `Host == admin.yourdomain.com` → `lovelace-app` Target Group (port `8080`, healthcheck `/readyz`)
   - `Host == book.yourdomain.com` → `lovelace-public-web` Target Group (port `3000`, healthcheck `/api/healthz`)
@@ -100,7 +100,7 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
    - `efs-sg`: Inbound `2049/tcp` from `app-sg` only.
 
 3. **Key ECS Environment Settings:**
-   - On `lovelace-app`: set `TIRBACH_TRUST_PROXY=true` and `TIRBACH_TRUSTED_PROXIES=<VPC_CIDR>` (e.g. `10.0.0.0/16`) so the ALB's `X-Forwarded-For` header is trusted.
+   - On `lovelace-app`: set `LOVELACE_TRUST_PROXY=true` and `LOVELACE_TRUSTED_PROXIES=<VPC_CIDR>` (e.g. `10.0.0.0/16`) so the ALB's `X-Forwarded-For` header is trusted.
    - On `lovelace-public-web`: set `LOVELACE_API_BASE_URL=http://lovelace-app.internal:8080`, `LOVELACE_TRUST_PROXY=true`, and `LOVELACE_TRUSTED_PROXIES=<VPC_CIDR>`.
 
 4. **Least-Privilege IAM Policy for Off-Site S3 Backups:**
@@ -155,12 +155,12 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
    docker push "${GAR}/lovelace-public-web:${GIT_SHA}"
    ```
 
-2. **Run Migrations via Cloud Run Job (`tirbach-migrate`):**
+2. **Run Migrations via Cloud Run Job (`lovelace-migrate`):**
    ```bash
    gcloud run jobs create lovelace-migrate \
      --region="$REGION" \
      --image="${GAR}/lovelace-app:${GIT_SHA}" \
-     --command="/usr/local/bin/tirbach-migrate" \
+     --command="/usr/local/bin/lovelace-migrate" \
      --network=default --subnet=default --vpc-egress=private-ranges-only \
      --set-secrets="MIGRATION_DATABASE_URL=lovelace-migrator-dsn:latest"
 
@@ -180,8 +180,8 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
      --add-volume=name=attachments,type=cloud-storage,bucket=your-lovelace-attachments \
      --add-volume-mount=volume=attachments,mount-path=/var/lib/lovelace/attachments \
      --allow-unauthenticated \
-     --set-env-vars="TIRBACH_ENV=production,TIRBACH_LISTEN_ADDR=0.0.0.0:8080,TIRBACH_COOKIE_SECURE=true,TIRBACH_AUTO_SEED=false,TIRBACH_PUBLIC_ORIGIN=https://book.yourdomain.com,TIRBACH_ATTACHMENT_DIR=/var/lib/lovelace/attachments" \
-     --set-secrets="DATABASE_URL=lovelace-app-dsn:latest,TIRBACH_ENCRYPTION_KEY=lovelace-enc-key:latest,TIRBACH_PUBLIC_API_SECRET=lovelace-bff-secret:latest"
+     --set-env-vars="LOVELACE_ENV=production,LOVELACE_LISTEN_ADDR=0.0.0.0:8080,LOVELACE_COOKIE_SECURE=true,LOVELACE_AUTO_SEED=false,LOVELACE_PUBLIC_ORIGIN=https://book.yourdomain.com,LOVELACE_ATTACHMENT_DIR=/var/lib/lovelace/attachments" \
+     --set-secrets="DATABASE_URL=lovelace-app-dsn:latest,LOVELACE_ENCRYPTION_KEY=lovelace-enc-key:latest,LOVELACE_PUBLIC_API_SECRET=lovelace-bff-secret:latest"
 
    gcloud run deploy lovelace-public-web \
      --region="$REGION" \
@@ -242,7 +242,7 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
    ```
 
 3. **Run Migration Job & Deploy Container Apps:**
-   - Run `tirbach-migrate` as an **Azure Container Apps Job** (`--trigger-type Manual`, command `/usr/local/bin/tirbach-migrate`, `MIGRATION_DATABASE_URL` secret).
+   - Run `lovelace-migrate` as an **Azure Container Apps Job** (`--trigger-type Manual`, command `/usr/local/bin/lovelace-migrate`, `MIGRATION_DATABASE_URL` secret).
    - Deploy `lovelace-app` (`--target-port 8080 --ingress external --min-replicas 1 --max-replicas 1`, mounting `lovelace-attachments` at `/var/lib/lovelace/attachments`).
    - Deploy `lovelace-public-web` (`--target-port 3000 --ingress external --min-replicas 1 --max-replicas 1`, pointing `LOVELACE_API_BASE_URL` at `http://lovelace-app.internal.<ENV_DEFAULT_DOMAIN>` or `https://admin.yourdomain.com`).
    - Bind custom domains + managed TLS certificates via `az containerapp hostname bind`.

@@ -43,9 +43,9 @@ describe("Guest Portal BFF security & boundary helpers", () => {
   });
 
   it("validates booking references and UUIDs strictly against path traversal", () => {
-    expect(assertSafeBookingRef("TB-2026-AB12CD")).toBe("TB-2026-AB12CD");
+    expect(assertSafeBookingRef("LV-2026-AB12CD")).toBe("LV-2026-AB12CD");
     expect(() => assertSafeBookingRef("../admin")).toThrow();
-    expect(() => assertSafeBookingRef("TB 2026")).toThrow();
+    expect(() => assertSafeBookingRef("LV 2026")).toThrow();
 
     const validId = "550e8400-e29b-41d4-a716-446655440000";
     expect(assertSafeUuid(validId)).toBe(validId);
@@ -109,15 +109,15 @@ describe("Guest Portal BFF security & boundary helpers", () => {
     expect(() => assertSameOriginMutation(spoofedForwardedHostReq)).toThrow();
 
     process.env.LOVELACE_TRUST_PROXY = "true";
-    process.env.NEXT_PUBLIC_SITE_URL = "https://bookings.tirbach.wales";
+    process.env.NEXT_PUBLIC_SITE_URL = "https://bookings.example.com";
     const trustedProxyReq = new NextRequest(
       "http://127.0.0.1:3000/api/public/portal/consent",
       {
         method: "POST",
         headers: {
           host: "127.0.0.1:3000",
-          origin: "https://bookings.tirbach.wales",
-          "x-forwarded-host": "bookings.tirbach.wales",
+          origin: "https://bookings.example.com",
+          "x-forwarded-host": "bookings.example.com",
           "x-forwarded-proto": "https",
         },
       },
@@ -202,13 +202,13 @@ describe("Guest Portal BFF security & boundary helpers", () => {
     });
   });
 
-  it("never accepts admin tirbach_session cookie and requires CSRF token on mutations", async () => {
+  it("never accepts admin lovelace_session cookie and requires CSRF token on mutations", async () => {
     const adminCookieReq = new NextRequest(
       "http://localhost:3000/api/public/portal/bookings",
       {
         method: "GET",
         headers: {
-          cookie: "tirbach_session=admin-secret-token-value",
+          cookie: "lovelace_session=admin-secret-token-value",
         },
       },
     );
@@ -233,7 +233,7 @@ describe("Guest Portal BFF security & boundary helpers", () => {
     ).rejects.toMatchObject({ status: 403, code: "csrf_invalid" });
 
     expect(buildPropertyPortalPath("/bookings")).toBe(
-      "/api/public/v1/properties/tir-bach/portal/bookings",
+      "/api/public/v1/properties/demo-property/portal/bookings",
     );
   });
 

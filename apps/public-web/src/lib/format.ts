@@ -60,15 +60,15 @@ export function formatAmenity(slug: string): string {
 const FALLBACK_IMAGES: Record<string, UnitTypeImage> = {
   "bell-tent": {
     url: "/images/bell-tent.jpg",
-    alt: "Furnished 5m canvas bell tent on the wildflower meadow at Tir Bach Campsite",
+    alt: "Furnished 5m canvas bell tent on the wildflower meadow",
   },
   "shepherds-hut": {
     url: "/images/shepherds-hut.jpg",
-    alt: "Preseli handcrafted timber shepherd's hut overlooking the coastal hills",
+    alt: "Handcrafted timber shepherd's hut overlooking the countryside",
   },
   "grass-pitch": {
     url: "/images/grass-pitch.jpg",
-    alt: "Sheltered meadow grass tent pitch bordered by Welsh stone hedgerows",
+    alt: "Sheltered meadow grass tent pitch bordered by stone hedgerows",
   },
   "electric-pitch": {
     url: "/images/electric-pitch.jpg",
@@ -81,8 +81,8 @@ export function getUnitTypeGallery(ut: PublicUnitTypeView): UnitTypeImage[] {
     return ut.images;
   }
   const fallback = FALLBACK_IMAGES[ut.code] ?? {
-    url: "/images/hero-pembrokeshire.jpg",
-    alt: `${ut.name} at Tir Bach Campsite, Pembrokeshire`,
+    url: "/images/hero-landscape.jpg",
+    alt: `${ut.name} accommodation`,
   };
   return [fallback];
 }

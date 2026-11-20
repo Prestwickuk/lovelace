@@ -371,7 +371,11 @@ export function PortalProfileClient() {
                   onChange={(e) => setPreferredLang(e.target.value)}
                 >
                   <option value="en">English (en)</option>
-                  <option value="cy">Cymraeg / Welsh (cy)</option>
+                  <option value="fr">Français (fr)</option>
+                  <option value="de">Deutsch (de)</option>
+                  <option value="es">Español (es)</option>
+                  <option value="nl">Nederlands (nl)</option>
+                  <option value="it">Italiano (it)</option>
                 </select>
               </div>
 
@@ -600,7 +604,7 @@ export function PortalProfileClient() {
                 type="text"
                 value={enqBookingRef}
                 onChange={(e) => setEnqBookingRef(e.target.value)}
-                placeholder="e.g. TB-2026-AB12CD"
+                placeholder="e.g. LV-2026-AB12CD"
               />
             </div>
           </div>

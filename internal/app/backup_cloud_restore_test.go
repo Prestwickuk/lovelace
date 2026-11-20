@@ -26,13 +26,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/backup"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/seed"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/backup"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/seed"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func TestBackupsMultiCloudSyncIntegrityAndEmptyDBRestore(t *testing.T) {
@@ -66,7 +66,7 @@ func TestBackupsMultiCloudSyncIntegrityAndEmptyDBRestore(t *testing.T) {
 	resetAll := func() {
 		t.Helper()
 		err := store.WithTx(ctx, func(tx pgx.Tx) error {
-			if _, txErr := tx.Exec(ctx, `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'`); txErr != nil {
+			if _, txErr := tx.Exec(ctx, `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'`); txErr != nil {
 				return txErr
 			}
 			_, txErr := tx.Exec(ctx, `
@@ -632,8 +632,8 @@ func TestBackupsMultiCloudSyncIntegrityAndEmptyDBRestore(t *testing.T) {
 
 	// Verify property, units, extras, manager user, and disk attachment were all restored while active owner session still works!
 	restoredProps, err := store.ListProperties(ctx)
-	if err != nil || len(restoredProps) != 1 || restoredProps[0].Slug != "tir-bach" {
-		t.Fatalf("expected tir-bach property restored, got %+v (err=%v)", restoredProps, err)
+	if err != nil || len(restoredProps) != 1 || restoredProps[0].Slug != "demo-property" {
+		t.Fatalf("expected demo-property property restored, got %+v (err=%v)", restoredProps, err)
 	}
 	restoredUnits, _ := store.ListUnits(ctx, restoredProps[0].ID, nil, false)
 	if len(restoredUnits) != 6 {

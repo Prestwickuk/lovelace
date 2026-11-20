@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/httpx"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/payments"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/httpx"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/payments"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 type failingStripeProvider struct {
@@ -75,13 +75,13 @@ func (m *configurableMailSender) Send(ctx context.Context, msg mailer.Message) e
 func createTestHoldViaAPI(t *testing.T, srv *httptest.Server, client *http.Client, secret string, arr, dep string) service.CreateHoldResult {
 	t.Helper()
 	holdResp := doPublicJSON(t, client, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", secret, "http://127.0.0.1:3000", map[string]any{
-		"property_slug":  "tir-bach",
+		"property_slug":  "demo-property",
 		"unit_type_code": "bell-tent",
 		"arrival_date":   arr,
 		"departure_date": dep,
 		"adults":         2,
 		"guest_name":     "Carys Morgan",
-		"guest_email":    "carys@example.wales",
+		"guest_email":    "carys@example.com",
 		"guest_phone":    "+447700900333",
 		"accept_terms":   true,
 	})
@@ -97,8 +97,8 @@ func createTestHoldViaAPI(t *testing.T, srv *httptest.Server, client *http.Clien
 }
 
 func TestPhase21CheckoutReturnURLSecurityUnitAndAPI(t *testing.T) {
-	allowed := []string{"https://book.tirbach.wales"}
-	domains := []string{"book.tirbach.wales"}
+	allowed := []string{"https://book.example.com"}
+	domains := []string{"book.example.com"}
 
 	badURLs := []struct {
 		name string
@@ -106,12 +106,12 @@ func TestPhase21CheckoutReturnURLSecurityUnitAndAPI(t *testing.T) {
 		prod bool
 	}{
 		{"external https", "https://evil.example/steal", true},
-		{"http in prod", "http://book.tirbach.wales/booking/confirmation", true},
+		{"http in prod", "http://book.example.com/booking/confirmation", true},
 		{"protocol relative", "//evil.example/steal", true},
-		{"subdomain suffix spoof", "https://book.tirbach.wales.evil.com/booking/confirmation", true},
-		{"unapproved subdomain", "https://sub.book.tirbach.wales/booking/confirmation", true},
-		{"userinfo injection", "https://user:pass@book.tirbach.wales/booking/confirmation", true},
-		{"backslash relative", `https://book.tirbach.wales\evil`, true},
+		{"subdomain suffix spoof", "https://book.example.com.evil.com/booking/confirmation", true},
+		{"unapproved subdomain", "https://sub.book.example.com/booking/confirmation", true},
+		{"userinfo injection", "https://user:pass@book.example.com/booking/confirmation", true},
+		{"backslash relative", `https://book.example.com\evil`, true},
 		{"malformed url", "not a url", true},
 	}
 	for _, tc := range badURLs {
@@ -120,11 +120,11 @@ func TestPhase21CheckoutReturnURLSecurityUnitAndAPI(t *testing.T) {
 		}
 	}
 
-	good, err := payments.ValidateCheckoutReturnURL("https://book.tirbach.wales/booking/confirmation?ref=HLD-1&session_id={CHECKOUT_SESSION_ID}", allowed, domains, true)
+	good, err := payments.ValidateCheckoutReturnURL("https://book.example.com/booking/confirmation?ref=HLD-1&session_id={CHECKOUT_SESSION_ID}", allowed, domains, true)
 	if err != nil {
 		t.Fatalf("valid configured property domain rejected: %v", err)
 	}
-	if !strings.HasPrefix(good, "https://book.tirbach.wales/booking/confirmation") {
+	if !strings.HasPrefix(good, "https://book.example.com/booking/confirmation") {
 		t.Fatalf("unexpected validated URL: %s", good)
 	}
 
@@ -165,7 +165,7 @@ func TestPhase21StripeEnabledEnforcementAndFailClosedProductionReadiness(t *test
 	srv, store, svc, prop, stripeMock, _, clk := setupPhase2TestServer(t, "pub-sec-policy")
 	pubClient := newClient(t)
 	adminClient := newClient(t)
-	_, csrf := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	_, csrf := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 
 	// Disable stripe_enabled on property via Admin API while keeping configurable policies
 	policyResp, err := adminClient.Get(srv.URL + "/api/v1/properties/" + prop.ID.String() + "/booking-policy")
@@ -191,7 +191,7 @@ func TestPhase21StripeEnabledEnforcementAndFailClosedProductionReadiness(t *test
 	}
 
 	// Verify public property API exposes updated configurable policies & stripe_enabled=false
-	pubPropResp := doPublicJSON(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/properties/tir-bach", "pub-sec-policy", "", nil)
+	pubPropResp := doPublicJSON(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/properties/demo-property", "pub-sec-policy", "", nil)
 	var pubPropEnv struct {
 		Property domain.PublicPropertyView `json:"property"`
 	}
@@ -224,7 +224,7 @@ func TestPhase21StripeEnabledEnforcementAndFailClosedProductionReadiness(t *test
 		DatabaseURL:     dbURL,
 		CookieSecure:    true,
 		EncryptionKey:   testEncryptionKey,
-		PublicOrigin:    "https://book.tirbach.wales",
+		PublicOrigin:    "https://book.example.com",
 		PublicAPISecret: "prod-strong-secret-0123456789abcdef",
 	})
 	if err := prodDisabledSvc.ValidateProductionStartup(context.Background()); err != nil {
@@ -253,7 +253,7 @@ func TestPhase21StripeEnabledEnforcementAndFailClosedProductionReadiness(t *test
 		DatabaseURL:     dbURL,
 		CookieSecure:    true,
 		EncryptionKey:   testEncryptionKey,
-		PublicOrigin:    "https://book.tirbach.wales",
+		PublicOrigin:    "https://book.example.com",
 		PublicAPISecret: "prod-strong-secret-0123456789abcdef",
 		StripeSandbox:   true,
 	})
@@ -370,7 +370,7 @@ func TestPhase21EmailOutboxFailClosedAndPermanentFailure(t *testing.T) {
 		AppEnv:        "test",
 		DatabaseURL:   dbURL,
 		EncryptionKey: testEncryptionKey,
-		EmailFrom:     "bookings@tirbach.wales",
+		EmailFrom:     "bookings@example.com",
 	})
 	noMailSvc.SetClock(clk.Now)
 	if noMailSvc.HasEmailProvider() {
@@ -382,7 +382,7 @@ func TestPhase21EmailOutboxFailClosedAndPermanentFailure(t *testing.T) {
 	_ = resID
 	_, err := store.QueueEmail(context.Background(), nil, domain.EmailOutboxItem{
 		PropertyID:     prop.ID,
-		RecipientEmail: "guest@example.wales",
+		RecipientEmail: "guest@example.com",
 		Template:       "booking_confirmation",
 		Subject:        "Test Confirmation",
 		BodyText:       "Body",

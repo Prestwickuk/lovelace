@@ -14,9 +14,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func newFollowingClient(t *testing.T) *http.Client {
@@ -67,10 +67,10 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 
 	// Locate seeded owner and create second property + two distinct staff/manager users.
 	var ownerID uuid.UUID
-	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales'`).Scan(&ownerID); err != nil {
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com'`).Scan(&ownerID); err != nil {
 		t.Fatalf("find owner: %v", err)
 	}
-	ownerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	ownerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	// Create Property B with its own unit type + channel to prove cross-property isolation.
 	propBID := uuid.New()
@@ -97,7 +97,7 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 	// Create User A (Manager on Prop A), User B (Staff on Prop A), User C (must_rotate_password = TRUE on Prop A).
 	userA, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &propA.ID,
-		Email:      "pwe2.usera@tirbach.wales",
+		Email:      "pwe2.usera@example.com",
 		FullName:   "PWE2 Manager A",
 		Role:       domain.RoleManager,
 		Password:   "Pwe2ManagerPass!2026",
@@ -107,7 +107,7 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 	}
 	userB, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &propA.ID,
-		Email:      "pwe2.userb@tirbach.wales",
+		Email:      "pwe2.userb@example.com",
 		FullName:   "PWE2 Staff B",
 		Role:       domain.RoleStaff,
 		Password:   "Pwe2StaffPass!2026",
@@ -117,7 +117,7 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 	}
 	userRot, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID:         &propA.ID,
-		Email:              "pwe2.rotate@tirbach.wales",
+		Email:              "pwe2.rotate@example.com",
 		FullName:           "PWE2 Rotate User",
 		Role:               domain.RoleManager,
 		Password:           "TempRotatePass!2026",
@@ -424,7 +424,7 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 	`, ownerID, propBID, `[{"id":"b1","name":"Secret Prop B View","screen":"calendar","filters":{"unit_type_id":"`+utBID.String()+`"}}]`); err != nil {
 		t.Fatalf("seed owner prop B workspace: %v", err)
 	}
-	ownerPropAActor := service.Actor{UserID: ownerID, PropertyID: &propA.ID, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	ownerPropAActor := service.Actor{UserID: ownerID, PropertyID: &propA.ID, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 	if _, err := migratorStore.Pool().Exec(ctx, `UPDATE admin_users SET property_id = $2 WHERE id = $1`, ownerID, propA.ID); err != nil {
 		t.Fatalf("restrict owner property_id in DB: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestPWE2_UserPersonalisationIsolationSecurityAndRecovery(t *testing.T) {
 	// Hard delete a user without append-only audit_logs actor FKs -> ON DELETE CASCADE leaves zero orphaned preference/workspace rows.
 	userC, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &propA.ID,
-		Email:      "cascade-user@tirbach.wales",
+		Email:      "cascade-user@example.com",
 		FullName:   "Cascade Delete User",
 		Role:       domain.RoleStaff,
 		Password:   "Cascade-Passw0rd!2026",

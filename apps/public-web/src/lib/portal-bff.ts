@@ -325,7 +325,7 @@ export async function callLovelacePortal<T>(
   const requireSession = options.requireSession ?? true;
   const requireCsrf = options.requireCsrf ?? false;
 
-  // Strictly read ONLY lovelace_guest_session; never read admin tirbach_session.
+  // Strictly read ONLY lovelace_guest_session; never read admin lovelace_session.
   const sessionToken = (req.cookies.get(GUEST_SESSION_COOKIE)?.value || "").trim();
   if (requireSession && !sessionToken) {
     throw new LovelaceApiError(

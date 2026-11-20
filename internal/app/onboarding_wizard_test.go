@@ -18,11 +18,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
@@ -54,7 +54,7 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 	}
 
 	err = store.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, txErr := tx.Exec(ctx, `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'`); txErr != nil {
+		if _, txErr := tx.Exec(ctx, `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'`); txErr != nil {
 			return txErr
 		}
 		_, txErr := tx.Exec(ctx, `
@@ -197,10 +197,10 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 		"preset":         {"campsite"},
 		"name":           {"Meadowbrook Coastal Glamping"},
 		"slug":           {""},
-		"tagline":        {"Wildflower camping and bell tents near St Davids"},
-		"town":           {"St Davids"},
-		"region":         {"Pembrokeshire, Wales"},
-		"postcode":       {"SA62 6QN"},
+		"tagline":        {"Wildflower camping and bell tents near Market Town"},
+		"town":           {"Market Town"},
+		"region":         {"Countryside"},
+		"postcode":       {"AB1 2CD"},
 		"country_code":   {"GB"},
 		"currency":       {"GBP"},
 		"timezone":       {"Europe/London"},

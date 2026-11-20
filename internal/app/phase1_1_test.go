@@ -15,15 +15,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/secrets"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/secrets"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestVerifySafeTestDatabase(t *testing.T) {
-	if err := verifySafeTestDatabase("postgres://tir_bach_test_runner:p@127.0.0.1:5432/tir_bach_test?sslmode=disable", "tir_bach_test", "tir_bach_test_runner", false); err != nil {
+	if err := verifySafeTestDatabase("postgres://lovelace_test_runner:p@127.0.0.1:5432/lovelace_test?sslmode=disable", "lovelace_test", "lovelace_test_runner", false); err != nil {
 		t.Fatalf("expected valid test db & role to pass, got: %v", err)
 	}
 	for _, tc := range []struct {
@@ -32,14 +32,14 @@ func TestVerifySafeTestDatabase(t *testing.T) {
 		user  string
 		super bool
 	}{
-		{"postgres://u:p@127.0.0.1:5432/tir_bach", "tir_bach", "tir_bach_test_runner", false},
-		{"postgres://u:p@127.0.0.1:5432/postgres", "postgres", "tir_bach_test_runner", false},
-		{"postgres://u:p@127.0.0.1:5432/tir_bach_prod_test", "tir_bach_prod_test", "tir_bach_test_runner", false},
-		{"postgres://u:p@127.0.0.1:5432/tir_bach_test", "tir_bach", "tir_bach_test_runner", false},
-		{"postgres://u:p@127.0.0.1:5432/tir_bach_test", "tir_bach_test", "tir_bach", true},
-		{"postgres://u:p@127.0.0.1:5432/tir_bach_test", "tir_bach_test", "postgres", false},
-		{"postgres://u:p@127.0.0.1:5432/tir_bach_test", "tir_bach_test", "prod_admin", false},
-		{"postgres://u:p@prod.db.internal:5432/tir_bach_test", "tir_bach_test", "tir_bach_test_runner", false},
+		{"postgres://u:p@127.0.0.1:5432/lovelace", "lovelace", "lovelace_test_runner", false},
+		{"postgres://u:p@127.0.0.1:5432/postgres", "postgres", "lovelace_test_runner", false},
+		{"postgres://u:p@127.0.0.1:5432/lovelace_prod_test", "lovelace_prod_test", "lovelace_test_runner", false},
+		{"postgres://u:p@127.0.0.1:5432/lovelace_test", "lovelace", "lovelace_test_runner", false},
+		{"postgres://u:p@127.0.0.1:5432/lovelace_test", "lovelace_test", "lovelace", true},
+		{"postgres://u:p@127.0.0.1:5432/lovelace_test", "lovelace_test", "postgres", false},
+		{"postgres://u:p@127.0.0.1:5432/lovelace_test", "lovelace_test", "prod_admin", false},
+		{"postgres://u:p@prod.db.internal:5432/lovelace_test", "lovelace_test", "lovelace_test_runner", false},
 	} {
 		if err := verifySafeTestDatabase(tc.url, tc.db, tc.user, tc.super); err == nil {
 			t.Fatalf("expected non-test db/role/host (%+v) to fail closed", tc)
@@ -72,28 +72,28 @@ func TestConfigAndSecretsUnit(t *testing.T) {
 	}
 
 	// Production config fails closed if dev defaults or insecure flags are set.
-	t.Setenv("TIRBACH_ENV", "production")
-	t.Setenv("DATABASE_URL", "postgres://tir_bach:strong_prod_pw_9988@db:5432/tir_bach?sslmode=require")
-	t.Setenv("TIRBACH_COOKIE_SECURE", "false")
-	t.Setenv("TIRBACH_AUTO_SEED", "false")
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90")
+	t.Setenv("LOVELACE_ENV", "production")
+	t.Setenv("DATABASE_URL", "postgres://lovelace:strong_prod_pw_9988@db:5432/lovelace?sslmode=require")
+	t.Setenv("LOVELACE_COOKIE_SECURE", "false")
+	t.Setenv("LOVELACE_AUTO_SEED", "false")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90")
 	if _, err := config.Load(); err == nil {
-		t.Fatal("expected production load with TIRBACH_COOKIE_SECURE=false to fail closed")
+		t.Fatal("expected production load with LOVELACE_COOKIE_SECURE=false to fail closed")
 	}
 
-	t.Setenv("TIRBACH_COOKIE_SECURE", "true")
-	t.Setenv("TIRBACH_AUTO_SEED", "true")
+	t.Setenv("LOVELACE_COOKIE_SECURE", "true")
+	t.Setenv("LOVELACE_AUTO_SEED", "true")
 	if _, err := config.Load(); err == nil {
-		t.Fatal("expected production load with TIRBACH_AUTO_SEED=true to fail closed")
+		t.Fatal("expected production load with LOVELACE_AUTO_SEED=true to fail closed")
 	}
 
-	t.Setenv("TIRBACH_AUTO_SEED", "false")
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	t.Setenv("LOVELACE_AUTO_SEED", "false")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
 	if _, err := config.Load(); err == nil {
 		t.Fatal("expected production load with known dev encryption key to fail closed")
 	}
 
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90")
 	if _, err := config.Load(); err != nil {
 		t.Fatalf("expected valid hardened production config to load, got: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 	srv, store, prop := setupTestServer(t)
 	ownerClient := newClient(t)
 
-	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if code != http.StatusOK || csrf == "" {
 		t.Fatalf("owner login failed: %d", code)
 	}
@@ -152,7 +152,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 
 	// Scenario 1: Manual multi-unit reservation with unique reference
 	resCreate := doJSON(t, ownerClient, http.MethodPost, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/reservations", csrf, map[string]any{
-		"guest_name": "Bryn Morgan", "guest_email": "bryn@example.wales", "guest_phone": "+44 7700 900111",
+		"guest_name": "Bryn Morgan", "guest_email": "bryn@example.com", "guest_phone": "+44 7700 900111",
 		"channel_code": "PHONE", "arrival_date": "2026-09-10", "departure_date": "2026-09-14",
 		"adults": 4, "children": 2, "infants": 1, "status": "CONFIRMED",
 		"internal_notes": "Family group booking two pods",
@@ -165,7 +165,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 	var res1 domain.Reservation
 	_ = json.NewDecoder(resCreate.Body).Decode(&res1)
 	resCreate.Body.Close()
-	if !strings.HasPrefix(res1.Reference, "TB-") || len(res1.Units) != 2 {
+	if !strings.HasPrefix(res1.Reference, "LV-") || len(res1.Units) != 2 {
 		t.Fatalf("unexpected reservation payload: %+v", res1)
 	}
 
@@ -419,7 +419,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 
 	// Scenario 9: Channel Manager Configuration Framework + encrypted secrets + never CONNECTED
 	badConnected := doJSON(t, ownerClient, http.MethodPut, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/integrations/channel-manager/beds24", csrf, map[string]any{
-		"display_name": "Tir Bach Beds24",
+		"display_name": "Meadowbrook Beds24",
 		"status":       "CONNECTED",
 		"inputs":       map[string]string{"property_id": "12345", "refresh_token": "secret_b24_key_9988"},
 	})
@@ -429,7 +429,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 	}
 
 	saveCh := doJSON(t, ownerClient, http.MethodPut, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/integrations/channel-manager/beds24", csrf, map[string]any{
-		"display_name": "Tir Bach Beds24",
+		"display_name": "Meadowbrook Beds24",
 		"inputs":       map[string]string{"property_id": "12345", "refresh_token": "secret_b24_key_9988"},
 	})
 	if saveCh.StatusCode != http.StatusOK {
@@ -453,7 +453,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 		t.Fatalf("channel credentials in DB invalid or unencrypted: err=%v", err)
 	}
 	saveChx := doJSON(t, ownerClient, http.MethodPut, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/integrations/channel-manager/channex", csrf, map[string]any{
-		"display_name": "Tir Bach Channex",
+		"display_name": "Meadowbrook Channex",
 		"inputs":       map[string]string{"property_id": "chx-prop-1", "environment": "staging", "user_api_key": "chx_user_api_key_4321"},
 	})
 	if saveChx.StatusCode != http.StatusOK {
@@ -481,7 +481,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 
 	// Scenario 10: must_rotate_password enforcement + session invalidation across sessions
 	createTemp := doJSON(t, ownerClient, http.MethodPost, srv.URL+"/api/v1/users", csrf, map[string]any{
-		"property_id": prop.ID, "email": "temp@tirbach.wales", "full_name": "Temp Manager",
+		"property_id": prop.ID, "email": "temp@example.com", "full_name": "Temp Manager",
 		"role": "manager", "password": "temporary-password-2026", "must_rotate_password": true,
 	})
 	if createTemp.StatusCode != http.StatusCreated {
@@ -491,9 +491,9 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 
 	// Two separate clients log in with temp password
 	tempClient1 := newClient(t)
-	c1, csrf1 := apiLogin(t, tempClient1, srv.URL, "temp@tirbach.wales", "temporary-password-2026")
+	c1, csrf1 := apiLogin(t, tempClient1, srv.URL, "temp@example.com", "temporary-password-2026")
 	tempClient2 := newClient(t)
-	c2, _ := apiLogin(t, tempClient2, srv.URL, "temp@tirbach.wales", "temporary-password-2026")
+	c2, _ := apiLogin(t, tempClient2, srv.URL, "temp@example.com", "temporary-password-2026")
 	if c1 != http.StatusOK || c2 != http.StatusOK {
 		t.Fatalf("temp manager login failed: %d / %d", c1, c2)
 	}
@@ -507,7 +507,7 @@ func TestPhase1_1EndToEnd(t *testing.T) {
 	// Web UI redirects to /account?rotate=1
 	webTemp := newClient(t)
 	f := url.Values{}
-	f.Set("email", "temp@tirbach.wales")
+	f.Set("email", "temp@example.com")
 	f.Set("password", "temporary-password-2026")
 	_, _ = webTemp.PostForm(srv.URL+"/login", f)
 	webRedir, _ := webTemp.Get(srv.URL + "/calendar")

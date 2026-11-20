@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 	"github.com/jackc/pgx/v5"
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
 )
 
 func TestPhase211StripeKeyPrefixValidationAndProductionStartup(t *testing.T) {
@@ -80,11 +80,11 @@ func TestPhase211StripeKeyPrefixValidationAndProductionStartup(t *testing.T) {
 		DatabaseURL:         dbURL,
 		CookieSecure:        true,
 		EncryptionKey:       testEncryptionKey,
-		PublicOrigin:        "https://book.tirbach.wales",
+		PublicOrigin:        "https://book.example.com",
 		PublicAPISecret:     "prod-strong-secret-0123456789abcdef",
 		StripeWebhookSecret: "whsec_live_valid_0123456789abcdef",
-		SMTPAddr:            "smtp.example.wales:587",
-		EmailFrom:           "bookings@tirbach.wales",
+		SMTPAddr:            "smtp.example.com:587",
+		EmailFrom:           "bookings@example.com",
 	}
 
 	for _, testKey := range []string{"sk_test_lovelace_dev_0123456789", "rk_test_lovelace_dev_0123456789"} {
@@ -121,12 +121,12 @@ func TestPhase211StripeWebhookLiveModeAndOutOfOrder(t *testing.T) {
 		DatabaseURL:         dbURL,
 		CookieSecure:        true,
 		EncryptionKey:       testEncryptionKey,
-		PublicOrigin:        "https://book.tirbach.wales",
+		PublicOrigin:        "https://book.example.com",
 		PublicAPISecret:     "prod-p211-bff-secret",
 		StripeSecretKey:     "sk_live_lovelace_prod_0123456789abcdef",
 		StripeWebhookSecret: prodSecret,
 		SMTPAddr:            "127.0.0.1:2525",
-		EmailFrom:           "bookings@tirbach.wales",
+		EmailFrom:           "bookings@example.com",
 	}
 	prodSvc := service.New(store, prodCfg)
 	prodSvc.SetPaymentProvider(stripeMock)
@@ -149,7 +149,7 @@ func TestPhase211StripeWebhookLiveModeAndOutOfOrder(t *testing.T) {
 		PublicAPISecret:     "dev-p211-bff-secret",
 		StripeSecretKey:     "sk_test_lovelace_dev_0123456789abcdef",
 		StripeWebhookSecret: devSecret,
-		EmailFrom:           "bookings@tirbach.wales",
+		EmailFrom:           "bookings@example.com",
 	}
 	devSvc := service.New(store, devCfg)
 	devSvc.SetPaymentProvider(stripeMock)
@@ -376,7 +376,7 @@ func TestPhase211MandatoryEmailReadinessForPublicBookings(t *testing.T) {
 		DatabaseURL:     dbURL,
 		CookieSecure:    true,
 		EncryptionKey:   testEncryptionKey,
-		PublicOrigin:    "https://book.tirbach.wales",
+		PublicOrigin:    "https://book.example.com",
 		PublicAPISecret: "prod-p211-mail-secret",
 		RequireEmail:    false,
 	}
@@ -402,7 +402,7 @@ func TestPhase211MandatoryEmailReadinessForPublicBookings(t *testing.T) {
 		DatabaseURL:         dbURL,
 		CookieSecure:        true,
 		EncryptionKey:       testEncryptionKey,
-		PublicOrigin:        "https://book.tirbach.wales",
+		PublicOrigin:        "https://book.example.com",
 		PublicAPISecret:     "prod-p211-mail-secret",
 		StripeSecretKey:     "sk_live_lovelace_prod_0123456789abcdef",
 		StripeWebhookSecret: "whsec_live_lovelace_p211_mail",
@@ -430,8 +430,8 @@ func TestPhase211MandatoryEmailReadinessForPublicBookings(t *testing.T) {
 
 	// Case 3: Genuine SMTP provider configured -> startup & readiness PASS!
 	withMailCfg := noMailLivePayCfg
-	withMailCfg.SMTPAddr = "smtp.tirbach.example:587"
-	withMailCfg.EmailFrom = "bookings@tirbach.wales"
+	withMailCfg.SMTPAddr = "smtp.lovelace.example:587"
+	withMailCfg.EmailFrom = "bookings@example.com"
 	svcReady := service.New(store, withMailCfg)
 	if err := svcReady.ValidateProductionStartup(context.Background()); err != nil {
 		t.Fatalf("expected startup with SMTP + live Stripe configured to succeed, got %v", err)
@@ -443,7 +443,7 @@ func TestPhase211MandatoryEmailReadinessForPublicBookings(t *testing.T) {
 	// Case 4 & 5: Email provider unavailable (transient dial/network error) keeps outbox PENDING (never SENT) and recovers on retry!
 	_, err = store.QueueEmail(context.Background(), nil, domain.EmailOutboxItem{
 		PropertyID:     prop.ID,
-		RecipientEmail: "carys.outbox@example.wales",
+		RecipientEmail: "carys.outbox@example.com",
 		Template:       "booking_confirmation",
 		Subject:        "Outbox Test",
 		BodyText:       "Body",
@@ -462,7 +462,7 @@ func TestPhase211MandatoryEmailReadinessForPublicBookings(t *testing.T) {
 
 	var status string
 	var attempts int
-	_ = store.Pool().QueryRow(context.Background(), `SELECT status, attempts FROM email_outbox WHERE recipient_email = 'carys.outbox@example.wales'`).Scan(&status, &attempts)
+	_ = store.Pool().QueryRow(context.Background(), `SELECT status, attempts FROM email_outbox WHERE recipient_email = 'carys.outbox@example.com'`).Scan(&status, &attempts)
 	if status != "PENDING" || attempts != 1 {
 		t.Fatalf("expected PENDING with attempts=1 after transient outage, got status=%q attempts=%d", status, attempts)
 	}
@@ -473,7 +473,7 @@ func TestPhase211MandatoryEmailReadinessForPublicBookings(t *testing.T) {
 	if sent, dErr := svcReady.DispatchPendingEmails(context.Background()); dErr != nil || sent != 1 || len(transientSender.sent) != 1 {
 		t.Fatalf("expected 1 sent after SMTP recovery, got sent=%d len=%d err=%v", sent, len(transientSender.sent), dErr)
 	}
-	_ = store.Pool().QueryRow(context.Background(), `SELECT status FROM email_outbox WHERE recipient_email = 'carys.outbox@example.wales'`).Scan(&status)
+	_ = store.Pool().QueryRow(context.Background(), `SELECT status FROM email_outbox WHERE recipient_email = 'carys.outbox@example.com'`).Scan(&status)
 	if status != "SENT" {
 		t.Fatalf("expected SENT status after genuine provider acceptance, got %q", status)
 	}
@@ -486,7 +486,7 @@ func TestPhase211CanonicalDomainNoSilentFallbackInProduction(t *testing.T) {
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 
 	// Simulate custom_domain set in DB while PublicOrigin is intentionally empty in production.
-	if _, err := store.Pool().Exec(context.Background(), `UPDATE properties SET custom_domain = 'legacy-alt.example.wales' WHERE id = $1`, prop.ID); err != nil {
+	if _, err := store.Pool().Exec(context.Background(), `UPDATE properties SET custom_domain = 'legacy-alt.example.com' WHERE id = $1`, prop.ID); err != nil {
 		t.Fatalf("set custom_domain: %v", err)
 	}
 
@@ -503,7 +503,7 @@ func TestPhase211CanonicalDomainNoSilentFallbackInProduction(t *testing.T) {
 		PublicAPISecret:     "prod-p211-dom-secret",
 		StripeSecretKey:     "sk_live_lovelace_prod_0123456789abcdef",
 		StripeWebhookSecret: "whsec_live_lovelace_p211_dom",
-		SMTPAddr:            "smtp.tirbach.example:587",
+		SMTPAddr:            "smtp.lovelace.example:587",
 	})
 	missingOriginSvc.SetPaymentProvider(stripeMock)
 	missingOriginSvc.SetEmailSender(&fakeMailSender{})
@@ -513,30 +513,30 @@ func TestPhase211CanonicalDomainNoSilentFallbackInProduction(t *testing.T) {
 		t.Fatal("expected InitiatePublicCheckout to fail when production PublicOrigin is omitted (must not silently substitute domain)")
 	}
 
-	// Explicit canonical https://book.tirbach.wales succeeds and derives approved return URLs.
+	// Explicit canonical https://book.example.com succeeds and derives approved return URLs.
 	rec := &failingStripeProvider{}
 	okSvc := service.New(store, config.Config{
 		AppEnv:              "production",
 		DatabaseURL:         dbURL,
 		CookieSecure:        true,
 		EncryptionKey:       testEncryptionKey,
-		PublicOrigin:        "https://book.tirbach.wales",
+		PublicOrigin:        "https://book.example.com",
 		PublicAPISecret:     "prod-p211-dom-secret",
 		StripeSecretKey:     "sk_live_lovelace_prod_0123456789abcdef",
 		StripeWebhookSecret: "whsec_live_lovelace_p211_dom",
-		SMTPAddr:            "smtp.tirbach.example:587",
+		SMTPAddr:            "smtp.lovelace.example:587",
 	})
 	okSvc.SetPaymentProvider(rec)
 	okSvc.SetEmailSender(&fakeMailSender{})
 	if _, err := okSvc.InitiatePublicCheckout(context.Background(), service.Actor{}, service.CreateCheckoutRequest{
 		HoldID: hold.Hold.ID,
 	}); err != nil {
-		t.Fatalf("expected checkout with explicit https://book.tirbach.wales to succeed, got %v", err)
+		t.Fatalf("expected checkout with explicit https://book.example.com to succeed, got %v", err)
 	}
 	if len(rec.requests) != 1 ||
-		!strings.HasPrefix(rec.requests[0].SuccessURL, "https://book.tirbach.wales/booking/confirmation?") ||
-		!strings.HasPrefix(rec.requests[0].CancelURL, "https://book.tirbach.wales/book?") {
-		t.Fatalf("expected return URLs under canonical https://book.tirbach.wales, got %+v", rec.requests)
+		!strings.HasPrefix(rec.requests[0].SuccessURL, "https://book.example.com/booking/confirmation?") ||
+		!strings.HasPrefix(rec.requests[0].CancelURL, "https://book.example.com/book?") {
+		t.Fatalf("expected return URLs under canonical https://book.example.com, got %+v", rec.requests)
 	}
 	_ = mailer.ErrProviderUnconfigured
 }
@@ -617,7 +617,7 @@ func TestPhase211ReadinessQueryPermissionFailuresFailClosed(t *testing.T) {
 		DatabaseURL:     dbURL,
 		CookieSecure:    true,
 		EncryptionKey:   testEncryptionKey,
-		PublicOrigin:    "https://book.tirbach.wales",
+		PublicOrigin:    "https://book.example.com",
 		PublicAPISecret: "prod-readyz-secret-0123456789",
 	}
 
@@ -680,7 +680,7 @@ func TestPhase211ReadinessQueryPermissionFailuresFailClosed(t *testing.T) {
 	defer outboxFaultStore.Close()
 
 	outboxProdCfg := baseProdCfg
-	outboxProdCfg.SMTPAddr = "smtp.tirbach.example:587"
+	outboxProdCfg.SMTPAddr = "smtp.lovelace.example:587"
 	faultOutboxSvc := service.New(outboxFaultStore, outboxProdCfg)
 	repOutbox := faultOutboxSvc.Readiness(ctx)
 	if repOutbox.Ready || repOutbox.Database.Status != "ok" || repOutbox.Payments.Status != "disabled" || repOutbox.Email.Status != "unhealthy" {

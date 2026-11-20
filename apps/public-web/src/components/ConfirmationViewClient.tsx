@@ -53,10 +53,10 @@ export function ConfirmationViewClient({
       }
       try {
         if (conf.reservation_reference) {
-          sessionStorage.setItem(`tb_token_${conf.reservation_reference}`, activeToken);
+          sessionStorage.setItem(`lv_token_${conf.reservation_reference}`, activeToken);
         }
         if (conf.hold_reference) {
-          sessionStorage.setItem(`tb_token_${conf.hold_reference}`, activeToken);
+          sessionStorage.setItem(`lv_token_${conf.hold_reference}`, activeToken);
         }
       } catch {
         // Ignore storage failure
@@ -85,12 +85,12 @@ export function ConfirmationViewClient({
         if (initialRef) {
           try {
             if (activeToken) {
-              sessionStorage.setItem(`tb_token_${initialRef}`, activeToken);
-              sessionStorage.setItem(`tb_token_${initialRef.toUpperCase()}`, activeToken);
+              sessionStorage.setItem(`lv_token_${initialRef}`, activeToken);
+              sessionStorage.setItem(`lv_token_${initialRef.toUpperCase()}`, activeToken);
             } else {
               activeToken =
-                sessionStorage.getItem(`tb_token_${initialRef}`) ||
-                sessionStorage.getItem(`tb_token_${initialRef.toUpperCase()}`) ||
+                sessionStorage.getItem(`lv_token_${initialRef}`) ||
+                sessionStorage.getItem(`lv_token_${initialRef.toUpperCase()}`) ||
                 "";
             }
           } catch {
@@ -137,7 +137,7 @@ export function ConfirmationViewClient({
     setError("");
     setToken(cleaned);
     try {
-      sessionStorage.setItem(`tb_token_${initialRef}`, cleaned);
+      sessionStorage.setItem(`lv_token_${initialRef}`, cleaned);
     } catch {
       // Ignore storage unavailability
     }
@@ -164,9 +164,9 @@ export function ConfirmationViewClient({
       const nextTok = data.confirmation_token as string;
       setToken(nextTok);
       try {
-        sessionStorage.setItem(`tb_token_${refToUse}`, nextTok);
-        if (view.hold_reference) sessionStorage.setItem(`tb_token_${view.hold_reference}`, nextTok);
-        if (view.reservation_reference) sessionStorage.setItem(`tb_token_${view.reservation_reference}`, nextTok);
+        sessionStorage.setItem(`lv_token_${refToUse}`, nextTok);
+        if (view.hold_reference) sessionStorage.setItem(`lv_token_${view.hold_reference}`, nextTok);
+        if (view.reservation_reference) sessionStorage.setItem(`lv_token_${view.reservation_reference}`, nextTok);
       } catch {
         // Ignore storage failure
       }
@@ -212,7 +212,7 @@ export function ConfirmationViewClient({
   if (loading) {
     return (
       <div className="card-panel" role="status">
-        Confirming payment status with Tir Bach Campsite...
+        Confirming payment status with the property...
       </div>
     );
   }
@@ -291,7 +291,7 @@ export function ConfirmationViewClient({
             <span className="badge">Payment: {view.payment_status}</span>
             <h1 className="section-title" style={{ marginTop: "0.65rem" }}>
               {isConfirmed
-                ? "Your Pembrokeshire Stay is Confirmed"
+                ? "Your Stay is Confirmed"
                 : isCancelled
                   ? "Booking Cancelled"
                   : "Booking & Payment Status"}
@@ -453,7 +453,7 @@ export function ConfirmationViewClient({
                   id="cancel_note"
                   value={cancelNote}
                   onChange={(e) => setCancelNote(e.target.value)}
-                  placeholder="Optional reason or message for the Tir Bach hosts..."
+                  placeholder="Optional reason or message for the hosts..."
                 />
               </div>
               <button

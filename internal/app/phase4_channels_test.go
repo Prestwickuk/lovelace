@@ -17,13 +17,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func setupPhase4AppServer(t *testing.T, tag string, adapterCfg channels.AdapterConfig) (*httptest.Server, *postgres.Store, *service.Service, domain.Property, *testClock, string) {
@@ -51,7 +51,7 @@ func setupPhase4AppServer(t *testing.T, tag string, adapterCfg channels.AdapterC
 		LoginMaxFailIP:  5,
 		LoginMaxFailAcc: 4,
 		LoginWindow:     15 * time.Minute,
-		EmailFrom:       "bookings@tirbach.wales",
+		EmailFrom:       "bookings@example.com",
 	}
 	appSvc := service.New(appStore, cfg)
 	appSvc.SetClock(clk.Now)
@@ -87,7 +87,7 @@ func setupPhase4AppServer(t *testing.T, tag string, adapterCfg channels.AdapterC
 	}
 
 	client := newClient(t)
-	status, csrf := apiLogin(t, client, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	status, csrf := apiLogin(t, client, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if status != http.StatusOK {
 		t.Fatalf("owner login status=%d", status)
 	}
@@ -132,7 +132,7 @@ func TestPhase4_ProviderLifecyclesSyncWebhooksConflictsAndAppRole(t *testing.T) 
 			}
 			_, _ = w.Write([]byte(`{"validToken":true,"ownerId":1001}`))
 		case "/properties":
-			_, _ = w.Write([]byte(`{"success":true,"pages":{"nextPageExists":false},"data":[{"id":1001,"name":"Tir Bach Glamping","currency":"GBP","roomTypes":[{"id":201,"name":"Bell Tent 1","qty":2}]}]}`))
+			_, _ = w.Write([]byte(`{"success":true,"pages":{"nextPageExists":false},"data":[{"id":1001,"name":"Meadowbrook Glamping","currency":"GBP","roomTypes":[{"id":201,"name":"Bell Tent 1","qty":2}]}]}`))
 		case "/inventory/rooms/calendar":
 			raw, _ := io.ReadAll(r.Body)
 			if bytes.Contains(raw, []byte("numAvail")) {
@@ -173,7 +173,7 @@ func TestPhase4_ProviderLifecyclesSyncWebhooksConflictsAndAppRole(t *testing.T) 
 		}
 		switch r.URL.Path {
 		case "/me":
-			_, _ = w.Write([]byte(`{"id":808,"company":"Tir Bach Meadow"}`))
+			_, _ = w.Write([]byte(`{"id":808,"company":"Meadowbrook Meadow"}`))
 		case "/apartments":
 			_, _ = w.Write([]byte(`{"page_count":1,"page":1,"apartments":[{"id":301,"name":"Owl Hut","currency":"GBP"}]}`))
 		case "/rates":
@@ -200,7 +200,7 @@ func TestPhase4_ProviderLifecyclesSyncWebhooksConflictsAndAppRole(t *testing.T) 
 		}
 		switch r.URL.Path {
 		case "/v2/properties":
-			_, _ = w.Write([]byte(`{"count":1,"items":[{"id":70,"name":"Tir Bach","currency_code":"GBP","rooms":[{"id":701,"name":"Meadow Pod"}]}]}`))
+			_, _ = w.Write([]byte(`{"count":1,"items":[{"id":70,"name":"Meadowbrook","currency_code":"GBP","rooms":[{"id":701,"name":"Meadow Pod"}]}]}`))
 		case "/v1/rates/savewithoutavailability":
 			ldRatePushes.Add(1)
 			_, _ = w.Write([]byte(`{"is_success":true}`))
@@ -220,7 +220,7 @@ func TestPhase4_ProviderLifecyclesSyncWebhooksConflictsAndAppRole(t *testing.T) 
 		}
 		switch r.URL.Path {
 		case "/properties":
-			_, _ = w.Write([]byte(`{"data":[{"id":"ch-prop-1","attributes":{"title":"Tir Bach Staging","currency":"GBP"}}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"ch-prop-1","attributes":{"title":"Meadowbrook Staging","currency":"GBP"}}]}`))
 		case "/room_types":
 			_, _ = w.Write([]byte(`{"data":[{"id":"ch-rt-1","attributes":{"title":"Bell Tent"}}]}`))
 		case "/rate_plans":
@@ -262,7 +262,7 @@ func TestPhase4_ProviderLifecyclesSyncWebhooksConflictsAndAppRole(t *testing.T) 
 	clk.Advance(now.Sub(clk.Now()))
 
 	client := newClient(t)
-	status, csrf := apiLogin(t, client, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	status, csrf := apiLogin(t, client, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if status != http.StatusOK {
 		t.Fatalf("login failed: %d", status)
 	}
@@ -658,7 +658,7 @@ func TestPhase4_WorkerLeaseFencingAndCrossPropertyIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	owner, _ := migratorStore.GetAdminUserByEmail(ctx, tx, "owner@tirbach.wales")
+	owner, _ := migratorStore.GetAdminUserByEmail(ctx, tx, "owner@example.com")
 	rec, err := migratorStore.UpsertChannelConnection(
 		ctx, tx, connID, prop.ID, "beds24", "Beds24",
 		channels.AuthToken, channels.StatusConnected,
@@ -780,14 +780,14 @@ func TestPhase4_WorkerLeaseFencingAndCrossPropertyIsolation(t *testing.T) {
 	}
 
 	// Property-scoped manager on prop cannot access propB channel endpoints over HTTP (403 Forbidden)
-	mgrHash, err := auth.HashPassword("tirbach-manager-password-2026")
+	mgrHash, err := auth.HashPassword("lovelace-manager-password-2026")
 	if err != nil {
 		t.Fatalf("hash manager password: %v", err)
 	}
 	if _, err := migratorStore.CreateAdminUser(ctx, nil, domain.AdminUser{
 		ID:           uuid.New(),
 		PropertyID:   &prop.ID,
-		Email:        "mgr-prop-a@tirbach.wales",
+		Email:        "mgr-prop-a@example.com",
 		FullName:     "Gareth Davies",
 		Role:         domain.RoleManager,
 		PasswordHash: mgrHash,
@@ -796,7 +796,7 @@ func TestPhase4_WorkerLeaseFencingAndCrossPropertyIsolation(t *testing.T) {
 		t.Fatalf("create manager user: %v", err)
 	}
 	mgrClient := newClient(t)
-	mgrStatus, mgrCSRF := apiLogin(t, mgrClient, srv.URL, "mgr-prop-a@tirbach.wales", "tirbach-manager-password-2026")
+	mgrStatus, mgrCSRF := apiLogin(t, mgrClient, srv.URL, "mgr-prop-a@example.com", "lovelace-manager-password-2026")
 	if mgrStatus != http.StatusOK {
 		t.Fatalf("manager login status=%d", mgrStatus)
 	}
@@ -817,7 +817,7 @@ func TestPhase4_SyncJobQueueUsesPostgreSQLClockAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	owner, _ := migratorStore.GetAdminUserByEmail(ctx, tx, "owner@tirbach.wales")
+	owner, _ := migratorStore.GetAdminUserByEmail(ctx, tx, "owner@example.com")
 	rec, err := migratorStore.UpsertChannelConnection(
 		ctx, tx, connID, prop.ID, "beds24", "Beds24",
 		channels.AuthToken, channels.StatusConnected,

@@ -15,10 +15,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 var (
@@ -48,7 +48,7 @@ func validatePortalMasterKey(seed []byte) error {
 	if distinct < 8 {
 		return ErrPortalKeyUnavailable
 	}
-	if subtle.ConstantTimeCompare(seed, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
+	if subtle.ConstantTimeCompare(seed, []byte("lovelace-dev-only-32byte-key-001")) == 1 {
 		return ErrPortalKeyUnavailable
 	}
 	if insecureHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && subtle.ConstantTimeCompare(seed, insecureHex) == 1 {
@@ -145,7 +145,7 @@ func (s *Service) queuePortalSecurityChallengeEmailTx(
 	}
 	senderFrom := strings.TrimSpace(s.cfg.EmailFrom)
 	if senderFrom == "" {
-		senderFrom = "bookings@tirbach.wales"
+		senderFrom = "bookings@example.com"
 	}
 	if _, err := mailer.ValidateMessage(mailer.Message{
 		From:     senderFrom,
@@ -198,7 +198,7 @@ func (s *Service) queuePortalOperationalNotificationTx(
 	}
 	senderFrom := strings.TrimSpace(s.cfg.EmailFrom)
 	if senderFrom == "" {
-		senderFrom = "bookings@tirbach.wales"
+		senderFrom = "bookings@example.com"
 	}
 	if _, err := mailer.ValidateMessage(mailer.Message{
 		From:     senderFrom,

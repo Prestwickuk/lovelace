@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 type auditFieldKind int

@@ -291,11 +291,11 @@ class Lovelace_Booking_Settings {
 								name="<?php echo esc_attr( LOVELACE_BOOKING_OPTION_KEY ); ?>[property_slug]"
 								type="text"
 								class="regular-text code"
-								placeholder="tir-bach"
+								placeholder="demo-property"
 								value="<?php echo esc_attr( (string) $s['property_slug'] ); ?>"
 								required
 							/>
-							<p class="description"><?php echo esc_html__( 'Found in Lovelace Admin → Site Settings (e.g. tir-bach).', 'lovelace-booking' ); ?></p>
+							<p class="description"><?php echo esc_html__( 'Found in Lovelace Admin → Site Settings (e.g. meadowbrook-estate).', 'lovelace-booking' ); ?></p>
 						</td>
 					</tr>
 					<tr>

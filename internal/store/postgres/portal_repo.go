@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 var (
@@ -35,7 +35,7 @@ func isSafeHMACKey(key []byte) bool {
 	if nonZero == 0 {
 		return false
 	}
-	if subtle.ConstantTimeCompare(key, []byte("tirbach-dev-only-32byte-key-0001")) == 1 {
+	if subtle.ConstantTimeCompare(key, []byte("lovelace-dev-only-32byte-key-001")) == 1 {
 		return false
 	}
 	if insecureHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && subtle.ConstantTimeCompare(key, insecureHex) == 1 {

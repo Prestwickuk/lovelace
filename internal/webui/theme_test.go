@@ -11,11 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/httpx"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/httpx"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestNewParsesAllEmbeddedTemplates(t *testing.T) {
@@ -299,7 +299,7 @@ func TestRepresentativeTemplatesRenderAccessibleChromeAndPartials(t *testing.T) 
 		Theme:                h.theme,
 		Actor:                actor,
 		CSRFToken:            "csrf-token",
-		Property:             domain.Property{ID: uuid.New(), Name: "Lovelace Meadows", Region: "Pembrokeshire", CheckInTime: "15:00", CheckOutTime: "10:00", Timezone: "Europe/London"},
+		Property:             domain.Property{ID: uuid.New(), Name: "Lovelace Meadows", Region: "Countryside", CheckInTime: "15:00", CheckOutTime: "10:00", Timezone: "Europe/London"},
 		CanReadReservations:  true,
 		CanWriteReservations: true,
 		CanReadGuests:        true,
@@ -361,7 +361,7 @@ func TestRepresentativeTemplatesRenderAccessibleChromeAndPartials(t *testing.T) 
 				{
 					Unit: domain.Unit{ID: uuid.New(), Code: "BT-01", Name: "Hedgerow Bell Tent", UnitTypeName: "Bell Tent"},
 					Cells: []service.CalendarDayCell{
-						{Date: "2026-07-01", Status: "BOOKED", ReservationID: &calResID, Reference: "TB-001", GuestName: "Jones"},
+						{Date: "2026-07-01", Status: "BOOKED", ReservationID: &calResID, Reference: "LV-001", GuestName: "Jones"},
 					},
 				},
 			},

@@ -1,9 +1,9 @@
 # LOVELACE Booking System — Phase 1.5 QA, Hardening & Rebranding Report
 
 **Date:** 2026-11-13  
-**Repository:** `/Users/petervine/personal-git/tir-bach`  
+**Repository:** `/Users/petervine/personal-git/lovelace`  
 **Platform Identity:** **LOVELACE Booking System** (`LOVELACE`)  
-**Initial Property Seed:** **Tir Bach Campsite**, Pembrokeshire, Wales  
+**Initial Property Seed:** **Meadowbrook Estate**, Countryside  
 **Stack:** Go 1.24 · PostgreSQL 17 (`pgx/v5`, `btree_gist`) · Embedded SQL migrations · Server-rendered HTML templates · Docker Compose
 
 ---
@@ -12,7 +12,7 @@
 
 **Recommendation:** **READY FOR PHASE 2**
 
-Phase 1.5 independently audited the Phase 1 and Phase 1.1 codebase, resolved inventory/channel/occupancy/security defects without breaking existing migrations (`0001_init.sql` and `0002_phase1_1.sql` preserved untouched), verified forward schema migration on a live Phase 1.1 PostgreSQL volume (`0002` → `0003`), tested backup/restore (`pg_dump`/`pg_restore --exit-on-error`), completed real headless Chromium verification (desktop, mobile, light/dark modes, zero console/network errors), and established **LOVELACE Booking System** as the authoritative platform identity while keeping **Tir Bach Campsite** cleanly isolated as a managed property.
+Phase 1.5 independently audited the Phase 1 and Phase 1.1 codebase, resolved inventory/channel/occupancy/security defects without breaking existing migrations (`0001_init.sql` and `0002_phase1_1.sql` preserved untouched), verified forward schema migration on a live Phase 1.1 PostgreSQL volume (`0002` → `0003`), tested backup/restore (`pg_dump`/`pg_restore --exit-on-error`), completed real headless Chromium verification (desktop, mobile, light/dark modes, zero console/network errors), and established **LOVELACE Booking System** as the authoritative platform identity while keeping **Meadowbrook Estate** cleanly isolated as a managed property.
 
 Phases 2–5 (public guest checkout, payments, guest portal, live OTA sync adapters, BI reporting) remain strictly deferred.
 
@@ -46,8 +46,8 @@ Phases 2–5 (public guest checkout, payments, guest portal, live OTA sync adapt
   - **Channex (`channex`):** `api_key` (`user-api-key` HTTP header, `environment`, `property_id`; docs: `https://docs.channex.io/api-v.1-documentation/api-reference`).
 
 ### 2.4 Security, Database & CSP Hardening
-- **Audit Log Immutability (`0003_phase1_5.sql`):** Added `BEFORE TRUNCATE` statement trigger `trg_audit_logs_no_truncate` preventing `TRUNCATE TABLE audit_logs` unless running on a `*_test`/`*-test` DB with `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'`.
-- **Unprivileged Test Role (`scripts/setup-test-db.sh`):** Provisioned `tir_bach_test_runner` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`); `verifySafeTestDatabase` rejects superusers, `postgres`, `tir_bach`, non-loopback hosts, and non-`*_test` DBs.
+- **Audit Log Immutability (`0003_phase1_5.sql`):** Added `BEFORE TRUNCATE` statement trigger `trg_audit_logs_no_truncate` preventing `TRUNCATE TABLE audit_logs` unless running on a `*_test`/`*-test` DB with `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'`.
+- **Unprivileged Test Role (`scripts/setup-test-db.sh`):** Provisioned `lovelace_test_runner` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`); `verifySafeTestDatabase` rejects superusers, `postgres`, `lovelace`, non-loopback hosts, and non-`*_test` DBs.
 - **Branded Web UI Error Handling (`internal/webui/`):** Removed shadowed package-level `redirectErr` (`http.Error(..., "Forbidden", 403)`) and routed all HTML error paths cleanly through `error.html` (`h.renderError` / `h.renderDomainError`).
 - **Strict CSP Compliance (`app.css` & `templates/*.html`):** Replaced all ~40 inline `style="..."` attributes with CSS utility classes (`ZERO INLINE STYLES` verified) so `style-src 'self'` produces zero browser console violations.
 
@@ -64,9 +64,9 @@ Phases 2–5 (public guest checkout, payments, guest portal, live OTA sync adapt
 |---|---|---|
 | `gofmt -l cmd internal` | **PASS** | Empty output (all Go files formatted) |
 | `go build ./... && go vet ./...` | **PASS** | Clean build and static analysis |
-| `go test -v -race -count=1 ./...` | **PASS** | `internal/app` (6 tests incl. `TestPhase1EndToEnd`, `TestVerifySafeTestDatabase`, `TestConfigAndSecretsUnit`, `TestDomainPhase1_1Rules`, `TestPhase1_1EndToEnd`, `TestPhase1_5HardeningChannelAllocationsAndRebrand` — 20.893s), `internal/auth` (2 tests — 3.870s), `internal/domain` (3 tests — 1.954s). Run against `tir_bach_test` as non-superuser `tir_bach_test_runner`. |
-| Phase 1.1 → Phase 1.5 Docker Upgrade | **PASS** | Live `tir-bach-app` container rebuilt (`tir-bach:phase1.5-dev`); existing volume migrated cleanly from `0002_phase1_1.sql` to `0003_phase1_5.sql`; `/readyz` returned `{"status":"ready"}`. |
-| Backup & Restore (`pg_dump` / `pg_restore`) | **PASS** | Custom dump restored cleanly via `pg_restore --no-owner --exit-on-error` into throwaway DB; all 3 migrations & `Tir Bach Campsite` property verified. |
+| `go test -v -race -count=1 ./...` | **PASS** | `internal/app` (6 tests incl. `TestPhase1EndToEnd`, `TestVerifySafeTestDatabase`, `TestConfigAndSecretsUnit`, `TestDomainPhase1_1Rules`, `TestPhase1_1EndToEnd`, `TestPhase1_5HardeningChannelAllocationsAndRebrand` — 20.893s), `internal/auth` (2 tests — 3.870s), `internal/domain` (3 tests — 1.954s). Run against `lovelace_test` as non-superuser `lovelace_test_runner`. |
+| Phase 1.1 → Phase 1.5 Docker Upgrade | **PASS** | Live `lovelace-app` container rebuilt (`lovelace:phase1.5-dev`); existing volume migrated cleanly from `0002_phase1_1.sql` to `0003_phase1_5.sql`; `/readyz` returned `{"status":"ready"}`. |
+| Backup & Restore (`pg_dump` / `pg_restore`) | **PASS** | Custom dump restored cleanly via `pg_restore --no-owner --exit-on-error` into throwaway DB; all 3 migrations & `Meadowbrook Estate` property verified. |
 | Real Browser Verification (Chromium Headless) | **PASS** | Playwright (`chrome-headless-shell` 1223) against `http://127.0.0.1:8080`: login, dashboard, calendar, reservation creation, bulk allocation preview, releases, channel manager (`hmac_sha256` / `user-api-key`), dark mode, `390x844` mobile layout (`mobileOverflowOnCalendar: false`), **0** console errors, **0** page errors, **0** failed asset requests. |
 | Production Compose Live Run (`docker-compose.yml`) | **NOT RUN** | Verified fail-closed env validation via `TestConfigAndSecretsUnit`; production compose stack not deployed to a public TLS proxy in this local workspace. |
 
@@ -78,13 +78,13 @@ For any autonomous engineering agent resuming from this bundle (whether on OpenA
 
 1. **Preserve Phase Boundaries & Immutable History:**
    - **Never modify** `migrations/0001_init.sql` or `migrations/0002_phase1_1.sql`; create sequential additive migrations (`0004_*.sql`, etc.) for Phase 2+.
-   - **Keep `tir-bach` strictly as a property record**, while all software identity, UI chrome, and assets derive from `internal/branding`.
+   - **Keep `demo-property` strictly as a property record**, while all software identity, UI chrome, and assets derive from `internal/branding`.
 2. **Database & Test Setup:**
    - Start local services: `docker compose -f docker-compose.dev.yml up -d --build`
    - Ensure the isolated unprivileged test role exists: `./scripts/setup-test-db.sh`
-   - Always run full `-race` tests via `tir_bach_test_runner` against `tir_bach_test`:
+   - Always run full `-race` tests via `lovelace_test_runner` against `lovelace_test`:
      ```bash
-     TEST_DATABASE_URL="postgres://tir_bach_test_runner:tir_bach_test_runner_pw@127.0.0.1:5432/tir_bach_test?sslmode=disable" go test -v -race -count=1 ./...
+     TEST_DATABASE_URL="postgres://lovelace_test_runner:lovelace_test_runner_pw@127.0.0.1:5432/lovelace_test?sslmode=disable" go test -v -race -count=1 ./...
      ```
 3. **Verify Before Editing / Before Reporting:**
    - Keep `gofmt -l cmd internal` empty and avoid inline `<script>` / `style="..."` in templates (strict CSP `style-src 'self'`).

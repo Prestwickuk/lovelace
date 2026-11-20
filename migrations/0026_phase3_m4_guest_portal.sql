@@ -113,7 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_guest_portal_challenges_lookup
 CREATE INDEX IF NOT EXISTS idx_guest_portal_challenges_expires
     ON public.guest_portal_challenges (expires_at);
 
--- 6. Opaque Public Guest Portal Sessions (disjoint from admin_sessions / tirbach_session; zero IP/UA hashes).
+-- 6. Opaque Public Guest Portal Sessions (disjoint from admin_sessions / lovelace_session; zero IP/UA hashes).
 CREATE TABLE IF NOT EXISTS public.guest_portal_sessions (
     id                    UUID PRIMARY KEY,
     property_id           UUID NOT NULL REFERENCES public.properties(id) ON DELETE RESTRICT,

@@ -13,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/seed"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/seed"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func main() {
@@ -71,13 +71,13 @@ func main() {
 
 	if cfg.AutoSeed {
 		if cfg.IsProduction() {
-			slog.Error("TIRBACH_AUTO_SEED cannot be enabled in production")
+			slog.Error("LOVELACE_AUTO_SEED cannot be enabled in production")
 			os.Exit(1)
 		}
 		prop, err := seed.EnsureBaseline(ctx, store, seed.Options{
-			AdminEmail:    os.Getenv("TIRBACH_ADMIN_EMAIL"),
-			AdminName:     os.Getenv("TIRBACH_ADMIN_NAME"),
-			AdminPassword: os.Getenv("TIRBACH_ADMIN_PASSWORD"),
+			AdminEmail:    os.Getenv("LOVELACE_ADMIN_EMAIL"),
+			AdminName:     os.Getenv("LOVELACE_ADMIN_NAME"),
+			AdminPassword: os.Getenv("LOVELACE_ADMIN_PASSWORD"),
 		})
 		if err != nil {
 			slog.Error("failed to auto-seed baseline", "error", err)
@@ -105,9 +105,9 @@ func main() {
 		os.Exit(1)
 	}
 	if rep := svc.Readiness(ctx); rep.Attachments.Status != "ok" {
-		slog.Error("attachment storage readiness check failed; uploads will fail until TIRBACH_ATTACHMENT_DIR is writable", "detail", rep.Attachments.Detail)
+		slog.Error("attachment storage readiness check failed; uploads will fail until LOVELACE_ATTACHMENT_DIR is writable", "detail", rep.Attachments.Detail)
 	} else if cfg.IsProduction() && strings.HasPrefix(filepath.Clean(cfg.AttachmentStorageDir), filepath.Clean(os.TempDir())) {
-		slog.Warn("attachment storage is using a volatile temporary directory in production; configure TIRBACH_ATTACHMENT_DIR on persistent storage", "dir", cfg.AttachmentStorageDir)
+		slog.Warn("attachment storage is using a volatile temporary directory in production; configure LOVELACE_ATTACHMENT_DIR on persistent storage", "dir", cfg.AttachmentStorageDir)
 	}
 	if !svc.HasEmailProvider() {
 		slog.Warn("no genuine email delivery provider configured; confirmation emails will remain PENDING in outbox")
@@ -229,7 +229,7 @@ func main() {
 }
 
 func runHealthcheck() int {
-	addr := strings.TrimSpace(os.Getenv("TIRBACH_LISTEN_ADDR"))
+	addr := strings.TrimSpace(os.Getenv("LOVELACE_LISTEN_ADDR"))
 	if addr == "" {
 		addr = "127.0.0.1:8080"
 	}

@@ -6,7 +6,7 @@ This guide covers running Lovelace **locally on your laptop/workstation** for de
 
 ## Part A: Quick Local Evaluation (2 Minutes)
 
-Use `docker-compose.dev.yml` when testing Lovelace locally on macOS, Linux, or Windows (WSL2). It automatically provisions PostgreSQL 17, runs all migrations, seeds a sample campsite (**Tir Bach Campsite**) and demo Owner Admin account, and enables local Stripe Sandbox checkout.
+Use `docker-compose.dev.yml` when testing Lovelace locally on macOS, Linux, or Windows (WSL2). It automatically provisions PostgreSQL 17, runs all migrations, seeds a sample campsite (**Meadowbrook Estate**) and demo Owner Admin account, and enables local Stripe Sandbox checkout.
 
 ### 1. Prerequisites
 - **Docker Engine 24+** & **Docker Compose v2** (`docker compose version`)
@@ -24,11 +24,11 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 ### 3. Open the Interfaces
 - **Lovelace Admin Console:** `http://127.0.0.1:8080/login`
-  - **Default Local Dev Login:** `owner@tirbach.wales`
-  - **Default Local Dev Password:** `tirbach-dev-admin-2026`
+  - **Default Local Dev Login:** `owner@example.com`
+  - **Default Local Dev Password:** `lovelace-dev-admin-2026`
   - **Guided Setup Wizard (add a new campsite/cottage/hotel):** `http://127.0.0.1:8080/onboarding?new=1`
 - **Public Guest Booking Site:** `http://127.0.0.1:3000`
-- **Embeddable Website Widget Preview:** `http://127.0.0.1:3000/embed/tir-bach`
+- **Embeddable Website Widget Preview:** `http://127.0.0.1:3000/embed/demo-property`
 
 ### 4. Stopping or Resetting Local Dev
 ```bash
@@ -88,24 +88,24 @@ Generate your secrets right on the server:
 echo "POSTGRES_BOOTSTRAP_PASSWORD=$(openssl rand -hex 24)"
 echo "LOVELACE_MIGRATOR_PASSWORD=$(openssl rand -hex 24)"
 echo "LOVELACE_APP_PASSWORD=$(openssl rand -hex 24)"
-echo "TIRBACH_ENCRYPTION_KEY=$(openssl rand -hex 32)"
-echo "TIRBACH_PUBLIC_API_SECRET=$(openssl rand -hex 32)"
-echo "TIRBACH_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 18)"
+echo "LOVELACE_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+echo "LOVELACE_PUBLIC_API_SECRET=$(openssl rand -hex 32)"
+echo "LOVELACE_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 18)"
 ```
 
 Edit `/opt/lovelace/.env` and populate the generated values:
 
 ```dotenv
-TIRBACH_ENV=production
-TIRBACH_COOKIE_SECURE=true
-TIRBACH_TRUST_PROXY=true
-TIRBACH_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8
+LOVELACE_ENV=production
+LOVELACE_COOKIE_SECURE=true
+LOVELACE_TRUST_PROXY=true
+LOVELACE_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8
 LOVELACE_TRUST_PROXY=true
 LOVELACE_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8
 
 # Loopback-only host bindings (Caddy/Nginx proxies TLS 443 -> 127.0.0.1:8080 & :3000)
-TIRBACH_BIND_ADDR=127.0.0.1
-TIRBACH_PORT=8080
+LOVELACE_BIND_ADDR=127.0.0.1
+LOVELACE_PORT=8080
 PUBLIC_WEB_BIND_ADDR=127.0.0.1
 PUBLIC_WEB_PORT=3000
 
@@ -119,35 +119,35 @@ LOVELACE_APP_USER=lovelace_app
 LOVELACE_APP_PASSWORD=<PASTE_GENERATED_APP_PASSWORD>
 
 # Master 32-byte encryption key (back up offline in your password manager!)
-TIRBACH_ENCRYPTION_KEY=<PASTE_64_CHAR_HEX_KEY>
+LOVELACE_ENCRYPTION_KEY=<PASTE_64_CHAR_HEX_KEY>
 
 # First-boot Owner Admin (used ONLY when admin_users table is empty; forces password change + recovery codes on first login)
-TIRBACH_AUTO_SEED=false
-TIRBACH_BOOTSTRAP_ADMIN_EMAIL=you@yourdomain.com
-TIRBACH_BOOTSTRAP_ADMIN_NAME="Property Owner"
-TIRBACH_BOOTSTRAP_ADMIN_PASSWORD=<PASTE_GENERATED_INITIAL_ADMIN_PASSWORD>
+LOVELACE_AUTO_SEED=false
+LOVELACE_BOOTSTRAP_ADMIN_EMAIL=you@yourdomain.com
+LOVELACE_BOOTSTRAP_ADMIN_NAME="Property Owner"
+LOVELACE_BOOTSTRAP_ADMIN_PASSWORD=<PASTE_GENERATED_INITIAL_ADMIN_PASSWORD>
 
 # Public Booking Frontend isolation
-TIRBACH_PUBLIC_ORIGIN=https://book.yourdomain.com
+LOVELACE_PUBLIC_ORIGIN=https://book.yourdomain.com
 LOVELACE_PROPERTY_SLUG=my-property
-TIRBACH_PUBLIC_API_SECRET=<PASTE_64_CHAR_PUBLIC_API_SECRET>
+LOVELACE_PUBLIC_API_SECRET=<PASTE_64_CHAR_PUBLIC_API_SECRET>
 
 # Safe dark-by-default flags (enable Stripe later once your property is configured)
-TIRBACH_GUEST_PORTAL_ENABLED=false
-TIRBACH_STRIPE_SANDBOX=false
+LOVELACE_GUEST_PORTAL_ENABLED=false
 LOVELACE_STRIPE_SANDBOX=false
-TIRBACH_STRIPE_SECRET_KEY=
-TIRBACH_STRIPE_WEBHOOK_SECRET=
+LOVELACE_STRIPE_SANDBOX=false
+LOVELACE_STRIPE_SECRET_KEY=
+LOVELACE_STRIPE_WEBHOOK_SECRET=
 
-# Transactional SMTP (set TIRBACH_REQUIRE_EMAIL=false temporarily if configuring SMTP later)
-TIRBACH_REQUIRE_EMAIL=true
-TIRBACH_EMAIL_FROM=bookings@yourdomain.com
-TIRBACH_SMTP_ADDR=smtp.resend.com:587
-TIRBACH_SMTP_USERNAME=resend
-TIRBACH_SMTP_PASSWORD=<YOUR_SMTP_PASSWORD_OR_API_KEY>
+# Transactional SMTP (set LOVELACE_REQUIRE_EMAIL=false temporarily if configuring SMTP later)
+LOVELACE_REQUIRE_EMAIL=true
+LOVELACE_EMAIL_FROM=bookings@yourdomain.com
+LOVELACE_SMTP_ADDR=smtp.resend.com:587
+LOVELACE_SMTP_USERNAME=resend
+LOVELACE_SMTP_PASSWORD=<YOUR_SMTP_PASSWORD_OR_API_KEY>
 ```
 
-> **CRITICAL:** Save `TIRBACH_ENCRYPTION_KEY` in a secure offline password vault (1Password, Bitwarden, etc.) immediately. It encrypts OTA channel tokens and cloud backup credentials at rest in PostgreSQL.
+> **CRITICAL:** Save `LOVELACE_ENCRYPTION_KEY` in a secure offline password vault (1Password, Bitwarden, etc.) immediately. It encrypts OTA channel tokens and cloud backup credentials at rest in PostgreSQL.
 
 ---
 
@@ -266,10 +266,10 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
    ```bash
    cd /opt/lovelace
    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/noteG-server ./cmd/server
-   CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/tirbach-migrate ./cmd/migrate
+   CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/lovelace-migrate ./cmd/migrate
 
    MIGRATION_DATABASE_URL="postgres://lovelace_migrator:<MIGRATOR_PW>@127.0.0.1:5432/lovelace?sslmode=disable" \
-     /usr/local/bin/tirbach-migrate
+     /usr/local/bin/lovelace-migrate
 
    # Re-run ensure-roles.sh once after initial migration to grant DML on all newly created tables
    sudo -u postgres env \
@@ -295,7 +295,7 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
    sudo chmod 750 /var/lib/lovelace/attachments
    ```
 6. **Create `systemd` Units (`/etc/systemd/system/lovelace-app.service` & `lovelace-public-web.service`):**
-   - Run `/usr/local/bin/noteG-server` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/app.env` (`TIRBACH_LISTEN_ADDR=127.0.0.1:8080`).
+   - Run `/usr/local/bin/noteG-server` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/app.env` (`LOVELACE_LISTEN_ADDR=127.0.0.1:8080`).
    - Run `/usr/bin/node /opt/lovelace/apps/public-web/.next/standalone/server.js` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/web.env` (`HOSTNAME=127.0.0.1`, `PORT=3000`).
    - Place behind Caddy or Nginx identically to Section 4 above.
 

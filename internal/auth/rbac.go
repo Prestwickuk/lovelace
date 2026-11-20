@@ -1,6 +1,6 @@
 package auth
 
-import "github.com/tirbach/tir-bach/internal/domain"
+import "github.com/Prestwickuk/lovelace/internal/domain"
 
 // Permission defines a fine-grained administrative capability.
 type Permission string

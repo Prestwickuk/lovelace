@@ -53,13 +53,13 @@ Every production Lovelace instance consists of **two strictly isolated HTTP serv
 
 ### Why Two Separate Services?
 1. **`lovelace-app` (`Dockerfile`, binary `noteG-server` — named in homage to Ada Lovelace's 1843 *Note G*, port `8080`):** Serves the server-rendered **Lovelace Admin Console** (`/login`, `/onboarding`, `/calendar`, `/reservations`, `/maintenance`, `/guests`, `/reports`, `/settings/backups`), signed payment/email webhooks (`/api/webhooks/stripe`), background workers (hold expiry, email outbox, OTA sync, scheduled cloud backups), and the internal `/api/public/v1/*` JSON API.
-2. **`lovelace-public-web` (`apps/public-web/Dockerfile`, port `3000`):** Serves the guest-facing booking website (`/`, `/stays`, `/book`, `/lookup`), embeddable website widgets (`/embed/[slug]`), and the official WordPress plugin's catalog endpoint (`/api/public/catalog`). It talks to `lovelace-app` strictly server-to-server using `X-Lovelace-Public-Key` (`TIRBACH_PUBLIC_API_SECRET`) and **never** holds database credentials or encryption keys.
+2. **`lovelace-public-web` (`apps/public-web/Dockerfile`, port `3000`):** Serves the guest-facing booking website (`/`, `/stays`, `/book`, `/lookup`), embeddable website widgets (`/embed/[slug]`), and the official WordPress plugin's catalog endpoint (`/api/public/catalog`). It talks to `lovelace-app` strictly server-to-server using `X-Lovelace-Public-Key` (`LOVELACE_PUBLIC_API_SECRET`) and **never** holds database credentials or encryption keys.
 
 ### Three-Role PostgreSQL 17 Privilege Separation
 Lovelace enforces least-privilege database separation in all environments (`scripts/postgres/ensure-roles.sh`):
 1. **Bootstrap Admin (`postgres` / cloud admin):** Used *only* during initial provisioning to enable `pgcrypto` and `btree_gist` and create the two non-superuser roles below.
-2. **Migration Owner (`lovelace_migrator`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Owns schema `public` and runs `tirbach-migrate` (`cmd/migrate`) during deployments.
-3. **Runtime App Role (`lovelace_app`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Strictly DML-only (`SELECT`, `INSERT`, `UPDATE`, `DELETE` — no `DROP`, `ALTER`, `TRUNCATE`, or `CREATE`). In `TIRBACH_ENV=production`, `noteG-server` **refuses to start** if connected as a privileged or superuser role.
+2. **Migration Owner (`lovelace_migrator`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Owns schema `public` and runs `lovelace-migrate` (`cmd/migrate`) during deployments.
+3. **Runtime App Role (`lovelace_app`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Strictly DML-only (`SELECT`, `INSERT`, `UPDATE`, `DELETE` — no `DROP`, `ALTER`, `TRUNCATE`, or `CREATE`). In `LOVELACE_ENV=production`, `noteG-server` **refuses to start** if connected as a privileged or superuser role.
 
 ---
 
@@ -83,33 +83,33 @@ Lovelace enforces least-privilege database separation in all environments (`scri
 
 | Variable | Required in Prod | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `TIRBACH_ENV` | **Yes** | `development` | Set to `production` (or `staging`). Activates fail-closed security & secret checks. |
-| `TIRBACH_LISTEN_ADDR` | Yes | `127.0.0.1:8080` | Bind address inside container/host (`0.0.0.0:8080` in Docker/cloud). |
+| `LOVELACE_ENV` | **Yes** | `development` | Set to `production` (or `staging`). Activates fail-closed security & secret checks. |
+| `LOVELACE_LISTEN_ADDR` | Yes | `127.0.0.1:8080` | Bind address inside container/host (`0.0.0.0:8080` in Docker/cloud). |
 | `DATABASE_URL` | **Yes** | — | PostgreSQL 17 connection string using the DML-only `lovelace_app` role. |
-| `TIRBACH_ENCRYPTION_KEY` | **Yes** | *(dev fallback)* | 32-byte key (`64` hex chars from `openssl rand -hex 32`) for AES-256-GCM encryption at rest (OTA tokens & cloud backup credentials). **Back up this key safely!** |
-| `TIRBACH_PUBLIC_ORIGIN` | **Yes** | `http://127.0.0.1:3000` | Public `https://` origin(s) of `lovelace-public-web` (comma-separated if multiple). |
-| `TIRBACH_PUBLIC_API_SECRET` | **Yes** | — | Random shared secret (`openssl rand -hex 32`) authenticating `public-web` → `app`. |
-| `TIRBACH_COOKIE_SECURE` | **Yes** | `false` | Must be `true` in production so admin session cookies require HTTPS. |
-| `TIRBACH_TRUST_PROXY` | Recommended | `false` | Set `true` behind a reverse proxy / load balancer. |
-| `TIRBACH_TRUSTED_PROXIES` | **Yes** (if `TRUST_PROXY=true`) | — | Comma-separated proxy CIDRs allowed to set `X-Forwarded-For`. |
-| `TIRBACH_AUTO_SEED` | **Must be `false`** | `false` | Demo data seeder; startup fails closed if `true` in `production`. |
-| `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` | First boot | — | Provisions initial `owner_admin` when `admin_users` is empty (`0` rows). |
-| `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` | First boot | — | Initial temporary password (`>= 12` chars); forces rotation + recovery codes on first sign-in. Ignored once any user exists. |
-| `TIRBACH_BOOTSTRAP_ADMIN_NAME` | Optional | `Owner Administrator` | Display name for the bootstrapped `owner_admin`. |
-| `TIRBACH_ATTACHMENT_DIR` | Yes | `/tmp/lovelace-attachments` | Persistent directory for property logos & maintenance photos (`/var/lib/lovelace/attachments`). |
-| `TIRBACH_MAX_ATTACHMENT_BYTES` | Optional | `10485760` (`10 MiB`) | Max single attachment upload size (`1024`..`52428800`). |
-| `TIRBACH_REQUIRE_EMAIL` | Recommended | `false` (`true` in compose) | When `true`, `/readyz` requires SMTP to be configured. Set `false` only before wiring SMTP. |
-| `TIRBACH_EMAIL_FROM` | Yes (for email) | `bookings@tirbach.wales` | Verified sender address for booking confirmations & notifications. |
-| `TIRBACH_SMTP_ADDR` | Yes (for email) | — | `host:port` of SMTP server (e.g. `smtp.resend.com:587` or `email-smtp.eu-west-2.amazonaws.com:587`). |
-| `TIRBACH_SMTP_USERNAME` | Optional | — | SMTP auth username (e.g. `resend`). |
-| `TIRBACH_SMTP_PASSWORD` | Optional | — | SMTP auth password / API key. |
-| `TIRBACH_EMAIL_WEBHOOK_SECRET` | Optional | — | HMAC secret for `/api/webhooks/email` bounce/delivery receipts. |
-| `TIRBACH_STRIPE_SECRET_KEY` | When Stripe enabled | — | Live `sk_live_...` or `rk_live_...` key in production (`sk_test_` rejected in prod). Leave empty while `stripe_enabled=false`. |
-| `TIRBACH_STRIPE_WEBHOOK_SECRET` | When Stripe enabled | — | Matching `whsec_...` signing secret for `/api/webhooks/stripe`. |
-| `TIRBACH_STRIPE_SANDBOX` | **Must be `false`** | `false` | Local test checkout simulator; prohibited in `staging` and `production`. |
-| `TIRBACH_GUEST_PORTAL_ENABLED` | Optional | `false` | Global feature gate for `/portal` self-service guest portal (keep `false` unless explicitly enabling). |
+| `LOVELACE_ENCRYPTION_KEY` | **Yes** | *(dev fallback)* | 32-byte key (`64` hex chars from `openssl rand -hex 32`) for AES-256-GCM encryption at rest (OTA tokens & cloud backup credentials). **Back up this key safely!** |
+| `LOVELACE_PUBLIC_ORIGIN` | **Yes** | `http://127.0.0.1:3000` | Public `https://` origin(s) of `lovelace-public-web` (comma-separated if multiple). |
+| `LOVELACE_PUBLIC_API_SECRET` | **Yes** | — | Random shared secret (`openssl rand -hex 32`) authenticating `public-web` → `app`. |
+| `LOVELACE_COOKIE_SECURE` | **Yes** | `false` | Must be `true` in production so admin session cookies require HTTPS. |
+| `LOVELACE_TRUST_PROXY` | Recommended | `false` | Set `true` behind a reverse proxy / load balancer. |
+| `LOVELACE_TRUSTED_PROXIES` | **Yes** (if `TRUST_PROXY=true`) | — | Comma-separated proxy CIDRs allowed to set `X-Forwarded-For`. |
+| `LOVELACE_AUTO_SEED` | **Must be `false`** | `false` | Demo data seeder; startup fails closed if `true` in `production`. |
+| `LOVELACE_BOOTSTRAP_ADMIN_EMAIL` | First boot | — | Provisions initial `owner_admin` when `admin_users` is empty (`0` rows). |
+| `LOVELACE_BOOTSTRAP_ADMIN_PASSWORD` | First boot | — | Initial temporary password (`>= 12` chars); forces rotation + recovery codes on first sign-in. Ignored once any user exists. |
+| `LOVELACE_BOOTSTRAP_ADMIN_NAME` | Optional | `Owner Administrator` | Display name for the bootstrapped `owner_admin`. |
+| `LOVELACE_ATTACHMENT_DIR` | Yes | `/tmp/lovelace-attachments` | Persistent directory for property logos & maintenance photos (`/var/lib/lovelace/attachments`). |
+| `LOVELACE_MAX_ATTACHMENT_BYTES` | Optional | `10485760` (`10 MiB`) | Max single attachment upload size (`1024`..`52428800`). |
+| `LOVELACE_REQUIRE_EMAIL` | Recommended | `false` (`true` in compose) | When `true`, `/readyz` requires SMTP to be configured. Set `false` only before wiring SMTP. |
+| `LOVELACE_EMAIL_FROM` | Yes (for email) | `bookings@example.com` | Verified sender address for booking confirmations & notifications. |
+| `LOVELACE_SMTP_ADDR` | Yes (for email) | — | `host:port` of SMTP server (e.g. `smtp.resend.com:587` or `email-smtp.eu-west-2.amazonaws.com:587`). |
+| `LOVELACE_SMTP_USERNAME` | Optional | — | SMTP auth username (e.g. `resend`). |
+| `LOVELACE_SMTP_PASSWORD` | Optional | — | SMTP auth password / API key. |
+| `LOVELACE_EMAIL_WEBHOOK_SECRET` | Optional | — | HMAC secret for `/api/webhooks/email` bounce/delivery receipts. |
+| `LOVELACE_STRIPE_SECRET_KEY` | When Stripe enabled | — | Live `sk_live_...` or `rk_live_...` key in production (`sk_test_` rejected in prod). Leave empty while `stripe_enabled=false`. |
+| `LOVELACE_STRIPE_WEBHOOK_SECRET` | When Stripe enabled | — | Matching `whsec_...` signing secret for `/api/webhooks/stripe`. |
+| `LOVELACE_STRIPE_SANDBOX` | **Must be `false`** | `false` | Local test checkout simulator; prohibited in `staging` and `production`. |
+| `LOVELACE_GUEST_PORTAL_ENABLED` | Optional | `false` | Global feature gate for `/portal` self-service guest portal (keep `false` unless explicitly enabling). |
 
-### 2. Migration Command (`tirbach-migrate`)
+### 2. Migration Command (`lovelace-migrate`)
 
 | Variable | Required | Description |
 | :--- | :--- | :--- |
@@ -119,11 +119,11 @@ Lovelace enforces least-privilege database separation in all environments (`scri
 
 | Variable | Required | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `LOVELACE_ENV` | **Yes** | `development` | Match `TIRBACH_ENV` (`production` / `staging` / `development`). |
+| `LOVELACE_ENV` | **Yes** | `development` | Match `LOVELACE_ENV` (`production` / `staging` / `development`). |
 | `LOVELACE_API_BASE_URL` | **Yes** | `http://127.0.0.1:8080` | Internal server-to-server URL of `lovelace-app` (e.g. `http://app:8080`). |
-| `LOVELACE_PUBLIC_API_SECRET` | **Yes** | — | Must match `TIRBACH_PUBLIC_API_SECRET` on `lovelace-app` exactly. |
-| `LOVELACE_PROPERTY_SLUG` | **Yes** | `tir-bach` | Default property slug served at `/` and `/stays` when `?property=` is omitted. |
-| `NEXT_PUBLIC_SITE_URL` | **Yes** | `http://127.0.0.1:3000` | Public HTTPS URL of `lovelace-public-web` (must match `TIRBACH_PUBLIC_ORIGIN`). |
+| `LOVELACE_PUBLIC_API_SECRET` | **Yes** | — | Must match `LOVELACE_PUBLIC_API_SECRET` on `lovelace-app` exactly. |
+| `LOVELACE_PROPERTY_SLUG` | **Yes** | `demo-property` | Default property slug served at `/` and `/stays` when `?property=` is omitted. |
+| `NEXT_PUBLIC_SITE_URL` | **Yes** | `http://127.0.0.1:3000` | Public HTTPS URL of `lovelace-public-web` (must match `LOVELACE_PUBLIC_ORIGIN`). |
 | `LOVELACE_TRUST_PROXY` | Recommended | `false` | Set `true` behind reverse proxy / load balancer. |
 | `LOVELACE_TRUSTED_PROXIES` | Recommended | `127.0.0.1/32,::1/128` | Proxy CIDRs trusted for client IP rate limiting. |
 | `LOVELACE_STRIPE_SANDBOX` | **Must be `false`** | `false` | Must be `false` in `staging` and `production`. |

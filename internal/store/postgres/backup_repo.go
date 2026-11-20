@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/backup"
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/backup"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 type backupTableExportSpec struct {

@@ -33,6 +33,6 @@ Canonical signing specification declared in [`internal/channels/registry.go`](..
 
 ## Encryption & Masking Invariants
 
-1. Secret fields (`FieldSpec.Secret == true`) are encrypted together with AES-256-GCM (`internal/secrets`) keyed by `TIRBACH_ENCRYPTION_KEY` and persisted as opaque bytes in `channel_connections.encrypted_credentials`.
+1. Secret fields (`FieldSpec.Secret == true`) are encrypted together with AES-256-GCM (`internal/secrets`) keyed by `LOVELACE_ENCRYPTION_KEY` and persisted as opaque bytes in `channel_connections.encrypted_credentials`.
 2. API responses and admin views return only `credential_hints` (e.g. `••••9988`).
 3. `channel_connections.auth_method` accepts `'api_key'`, `'hmac_sha256'`, `'oauth2'`, `'client_credentials'`, and `'token'` (`0003_phase1_5.sql`).

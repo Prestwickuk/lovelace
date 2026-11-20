@@ -6,13 +6,13 @@ Once your Lovelace instance is running (via [Self-Hosted Server](01-local-and-se
 
 ## 1. First Sign-In, Password Rotation & Email-Free Recovery Codes
 
-1. Open `https://<YOUR_ADMIN_DOMAIN>/login` and sign in using the `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` and `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` you set during deployment.
+1. Open `https://<YOUR_ADMIN_DOMAIN>/login` and sign in using the `LOVELACE_BOOTSTRAP_ADMIN_EMAIL` and `LOVELACE_BOOTSTRAP_ADMIN_PASSWORD` you set during deployment.
 2. **Mandatory Password Rotation (`/account?rotate=1`):**
    - On first login, Lovelace immediately prompts you to replace the temporary bootstrap password with your own private password (`>= 12` characters).
-   - Once rotated, you can safely delete `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` from your server/cloud environment variables (even if left set, Lovelace never overwrites existing accounts on restart).
+   - Once rotated, you can safely delete `LOVELACE_BOOTSTRAP_ADMIN_PASSWORD` from your server/cloud environment variables (even if left set, Lovelace never overwrites existing accounts on restart).
 3. **Save Your 8 One-Time Recovery Codes:**
    - Immediately after setting your password, `/account` displays **8 one-time Recovery Codes** (e.g. `ABCD-EFGH-JKLM`) with **Copy Codes** and **Download `.txt`** buttons.
-   - Store these alongside `TIRBACH_ENCRYPTION_KEY` in your password manager.
+   - Store these alongside `LOVELACE_ENCRYPTION_KEY` in your password manager.
    - **Self-Service Password Reset Without Email (`/login/recover`):** If you ever forget your password (even before SMTP email is configured!), click **Forgot password? Use a recovery code** on `/login`, enter your email + any unused recovery code + a new password, and you are back in immediately. You can regenerate a fresh set of 8 codes anytime in **My Account (`/account`)**.
    - **Resetting Staff Passwords:** Global `owner_admin` users can issue a temporary reset password for any staff account directly in **Settings → Admin Users (`/users`)** without needing reset emails.
 
@@ -77,13 +77,13 @@ By default, every newly onboarded property launches in **Safe Dark-by-Default Mo
    - `checkout.session.completed`
    - `checkout.session.expired`
    - `charge.refunded`
-2. Set `TIRBACH_STRIPE_SECRET_KEY=sk_live_...` (or restricted `rk_live_...`) and `TIRBACH_STRIPE_WEBHOOK_SECRET=whsec_...` on `lovelace-app` and restart/redeploy `lovelace-app`.
-   *(Note: In `TIRBACH_ENV=production`, Lovelace rejects `sk_test_` keys and rejects any webhook with `livemode: false`.)*
+2. Set `LOVELACE_STRIPE_SECRET_KEY=sk_live_...` (or restricted `rk_live_...`) and `LOVELACE_STRIPE_WEBHOOK_SECRET=whsec_...` on `lovelace-app` and restart/redeploy `lovelace-app`.
+   *(Note: In `LOVELACE_ENV=production`, Lovelace rejects `sk_test_` keys and rejects any webhook with `livemode: false`.)*
 3. Confirm `GET /readyz` reports healthy SMTP and payment readiness.
 4. In **Lovelace Admin → Site Settings (`/property`)**, tick **Enable Public Online Checkout (Stripe)** and click **Save Booking Policy**.
 
 ### Connecting OTA Channel Managers *(Optional)*
-Under **Settings → Channel Manager (`/settings/integrations/channel-manager`)**, you can connect **Beds24**, **Smoobu**, **Lodgify**, or **Channex** to sync availability and external OTA bookings (Airbnb, Booking.com, Expedia, Pitchup). Credentials are encrypted at rest with `TIRBACH_ENCRYPTION_KEY`.
+Under **Settings → Channel Manager (`/settings/integrations/channel-manager`)**, you can connect **Beds24**, **Smoobu**, **Lodgify**, or **Channex** to sync availability and external OTA bookings (Airbnb, Booking.com, Expedia, Pitchup). Credentials are encrypted at rest with `LOVELACE_ENCRYPTION_KEY`.
 
 ---
 
@@ -120,7 +120,7 @@ Lovelace includes a built-in, portable backup and verification system under **Se
 cd /opt/lovelace
 
 # 1. Take a pre-upgrade backup (via /settings/backups UI or pg_dump):
-docker exec tir-bach-postgres pg_dump -U "${POSTGRES_BOOTSTRAP_USER:-postgres}" -Fc "${POSTGRES_DB:-lovelace}" \
+docker exec lovelace-postgres pg_dump -U "${POSTGRES_BOOTSTRAP_USER:-postgres}" -Fc "${POSTGRES_DB:-lovelace}" \
   > "/opt/lovelace/pre_upgrade_$(date +%Y%m%d_%H%M%S).dump"
 
 # 2. Pull the latest release commit/tag:
@@ -139,7 +139,7 @@ curl -fsS http://127.0.0.1:3000/api/healthz
 
 #### 2. AWS / GCP / Azure / Railway
 1. Download or trigger an off-site backup in **Settings → Backups & Cloud Sync** (or take an RDS / Cloud SQL / Azure snapshot).
-2. Run `tirbach-migrate` (`MIGRATION_DATABASE_URL` as `lovelace_migrator`) if the release includes new SQL files in `migrations/`. *(Migrations in Lovelace are strictly forward-compatible and idempotent.)*
+2. Run `lovelace-migrate` (`MIGRATION_DATABASE_URL` as `lovelace_migrator`) if the release includes new SQL files in `migrations/`. *(Migrations in Lovelace are strictly forward-compatible and idempotent.)*
 3. If new tables were added on a managed DB outside Docker Compose, run `./scripts/postgres/ensure-roles.sh` once so `lovelace_app` receives DML grants on the new tables.
 4. Deploy the new `lovelace-app` and `lovelace-public-web` container images and verify `/readyz` returns `200 OK`.
 
@@ -148,9 +148,9 @@ curl -fsS http://127.0.0.1:3000/api/healthz
 ### D. Rotating Passwords & Secrets Safely
 
 - **Admin & Staff Passwords:** Rotate anytime in **My Account (`/account`)** or **Settings → Admin Users (`/users`)**.
-- **Public BFF Secret (`TIRBACH_PUBLIC_API_SECRET` / `LOVELACE_PUBLIC_API_SECRET`):** Generate a new `openssl rand -hex 32` value, update it on both `lovelace-app` and `lovelace-public-web`, and restart both services together.
+- **Public BFF Secret (`LOVELACE_PUBLIC_API_SECRET` / `LOVELACE_PUBLIC_API_SECRET`):** Generate a new `openssl rand -hex 32` value, update it on both `lovelace-app` and `lovelace-public-web`, and restart both services together.
 - **Database Role Passwords (`lovelace_app` / `lovelace_migrator`):** Update `LOVELACE_APP_PASSWORD` / `LOVELACE_MIGRATOR_PASSWORD`, run `./scripts/postgres/ensure-roles.sh` (or `docker compose up -d --no-deps db-bootstrap`), and restart `lovelace-app`.
-- **`TIRBACH_ENCRYPTION_KEY`:** Keep this key backed up! If you ever need to rotate it, temporarily clear/re-enter encrypted OTA channel credentials (`/settings/integrations/channel-manager`) and cloud backup bucket credentials (`/settings/backups`) after updating the key.
+- **`LOVELACE_ENCRYPTION_KEY`:** Keep this key backed up! If you ever need to rotate it, temporarily clear/re-enter encrypted OTA channel credentials (`/settings/integrations/channel-manager`) and cloud backup bucket credentials (`/settings/backups`) after updating the key.
 
 ---
 
@@ -158,9 +158,9 @@ curl -fsS http://127.0.0.1:3000/api/healthz
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
-| `noteG-server` exits on startup with `privileged database role rejected` | `DATABASE_URL` connected as `postgres` or a superuser in `TIRBACH_ENV=production` | Point `DATABASE_URL` to the non-superuser `lovelace_app` role created by `scripts/postgres/ensure-roles.sh`. |
-| `GET /readyz` returns `503` mentioning `email` | `TIRBACH_REQUIRE_EMAIL=true` while `TIRBACH_SMTP_ADDR` is blank | Configure `TIRBACH_SMTP_ADDR` / `USERNAME` / `PASSWORD`, or set `TIRBACH_REQUIRE_EMAIL=false` until ready to send emails. |
+| `noteG-server` exits on startup with `privileged database role rejected` | `DATABASE_URL` connected as `postgres` or a superuser in `LOVELACE_ENV=production` | Point `DATABASE_URL` to the non-superuser `lovelace_app` role created by `scripts/postgres/ensure-roles.sh`. |
+| `GET /readyz` returns `503` mentioning `email` | `LOVELACE_REQUIRE_EMAIL=true` while `LOVELACE_SMTP_ADDR` is blank | Configure `LOVELACE_SMTP_ADDR` / `USERNAME` / `PASSWORD`, or set `LOVELACE_REQUIRE_EMAIL=false` until ready to send emails. |
 | Logo or maintenance photo upload fails with `permission denied` | Persistent volume at `/var/lib/lovelace/attachments` is owned by `root:root` | Set ownership on the mounted directory to `100:101` (`chown -R 100:101 /var/lib/lovelace/attachments` inside Alpine). |
-| Login returns `403 Security Token Invalid` | Accessing admin UI over plain `http://` while `TIRBACH_COOKIE_SECURE=true`, or proxy stripping `Origin` / `Host` | Access via `https://` and ensure reverse proxy forwards `Host` and `X-Forwarded-Proto: https`. |
-| `public-web` shows `Unable to connect to the reservation system` | `LOVELACE_API_BASE_URL` unreachable or `LOVELACE_PUBLIC_API_SECRET` mismatch | Verify `LOVELACE_PUBLIC_API_SECRET` matches `TIRBACH_PUBLIC_API_SECRET` byte-for-byte, and on Railway/Fly set `HOSTNAME=::` & `TIRBACH_LISTEN_ADDR=:8080`. |
-| WordPress `[lovelace_booking]` iframe does not load | `TIRBACH_PUBLIC_ORIGIN` / `NEXT_PUBLIC_SITE_URL` pointing to admin URL instead of `public-web` URL | Point WordPress **Settings → Lovelace Booking → Public Booking Site URL** to your `public-web` HTTPS domain (`https://book.yourdomain.com`). |
+| Login returns `403 Security Token Invalid` | Accessing admin UI over plain `http://` while `LOVELACE_COOKIE_SECURE=true`, or proxy stripping `Origin` / `Host` | Access via `https://` and ensure reverse proxy forwards `Host` and `X-Forwarded-Proto: https`. |
+| `public-web` shows `Unable to connect to the reservation system` | `LOVELACE_API_BASE_URL` unreachable or `LOVELACE_PUBLIC_API_SECRET` mismatch | Verify `LOVELACE_PUBLIC_API_SECRET` matches `LOVELACE_PUBLIC_API_SECRET` byte-for-byte, and on Railway/Fly set `HOSTNAME=::` & `LOVELACE_LISTEN_ADDR=:8080`. |
+| WordPress `[lovelace_booking]` iframe does not load | `LOVELACE_PUBLIC_ORIGIN` / `NEXT_PUBLIC_SITE_URL` pointing to admin URL instead of `public-web` URL | Point WordPress **Settings → Lovelace Booking → Public Booking Site URL** to your `public-web` HTTPS domain (`https://book.yourdomain.com`). |

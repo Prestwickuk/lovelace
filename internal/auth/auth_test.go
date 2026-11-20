@@ -3,7 +3,7 @@ package auth
 import (
 	"testing"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 func TestPasswordHashingAndPolicy(t *testing.T) {
@@ -11,12 +11,12 @@ func TestPasswordHashingAndPolicy(t *testing.T) {
 		t.Fatal("expected short password to fail policy")
 	}
 
-	hash, err := HashPassword("pembrokeshire-meadow-2026")
+	hash, err := HashPassword("countryside-meadow-2026")
 	if err != nil {
 		t.Fatalf("hash password failed: %v", err)
 	}
 
-	ok, err := VerifyPassword("pembrokeshire-meadow-2026", hash)
+	ok, err := VerifyPassword("countryside-meadow-2026", hash)
 	if err != nil || !ok {
 		t.Fatalf("expected valid password verification, got ok=%v err=%v", ok, err)
 	}
@@ -37,7 +37,7 @@ func TestPasswordHashingAndPolicy(t *testing.T) {
 		"$argon2id$v=19$m=65536,t=3,p=1$c2hvcnQ$YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
 	}
 	for _, bh := range badHashes {
-		if ok, err := VerifyPassword("pembrokeshire-meadow-2026", bh); err == nil || ok {
+		if ok, err := VerifyPassword("countryside-meadow-2026", bh); err == nil || ok {
 			t.Fatalf("expected dangerous PHC hash %q to fail verification, got ok=%v err=%v", bh, ok, err)
 		}
 	}

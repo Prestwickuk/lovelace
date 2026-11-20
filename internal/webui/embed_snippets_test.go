@@ -4,16 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 func TestBuildWebsiteEmbedSnippetsEscapesAndAppliesBrandTokens(t *testing.T) {
 	prop := domain.Property{
-		Slug: "tir-bach-glamping",
-		Name: `Tir Bach "Meadow" & Woods <Site>`,
+		Slug: "meadowbrook-glamping",
+		Name: `Meadowbrook "Meadow" & Woods <Site>`,
 	}
 	var pb domain.PropertyBrandingView
-	pb.PublicProjection.DisplayName = `Tir Bach "Meadow" & Woods <Site>`
+	pb.PublicProjection.DisplayName = `Meadowbrook "Meadow" & Woods <Site>`
 	pb.PublicProjection.PrimaryColor = "#1F5A4C"
 	pb.PublicProjection.PrimaryOnColor = "#FFFFFF"
 
@@ -22,10 +22,10 @@ func TestBuildWebsiteEmbedSnippetsEscapesAndAppliesBrandTokens(t *testing.T) {
 	if got.PublicOrigin != "https://book.example.co.uk" {
 		t.Fatalf("PublicOrigin = %q, want https://book.example.co.uk", got.PublicOrigin)
 	}
-	if got.EmbedURL != "https://book.example.co.uk/embed/tir-bach-glamping" {
+	if got.EmbedURL != "https://book.example.co.uk/embed/meadowbrook-glamping" {
 		t.Fatalf("EmbedURL = %q", got.EmbedURL)
 	}
-	if got.DirectBookingURL != "https://book.example.co.uk/stays?property=tir-bach-glamping" {
+	if got.DirectBookingURL != "https://book.example.co.uk/stays?property=meadowbrook-glamping" {
 		t.Fatalf("DirectBookingURL = %q", got.DirectBookingURL)
 	}
 
@@ -48,10 +48,10 @@ func TestBuildWebsiteEmbedSnippetsEscapesAndAppliesBrandTokens(t *testing.T) {
 	if !strings.Contains(got.SearchBarSnippet, `background:#1F5A4C;color:#FFFFFF;`) {
 		t.Errorf("search bar snippet missing verified brand colours: %s", got.SearchBarSnippet)
 	}
-	if !strings.Contains(got.SearchBarSnippet, `name="property" value="tir-bach-glamping"`) {
+	if !strings.Contains(got.SearchBarSnippet, `name="property" value="meadowbrook-glamping"`) {
 		t.Errorf("search bar snippet missing hidden property field: %s", got.SearchBarSnippet)
 	}
-	if !strings.Contains(got.ButtonSnippet, `href="https://book.example.co.uk/stays?property=tir-bach-glamping"`) {
+	if !strings.Contains(got.ButtonSnippet, `href="https://book.example.co.uk/stays?property=meadowbrook-glamping"`) {
 		t.Errorf("button snippet missing direct booking URL: %s", got.ButtonSnippet)
 	}
 }

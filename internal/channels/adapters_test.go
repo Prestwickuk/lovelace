@@ -185,10 +185,10 @@ func TestAllFourAdaptersOfflineFlows(t *testing.T) {
 		case "/properties":
 			p := atomic.AddInt32(&b24Page, 1)
 			if p == 1 {
-				_, _ = w.Write([]byte(`{"success":true,"pages":{"nextPageExists":true},"data":[{"id":100,"name":"Tir Bach","currency":"GBP","roomTypes":[{"id":101,"name":"Bell Tent 1","qty":1}]}]}`))
+				_, _ = w.Write([]byte(`{"success":true,"pages":{"nextPageExists":true},"data":[{"id":100,"name":"Meadowbrook","currency":"GBP","roomTypes":[{"id":101,"name":"Bell Tent 1","qty":1}]}]}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"success":true,"pages":{"nextPageExists":false},"data":[{"id":100,"name":"Tir Bach","currency":"GBP","roomTypes":[{"id":102,"name":"Shepherd Hut","qty":1}]}]}`))
+			_, _ = w.Write([]byte(`{"success":true,"pages":{"nextPageExists":false},"data":[{"id":100,"name":"Meadowbrook","currency":"GBP","roomTypes":[{"id":102,"name":"Shepherd Hut","qty":1}]}]}`))
 		case "/inventory/rooms/calendar":
 			_, _ = w.Write([]byte(`[{"success":true}]`))
 		case "/bookings":
@@ -258,7 +258,7 @@ func TestAllFourAdaptersOfflineFlows(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/me":
-			_, _ = w.Write([]byte(`{"id":901,"company":"Tir Bach Meadow"}`))
+			_, _ = w.Write([]byte(`{"id":901,"company":"Meadowbrook Meadow"}`))
 		case "/apartments":
 			_, _ = w.Write([]byte(`{"page_count":1,"page":1,"apartments":[{"id":301,"name":"Owl Hut","currency":"GBP"}]}`))
 		case "/rates":
@@ -278,7 +278,7 @@ func TestAllFourAdaptersOfflineFlows(t *testing.T) {
 	})
 	smCreds := map[string]string{"api_key": "sm_key", "api_secret": "sm_secret", "webhook_secret": "wh_sm_secret"}
 	smVer, err := sm.VerifyConnectionDetailed(context.Background(), nil, smCreds)
-	if err != nil || smVer.AccountName != "Tir Bach Meadow" {
+	if err != nil || smVer.AccountName != "Meadowbrook Meadow" {
 		t.Fatalf("Smoobu verify failed: %+v err=%v", smVer, err)
 	}
 	if err := sm.PushAvailability(context.Background(), nil, smCreds, AvailabilityPushRequest{
@@ -300,7 +300,7 @@ func TestAllFourAdaptersOfflineFlows(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/v2/properties":
-			_, _ = w.Write([]byte(`{"count":1,"items":[{"id":70,"name":"Pembrokeshire Glamping","currency_code":"GBP","rooms":[{"id":701,"name":"Wren Tent"}]}]}`))
+			_, _ = w.Write([]byte(`{"count":1,"items":[{"id":70,"name":"Countryside Glamping","currency_code":"GBP","rooms":[{"id":701,"name":"Wren Tent"}]}]}`))
 		case "/v1/rates/savewithoutavailability":
 			_, _ = w.Write([]byte(`{"is_success":true}`))
 		case "/v2/reservations/bookings":
@@ -342,7 +342,7 @@ func TestAllFourAdaptersOfflineFlows(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/properties":
-			_, _ = w.Write([]byte(`{"data":[{"id":"prop-ch-1","attributes":{"title":"Tir Bach Staging","currency":"GBP"}}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"prop-ch-1","attributes":{"title":"Meadowbrook Staging","currency":"GBP"}}]}`))
 		case "/room_types":
 			_, _ = w.Write([]byte(`{"data":[{"id":"rt-ch-1","attributes":{"title":"Bell Tent"}}]}`))
 		case "/rate_plans":

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func main() {

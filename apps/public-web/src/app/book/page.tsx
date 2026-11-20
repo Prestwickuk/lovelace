@@ -69,8 +69,8 @@ export default async function BookPage({
   return (
     <>
       <SiteHeader
-        propertyName={detail?.property.name || "Tir Bach Campsite"}
-        region={detail?.property.region || "Pembrokeshire, Wales"}
+        propertyName={detail?.property.name || "Meadowbrook Estate"}
+        region={detail?.property.region || "Countryside"}
         branding={detail?.property.branding}
         propertySlug={detail?.property.slug}
         portalEnabled={Boolean(detail?.property.policy?.guest_portal_enabled)}
