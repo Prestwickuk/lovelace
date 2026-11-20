@@ -16,16 +16,16 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPhase5_RefundWebhookPersistenceAndLegacyUndatedExclusion(t *testing.T) {
 	srv, migratorStore, appSvc, prop, _, _, clk := setupPhase2TestServer(t, "")
 	ctx := context.Background()
 	adminClient := newClient(t)
-	if st, _ := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026"); st != http.StatusOK {
+	if st, _ := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026"); st != http.StatusOK {
 		t.Fatalf("admin login failed: %d", st)
 	}
 	pubClient := newClient(t)
@@ -35,10 +35,10 @@ func TestPhase5_RefundWebhookPersistenceAndLegacyUndatedExclusion(t *testing.T) 
 		t.Fatalf("list units: %v", err)
 	}
 	var ownerID uuid.UUID
-	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales' LIMIT 1`).Scan(&ownerID); err != nil {
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com' LIMIT 1`).Scan(&ownerID); err != nil {
 		t.Fatalf("lookup owner: %v", err)
 	}
-	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	// Reservation 1: paid at 2026-07-02T23:30:00Z (= 2026-07-03 BST), refunded in two partial Stripe webhooks on 2026-07-10T23:30:00Z (= 2026-07-11 BST) and 2026-07-15T12:00:00Z.
 	res1, err := appSvc.CreateReservation(ctx, ownerActor, domain.Reservation{
@@ -259,14 +259,14 @@ func TestPhase5_DateAwareOccupancySupplyHistoryAndPreTrackingBoundary(t *testing
 	ctx := context.Background()
 
 	client := newClient(t)
-	if st, _ := apiLogin(t, client, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026"); st != http.StatusOK {
+	if st, _ := apiLogin(t, client, srv.URL, "owner@example.com", "lovelace-owner-password-2026"); st != http.StatusOK {
 		t.Fatalf("login failed: %d", st)
 	}
 	var ownerID uuid.UUID
-	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales' LIMIT 1`).Scan(&ownerID); err != nil {
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com' LIMIT 1`).Scan(&ownerID); err != nil {
 		t.Fatalf("lookup owner: %v", err)
 	}
-	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	uts, err := migratorStore.ListUnitTypes(ctx, prop.ID, false)
 	if err != nil || len(uts) == 0 {
@@ -422,12 +422,12 @@ func TestPhase5_MultiCurrencyForecastNoDoubleCount(t *testing.T) {
 	srv, migratorStore, appSvc, prop, _, _ := setupPhase4AppServer(t, "phase5-mc-fc", channels.AdapterConfig{})
 	ctx := context.Background()
 	client := newClient(t)
-	if st, _ := apiLogin(t, client, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026"); st != http.StatusOK {
+	if st, _ := apiLogin(t, client, srv.URL, "owner@example.com", "lovelace-owner-password-2026"); st != http.StatusOK {
 		t.Fatalf("login failed: %d", st)
 	}
 	var ownerID uuid.UUID
-	_ = migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales' LIMIT 1`).Scan(&ownerID)
-	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	_ = migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com' LIMIT 1`).Scan(&ownerID)
+	ownerActor := service.Actor{UserID: ownerID, PropertyID: &prop.ID, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	units, _ := migratorStore.ListUnits(ctx, prop.ID, nil, false)
 	for i := 0; i < 2; i++ {
@@ -537,7 +537,7 @@ func TestPhase4_DisconnectWebhookCleanupFailureDoesNotMaskOrBlockLocalWipe(t *te
 	})
 	ctx := context.Background()
 	client := newClient(t)
-	st, csrf := apiLogin(t, client, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	st, csrf := apiLogin(t, client, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if st != http.StatusOK {
 		t.Fatalf("login failed: %d", st)
 	}

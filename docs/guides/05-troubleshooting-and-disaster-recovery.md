@@ -28,7 +28,7 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
 | Probe Result | Root Layer | Jump To |
 | :--- | :--- | :--- |
 | `/healthz` connection refused / `502 Bad Gateway` | `lovelace-app` exited at startup (fail-closed config guard) or proxy port mismatch | Part I, Sections 1.1–1.4, 2.5, 3.1 |
-| `/healthz` `200`, `/readyz` `503` | Database role/migration mismatch, missing `TIRBACH_PUBLIC_API_SECRET`, or `TIRBACH_REQUIRE_EMAIL=true` without SMTP | Part I, Sections 1.2–1.3, 2.1 |
+| `/healthz` `200`, `/readyz` `503` | Database role/migration mismatch, missing `LOVELACE_PUBLIC_API_SECRET`, or `LOVELACE_REQUIRE_EMAIL=true` without SMTP | Part I, Sections 1.2–1.3, 2.1 |
 | `/api/healthz` `200`, `/api/public/catalog` `502`/`401`/`500` | `LOVELACE_API_BASE_URL` unreachable (e.g. IPv6 binding) or `LOVELACE_PUBLIC_API_SECRET` mismatch | Part I, Sections 2.1, 3.1 |
 | All 4 probes `200 OK`, but bookings/prices/logins/sites look wrong | Operational or configuration mistake inside the Admin Console | **Part II (Catastrophes 1–21)** |
 
@@ -41,19 +41,19 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
 ## 1. Local & Self-Hosted Linux Server (Docker Compose, Caddy/Nginx & `systemd`)
 
 ### 1.1 Combining `docker-compose.yml` and `docker-compose.dev.yml` by Mistake
-- **Symptom:** Containers fail to start, connect with wrong credentials, or `noteG-server` exits immediately complaining about `tir_bach_dev_password` or `TIRBACH_AUTO_SEED must be false in production`.
-- **Root Cause:** Running `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` merges development placeholder secrets into a `TIRBACH_ENV=production` container, which Lovelace's fail-closed config loader (`internal/config/config.go`) intentionally rejects.
+- **Symptom:** Containers fail to start, connect with wrong credentials, or `noteG-server` exits immediately complaining about `lovelace_dev_password` or `LOVELACE_AUTO_SEED must be false in production`.
+- **Root Cause:** Running `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` merges development placeholder secrets into a `LOVELACE_ENV=production` container, which Lovelace's fail-closed config loader (`internal/config/config.go`) intentionally rejects.
 - **Fix:** Always run **either** `docker compose -f docker-compose.dev.yml up -d --build` (local dev only) **or** `docker compose up -d --build` (production only) — never both together.
 
 ### 1.2 PostgreSQL Authentication Failure After Changing `.env` Passwords on an Existing Volume
-- **Symptom:** `db-bootstrap` or `postgres` healthcheck loops with `FATAL: password authentication failed for user "postgres"` (or `role "postgres" does not exist` on an older Phase 1.5 `tir_bach_pgdata` volume).
-- **Root Cause:** PostgreSQL's official Docker image **only** reads `POSTGRES_USER` and `POSTGRES_PASSWORD` when initializing a brand-new, empty `/var/lib/postgresql/data` volume. Editing `.env` later does *not* change the password stored inside PostgreSQL's `pg_authid` catalog! Furthermore, legacy Phase 1.5 volumes were initialized with superuser `tir_bach` rather than `postgres`.
+- **Symptom:** `db-bootstrap` or `postgres` healthcheck loops with `FATAL: password authentication failed for user "postgres"` (or `role "postgres" does not exist` on an older Phase 1.5 `lovelace_pgdata` volume).
+- **Root Cause:** PostgreSQL's official Docker image **only** reads `POSTGRES_USER` and `POSTGRES_PASSWORD` when initializing a brand-new, empty `/var/lib/postgresql/data` volume. Editing `.env` later does *not* change the password stored inside PostgreSQL's `pg_authid` catalog! Furthermore, legacy Phase 1.5 volumes were initialized with superuser `lovelace` rather than `postgres`.
 - **Fix:**
   1. **Never** run `docker compose down -v` (that deletes your database!).
-  2. Restore the previous `POSTGRES_BOOTSTRAP_PASSWORD` in `.env` (and set `POSTGRES_BOOTSTRAP_USER=tir_bach` if upgrading a pre-existing Phase 1.5 volume) so `postgres` passes its healthcheck.
+  2. Restore the previous `POSTGRES_BOOTSTRAP_PASSWORD` in `.env` (and set `POSTGRES_BOOTSTRAP_USER=lovelace` if upgrading a pre-existing Phase 1.5 volume) so `postgres` passes its healthcheck.
   3. If you want to rotate the bootstrap password, change it inside PostgreSQL *first*, then update `.env`:
      ```bash
-     docker exec -it tir-bach-postgres psql \
+     docker exec -it lovelace-postgres psql \
        -U "${POSTGRES_BOOTSTRAP_USER:-postgres}" \
        -d "${POSTGRES_DB:-lovelace}" \
        -c "ALTER ROLE \"${POSTGRES_BOOTSTRAP_USER:-postgres}\" WITH PASSWORD '<NEW_PASSWORD>';"
@@ -64,20 +64,20 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
      ```
 
 ### 1.3 `noteG-server` Exits Immediately on Startup (Fail-Closed Production Guards)
-Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Lovelace refuses to start in `TIRBACH_ENV=production` if any security invariant is violated:
+Inspect `docker logs lovelace-app` (or `journalctl -u lovelace-app -n 50`). Lovelace refuses to start in `LOVELACE_ENV=production` if any security invariant is violated:
 
 | Startup Log Error | Exact Fix |
 | :--- | :--- |
 | `privileged database role rejected` | `DATABASE_URL` is connecting as `postgres` or a `SUPERUSER`/`CREATEDB`/`CREATEROLE` role. Connect strictly as `lovelace_app`. |
-| `TIRBACH_COOKIE_SECURE must be true in production` | Set `TIRBACH_COOKIE_SECURE=true` and serve the Admin Console over `https://`. |
-| `TIRBACH_TRUSTED_PROXIES must be explicitly configured` | When `TIRBACH_TRUST_PROXY=true`, explicitly list your reverse-proxy CIDRs (`127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8`). |
-| `invalid TIRBACH_ENCRYPTION_KEY` / `low-entropy value` | Generate a fresh 32-byte key (`openssl rand -hex 32` → 64 hex chars) — never use `0000...` or dev keys. |
-| `TIRBACH_STRIPE_SECRET_KEY ... test key rejected in production` | Production rejects `sk_test_` / `rk_test_`. Either supply live `sk_live_` + `whsec_` keys, or leave **both** blank while `stripe_enabled=false`. |
-| `invalid TIRBACH_PUBLIC_ORIGIN` | Must be a valid `https://` origin in production (no trailing path). |
+| `LOVELACE_COOKIE_SECURE must be true in production` | Set `LOVELACE_COOKIE_SECURE=true` and serve the Admin Console over `https://`. |
+| `LOVELACE_TRUSTED_PROXIES must be explicitly configured` | When `LOVELACE_TRUST_PROXY=true`, explicitly list your reverse-proxy CIDRs (`127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8`). |
+| `invalid LOVELACE_ENCRYPTION_KEY` / `low-entropy value` | Generate a fresh 32-byte key (`openssl rand -hex 32` → 64 hex chars) — never use `0000...` or dev keys. |
+| `LOVELACE_STRIPE_SECRET_KEY ... test key rejected in production` | Production rejects `sk_test_` / `rk_test_`. Either supply live `sk_live_` + `whsec_` keys, or leave **both** blank while `stripe_enabled=false`. |
+| `invalid LOVELACE_PUBLIC_ORIGIN` | Must be a valid `https://` origin in production (no trailing path). |
 
 ### 1.4 Reverse Proxy Issues (`403 Security Token Invalid`, `413 Entity Too Large`, Broken Stripe Webhooks)
 - **`403 Security Token Invalid` on `/login`:**
-  1. You are visiting `http://` instead of `https://` while `TIRBACH_COOKIE_SECURE=true` (browser refuses to store/send the `Secure` cookie).
+  1. You are visiting `http://` instead of `https://` while `LOVELACE_COOKIE_SECURE=true` (browser refuses to store/send the `Secure` cookie).
   2. Your Nginx/Apache/Cloudflare proxy is stripping the `Origin` header or rewriting `Host` (`Host` must match `Origin` for Lovelace's pre-session Login CSRF guard). Ensure `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Proto https;` are set.
 - **`413 Request Entity Too Large` when uploading a backup `.zip` or high-res property logo:**
   - Nginx defaults `client_max_body_size` to `1m`. Set `client_max_body_size 52m;` on your Nginx admin `server` block (or `request_body { max_size 52MB }` in Caddy) so 48 MiB backup archives upload cleanly.
@@ -115,7 +115,7 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
     az postgres flexible-server parameter set -g <RG> -s <SERVER> --name azure.extensions --value "PGCRYPTO,BTREE_GIST"
     ```
 - **`ERROR: permission denied for table ...` as `lovelace_app` after a Manual Migration:**
-  - **Fix:** Run `./scripts/postgres/ensure-roles.sh` once after running `tirbach-migrate` — it is 100% idempotent and grants strict DML-only access across all newly created tables, views, and sequences.
+  - **Fix:** Run `./scripts/postgres/ensure-roles.sh` once after running `lovelace-migrate` — it is 100% idempotent and grants strict DML-only access across all newly created tables, views, and sequences.
 
 ### 2.2 GCP Cloud Run: Basket Holds Never Expire, Emails Stay Stuck in `PENDING`, Nightly Backups Never Run
 - **Symptom:** HTTP pages load fast, but 15-minute checkout holds stay stuck past expiry, confirmation emails sit in the outbox until someone clicks a page, and scheduled 24-hour S3/GCS backups never trigger overnight.
@@ -136,14 +136,14 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
 
 ### 2.4 `permission denied` Uploading Logos or Maintenance Photos on AWS EFS / Azure Files
 - **Symptom:** Saving text settings works, but uploading a PNG property logo or maintenance photo returns an internal storage error (`open /var/lib/lovelace/attachments/...: permission denied`).
-- **Root Cause:** `Dockerfile` runs as non-root `USER tirbach` (`uid=100, gid=101` in `alpine:3.21`), while raw EFS file systems mount as `root:root` (`0755`).
+- **Root Cause:** `Dockerfile` runs as non-root `USER lovelace` (`uid=100, gid=101` in `alpine:3.21`), while raw EFS file systems mount as `root:root` (`0755`).
 - **Fix:**
   - **AWS EFS:** Create an **EFS Access Point** with POSIX User `Uid: 100, Gid: 101` and Root Directory `/lovelace-attachments` with Creation Info `OwnerUid: 100, OwnerGid: 101, Permissions: "0750"`, and mount via that Access Point ID in your ECS Task Definition.
   - **Azure Files / Kubernetes PVC:** Mount with `uid=100,gid=101,dir_mode=0750,file_mode=0640` (or `securityContext.fsGroup: 101`).
 
 ### 2.5 Load Balancer Restart Loops When Pointing Liveness Probes at `/readyz`
 - **Symptom:** Your SMTP provider (Resend / SES / Postmark) has a brief 2-minute outage or an expired API key; suddenly AWS ECS / Cloud Run / Azure starts killing and restarting `lovelace-app` every 60 seconds!
-- **Root Cause:** `/readyz` checks external dependencies (including SMTP when `TIRBACH_REQUIRE_EMAIL=true`) and returns `503` when degraded. If a container orchestrator uses `/readyz` as a **container kill/liveness probe**, an email outage causes container restarts!
+- **Root Cause:** `/readyz` checks external dependencies (including SMTP when `LOVELACE_REQUIRE_EMAIL=true`) and returns `503` when degraded. If a container orchestrator uses `/readyz` as a **container kill/liveness probe**, an email outage causes container restarts!
 - **Fix:**
   - Point **container liveness / healthcheck probes** at **`/healthz`** (or `noteG-server -healthcheck`, which hits `/healthz`).
   - Point **external uptime alerts & deployment gates** at **`/readyz`**.
@@ -154,13 +154,13 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
 
 ### 3.1 `public-web` Shows *"Unable to connect to the reservation system right now"* on Railway
 - **Root Cause (3 common culprits on Railway):**
-  1. **IPv4-only bind on an IPv6 private network:** Railway's `.railway.internal` private DNS resolves to IPv6 (`fd12::/16`) addresses. If `TIRBACH_LISTEN_ADDR` on `lovelace-app` was set to `0.0.0.0:8080` instead of `:8080`, Go listens on IPv4 only and refuses internal IPv6 connections from `lovelace-public-web`! Similarly, `lovelace-public-web` needs `HOSTNAME=::`.
-  2. **Secret mismatch:** `LOVELACE_PUBLIC_API_SECRET` on `lovelace-public-web` does not match `TIRBACH_PUBLIC_API_SECRET` on `lovelace-app` (or has an accidental trailing newline).
-  3. **Default slug mismatch:** `LOVELACE_PROPERTY_SLUG` on `lovelace-public-web` is still set to `tir-bach`, whereas you named your property `orchard-cottages` in the Setup Wizard!
+  1. **IPv4-only bind on an IPv6 private network:** Railway's `.railway.internal` private DNS resolves to IPv6 (`fd12::/16`) addresses. If `LOVELACE_LISTEN_ADDR` on `lovelace-app` was set to `0.0.0.0:8080` instead of `:8080`, Go listens on IPv4 only and refuses internal IPv6 connections from `lovelace-public-web`! Similarly, `lovelace-public-web` needs `HOSTNAME=::`.
+  2. **Secret mismatch:** `LOVELACE_PUBLIC_API_SECRET` on `lovelace-public-web` does not match `LOVELACE_PUBLIC_API_SECRET` on `lovelace-app` (or has an accidental trailing newline).
+  3. **Default slug mismatch:** `LOVELACE_PROPERTY_SLUG` on `lovelace-public-web` is still set to `demo-property`, whereas you named your property `orchard-cottages` in the Setup Wizard!
 - **Fix:**
-  1. On `lovelace-app`, set `TIRBACH_LISTEN_ADDR=:8080`.
-  2. On `lovelace-public-web`, set `HOSTNAME=::`, `LOVELACE_API_BASE_URL=http://<app-service-name>.railway.internal:8080`, `LOVELACE_PROPERTY_SLUG=<your-actual-property-slug>`, and ensure `LOVELACE_PUBLIC_API_SECRET` matches `TIRBACH_PUBLIC_API_SECRET` exactly.
-  3. Include `100.64.0.0/10,fd12::/16` in both `TIRBACH_TRUSTED_PROXIES` and `LOVELACE_TRUSTED_PROXIES`.
+  1. On `lovelace-app`, set `LOVELACE_LISTEN_ADDR=:8080`.
+  2. On `lovelace-public-web`, set `HOSTNAME=::`, `LOVELACE_API_BASE_URL=http://<app-service-name>.railway.internal:8080`, `LOVELACE_PROPERTY_SLUG=<your-actual-property-slug>`, and ensure `LOVELACE_PUBLIC_API_SECRET` matches `LOVELACE_PUBLIC_API_SECRET` exactly.
+  3. Include `100.64.0.0/10,fd12::/16` in both `LOVELACE_TRUSTED_PROXIES` and `LOVELACE_TRUSTED_PROXIES`.
 
 ### 3.2 Railway CLI Fails with `prefix not found` or Deploys the Wrong Dockerfile to `public-web`
 - **Root Cause:** `railway up` matches your current working directory's real path (`realpath`) against `~/.railway/config.json` (on macOS, `/tmp` is a symlink to `/private/tmp`), and deploying `public-web` without `--path-as-root` uploads the repo root `Dockerfile` instead of `apps/public-web/Dockerfile`.
@@ -208,7 +208,7 @@ Hospitality owners are busy welcoming tired travellers, cooking fry-ups, unblock
 ### Catastrophe 2: The Total Owner Lockout (Lost Password + Lost Recovery Codes + Rate-Limited)
 > *"I forgot my password, threw away the envelope with my 8 recovery codes during spring cleaning, AND guessed wrong 10 times so now Lovelace won't even let me try!"*
 
-- **Why It Happened:** After `8` failed attempts for an email within `15` minutes, Lovelace rate-limits sign-in attempts. Passwords and recovery codes are one-way hashed in PostgreSQL, and restarting with `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` intentionally refuses to overwrite existing accounts.
+- **Why It Happened:** After `8` failed attempts for an email within `15` minutes, Lovelace rate-limits sign-in attempts. Passwords and recovery codes are one-way hashed in PostgreSQL, and restarting with `LOVELACE_BOOTSTRAP_ADMIN_PASSWORD` intentionally refuses to overwrite existing accounts.
 - **Rescue Path A — If a Partner / Co-Owner Also Has an `owner_admin` Login:**
   1. Have them sign in → **Settings → Admin Users (`/users`)** → issue a temporary 12-character password for your account.
   2. Wait 15 minutes for the failed-attempt cooldown to clear, sign in, set your new password, and **download/print your new 8 recovery codes**!
@@ -226,7 +226,7 @@ Hospitality owners are busy welcoming tired travellers, cooking fry-ups, unblock
       "fmt"
       "os"
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/tirbach/tir-bach/internal/auth"
+      "github.com/Prestwickuk/lovelace/internal/auth"
   )
   func main() {
       email := os.Getenv("RESET_EMAIL")
@@ -300,15 +300,15 @@ Hospitality owners are busy welcoming tired travellers, cooking fry-ups, unblock
 > *"Our old server died! I booted a new Lovelace server, clicked through Step 1 of the Setup Wizard to test it, and now `/settings/backups` refuses to restore last Sunday's `.zip` backup!"*
 
 - **Why It Happened:** Lovelace refuses to overwrite any database that already has properties or bookings (`properties > 0`) so nobody accidentally wipes a live business with an old backup! Clicking Step 1 of `/onboarding` created `1` property.
-- **Immediate Fix:** Start the replacement server with `0` properties (`1` bootstrapped `owner_admin` only), go **straight** to **Settings → Backups & Cloud Sync (`/settings/backups`)** *before* touching `/onboarding`, and upload your `.zip` / `.zip.enc` archive. *(Note: Even if you lost `TIRBACH_ENCRYPTION_KEY`, 100% of bookings, guests, rooms, prices, and photos restore cleanly — you only re-type external OTA and cloud-bucket API keys once.)*
+- **Immediate Fix:** Start the replacement server with `0` properties (`1` bootstrapped `owner_admin` only), go **straight** to **Settings → Backups & Cloud Sync (`/settings/backups`)** *before* touching `/onboarding`, and upload your `.zip` / `.zip.enc` archive. *(Note: Even if you lost `LOVELACE_ENCRYPTION_KEY`, 100% of bookings, guests, rooms, prices, and photos restore cleanly — you only re-type external OTA and cloud-bucket API keys once.)*
 
 ---
 
 ### Catastrophe 10: Guests Are Booking Fine, But Confirmation Emails Aren't Arriving
 > *"Guests appear on our Booking Calendar, yet three people phoned today saying they haven't received a confirmation email!"*
 
-- **Why It Happened:** Lovelace records every booking first and queues emails safely in `email_outbox` so an SMTP hiccup never loses a reservation. Usually `TIRBACH_SMTP_ADDR` / API key / domain SPF-DKIM needs attention.
-- **Immediate Fix:** Check `failed emails` on **Operations Centre (`/`)**, inspect **Guests & Comms → Templates & Automation (`/communications/settings`)**, and verify `TIRBACH_SMTP_*` + verified `TIRBACH_EMAIL_FROM`.
+- **Why It Happened:** Lovelace records every booking first and queues emails safely in `email_outbox` so an SMTP hiccup never loses a reservation. Usually `LOVELACE_SMTP_ADDR` / API key / domain SPF-DKIM needs attention.
+- **Immediate Fix:** Check `failed emails` on **Operations Centre (`/`)**, inspect **Guests & Comms → Templates & Automation (`/communications/settings`)**, and verify `LOVELACE_SMTP_*` + verified `LOVELACE_EMAIL_FROM`.
 
 ---
 

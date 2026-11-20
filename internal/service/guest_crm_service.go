@@ -13,10 +13,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func (s *Service) todayUTC() time.Time {
@@ -1072,7 +1072,7 @@ func (s *Service) PreviewCommunicationTemplateWithEnquiry(ctx context.Context, a
 	if err != nil {
 		return "", "", "", err
 	}
-	guest := domain.Guest{FirstName: "Sian", LastName: "Davies", FullName: "Sian Davies", Email: "sian@example.wales"}
+	guest := domain.Guest{FirstName: "Claire", LastName: "Morgan", FullName: "Claire Morgan", Email: "claire@example.com"}
 	var resolvedGuestID *uuid.UUID
 	if guestID != nil {
 		canonID, gErr := s.store.ResolveCanonicalGuestID(ctx, nil, propertyID, *guestID)
@@ -1144,7 +1144,7 @@ func (s *Service) PreviewCommunicationTemplateWithEnquiry(ctx context.Context, a
 	}
 
 	var resPtr *domain.Reservation
-	unitNames := []string{"Preseli Shepherd's Hut 1"}
+	unitNames := []string{"Woodland Shepherd's Hut 1"}
 	if reservationID != nil {
 		if resolvedGuestID != nil {
 			if err := s.store.ValidateGuestReservationLinkTx(ctx, nil, propertyID, resolvedGuestID, reservationID); err != nil {
@@ -1176,7 +1176,7 @@ func (s *Service) PreviewCommunicationTemplateWithEnquiry(ctx context.Context, a
 		}
 	} else {
 		sample := domain.Reservation{
-			Reference:       "TB-2026-SAMPLE",
+			Reference:       "LV-2026-SAMPLE",
 			ArrivalDate:     time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC),
 			DepartureDate:   time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC),
 			Adults:          2,
@@ -1200,7 +1200,7 @@ type EmailWebhookEvent struct {
 	Payload         json.RawMessage `json:"payload,omitempty"`
 }
 
-// VerifyEmailWebhookSignature checks an HMAC-SHA256 hex digest when TIRBACH_EMAIL_WEBHOOK_SECRET is configured.
+// VerifyEmailWebhookSignature checks an HMAC-SHA256 hex digest when LOVELACE_EMAIL_WEBHOOK_SECRET is configured.
 func (s *Service) VerifyEmailWebhookSignature(rawBody []byte, headerSig string) error {
 	secret := strings.TrimSpace(s.cfg.EmailWebhookSecret)
 	if secret == "" {

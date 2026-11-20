@@ -1,7 +1,7 @@
-# Tir Bach Campsite — Phase 1.1 Implementation Findings & Agnostic QA / Verification Guide
+# Meadowbrook Estate — Phase 1.1 Implementation Findings & Agnostic QA / Verification Guide
 
 > **For any AI coding agent (Codex, Claude Code, Antigravity) or human reviewer:**  
-> All paths in this document are relative to the repository root (`tir-bach/`). Do not assume git history (the extracted bundle has no `.git` directory). All commands were verified against Go `1.27.1` (target `go.mod` `go 1.24`) and PostgreSQL `17`.
+> All paths in this document are relative to the repository root (`lovelace/`). Do not assume git history (the extracted bundle has no `.git` directory). All commands were verified against Go `1.27.1` (target `go.mod` `go 1.24`) and PostgreSQL `17`.
 
 ---
 
@@ -23,7 +23,7 @@
 - `migrations/0002_phase1_1.sql` — Additive Phase 1.1 schema:
   - `booking_channels` (extensible booking source classification; seeded with `DIRECT`, `AIRBNB`, `BOOKING_COM`, `PHONE`, `EMAIL`, `WALK_IN`, `OTHER` for existing properties and created automatically for new properties in `internal/store/postgres/property_repo.go`).
   - `guests` (minimal Phase 1.1 guest records expandable in Phase 3).
-  - `reservations` and `reservation_units` (unique `TB-YYYY-XXXXXX` references, party counts, internal notes, multi-unit support, lifecycle status without payment fields).
+  - `reservations` and `reservation_units` (unique `LV-YYYY-XXXXXX` references, party counts, internal notes, multi-unit support, lifecycle status without payment fields).
   - `blockout_groups` and `inventory_claims` (single unified overlap-protected allocation table with GiST constraint `excl_inventory_claims_no_overlap` on `(unit_id WITH =, claim_range WITH &&) WHERE (status = 'ACTIVE')`).
   - Migrates all legacy `availability_blocks` rows into `blockout_groups` + `inventory_claims` and drops `availability_blocks`.
   - `availability_release_rules` (`UNIT`, `UNIT_TYPE`, `PROPERTY` + `channel_code` + UTC `release_at` timestamps).
@@ -35,7 +35,7 @@
 - `internal/domain/claims_releases.go` — `ClaimType`, `BlockoutScope` (`UNIT`, `UNITS`, `UNIT_TYPE`, `PROPERTY`), `BlockoutGroup`, `InventoryClaim`, `BulkBlockoutInput`, `BlockoutPreview`, `AvailabilityReleaseRule`, `EvaluateReleaseForStay()`.
 - `internal/secrets/box.go` — AES-256-GCM credential vault (`NewBox`, `SealMap`, `OpenMap`, `MaskSecret`).
 - `internal/channels/registry.go` — Registered providers (`beds24`, `smoobu`, `lodgify`, `channex`), `Adapter` interface for Phase 4, `ValidateAndSplitInputs`. Every provider currently sets `HasLiveAdapter: false`.
-- `internal/config/config.go` — Fail-closed `production` guards (`TIRBACH_COOKIE_SECURE=true`, `TIRBACH_AUTO_SEED=false`, valid non-dev 32-byte `TIRBACH_ENCRYPTION_KEY`, non-dev Postgres password).
+- `internal/config/config.go` — Fail-closed `production` guards (`LOVELACE_COOKIE_SECURE=true`, `LOVELACE_AUTO_SEED=false`, valid non-dev 32-byte `LOVELACE_ENCRYPTION_KEY`, non-dev Postgres password).
 - `internal/auth/rbac.go` — Permissions including `PermReservationsRead/Write`, `PermReleasesRead/Write`, `PermChannelsRead/Write`.
 - `internal/store/postgres/` — `reservations_repo.go`, `blockouts_repo.go`, `releases_repo.go`, `channels_repo.go`, updated `blocks_repo.go`, `inventory_repo.go` (`InheritFutureUnitBlockouts`), and `property_repo.go`.
 
@@ -50,10 +50,10 @@
 ## 3. Key Implementation Findings & Gotchas to Know Before Reviewing
 
 1. **Docker Compose Interpolation Behaviour:**
-   - `docker-compose.yml` intentionally uses `${POSTGRES_PASSWORD:?...}` and `${TIRBACH_ENCRYPTION_KEY:?...}` so production fails closed if secrets are omitted.
+   - `docker-compose.yml` intentionally uses `${POSTGRES_PASSWORD:?...}` and `${LOVELACE_ENCRYPTION_KEY:?...}` so production fails closed if secrets are omitted.
    - During verification we found that `docker compose -f docker-compose.yml -f docker-compose.dev.yml` evaluates missing required variables in the base file *before* applying the dev override file. Therefore `docker-compose.dev.yml` is intentionally standalone (`docker compose -f docker-compose.dev.yml up -d --build`).
 2. **Dev Secret Key Blocklist (`internal/config/config.go`):**
-   - Integration tests verified that `00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff` (used in `docker-compose.dev.yml`) and `tirbach-dev-only-32byte-key-0001` are explicitly rejected when `TIRBACH_ENV=production`.
+   - Integration tests verified that `00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff` (used in `docker-compose.dev.yml`) and `lovelace-dev-only-32byte-key-001` are explicitly rejected when `LOVELACE_ENV=production`.
 3. **Secret Masking Format (`internal/secrets/box.go`):**
    - `MaskSecret` masks secrets using four Unicode bullet characters (`••••` + last 4 chars, e.g., `••••7654`), not ASCII asterisks.
 4. **Reservation Status vs Inventory Claims:**
@@ -66,14 +66,14 @@
 6. **Channel Manager Status Guardrail:**
    - Any API or service call attempting to set status `CONNECTED` returns `422 validation_failed` whenever `HasLiveAdapter == false`. Secrets are never returned in API JSON or written to `audit_logs`.
 7. **Test Database Safety Guardrail (`internal/app/integration_test.go`):**
-   - `verifySafeTestDatabase` verifies both the URL path database name and PostgreSQL `SELECT current_database()` end with `_test`, `-test`, or contain `_test_`, match each other, and do not equal `tir_bach`, `postgres`, or contain `prod`. Non-matching databases abort before `TRUNCATE`.
+   - `verifySafeTestDatabase` verifies both the URL path database name and PostgreSQL `SELECT current_database()` end with `_test`, `-test`, or contain `_test_`, match each other, and do not equal `lovelace`, `postgres`, or contain `prod`. Non-matching databases abort before `TRUNCATE`.
 
 ---
 
 ## 4. What to Check (Agnostic Verification & QA Protocol)
 
 ### Step 1: Static Compilation & Vet
-Run from inside `tir-bach/`:
+Run from inside `lovelace/`:
 ```bash
 go build ./...
 go vet ./...
@@ -90,15 +90,15 @@ go test -v -race -count=1 ./...
 - `internal/domain`: `TestCalculateRatePreview`, `TestFormatPence`, `TestValidationRules` PASS.
 
 ### Step 3: Full PostgreSQL 17 End-to-End & Concurrency Suite
-Start PostgreSQL 17 if not already running (for example via dev Compose) and ensure a dedicated `tir_bach_test` database exists:
+Start PostgreSQL 17 if not already running (for example via dev Compose) and ensure a dedicated `lovelace_test` database exists:
 ```bash
 docker compose -f docker-compose.dev.yml up -d postgres
-PGPASSWORD=tir_bach_dev_password psql -h 127.0.0.1 -U tir_bach -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'tir_bach_test'" | grep -q 1 \
-  || PGPASSWORD=tir_bach_dev_password createdb -h 127.0.0.1 -U tir_bach tir_bach_test
+PGPASSWORD=lovelace_dev_password psql -h 127.0.0.1 -U lovelace -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'lovelace_test'" | grep -q 1 \
+  || PGPASSWORD=lovelace_dev_password createdb -h 127.0.0.1 -U lovelace lovelace_test
 ```
 Run the complete suite with race detector enabled:
 ```bash
-TEST_DATABASE_URL="postgres://tir_bach:tir_bach_dev_password@127.0.0.1:5432/tir_bach_test?sslmode=disable" \
+TEST_DATABASE_URL="postgres://lovelace:lovelace_dev_password@127.0.0.1:5432/lovelace_test?sslmode=disable" \
   go test -v -race -count=1 ./...
 ```
 **Verify all 10 test functions pass with 0 failures and 0 skips:**
@@ -111,12 +111,12 @@ docker compose -f docker-compose.dev.yml up -d --build
 curl -sS -i http://127.0.0.1:8080/readyz
 ```
 **Expected:** `HTTP/1.1 200 OK` with `{"status":"ready"}` and strict CSP / `X-Frame-Options: DENY` / `Cache-Control: no-store` headers.  
-You can inspect the admin console at `http://127.0.0.1:8080/login` (dev default from `docker-compose.dev.yml`: `owner@tirbach.wales` / `tirbach-dev-admin-2026`), checking `/calendar`, `/reservations`, `/blocks`, `/releases`, and `/settings/integrations/channel-manager`.
+You can inspect the admin console at `http://127.0.0.1:8080/login` (dev default from `docker-compose.dev.yml`: `owner@example.com` / `lovelace-dev-admin-2026`), checking `/calendar`, `/reservations`, `/blocks`, `/releases`, and `/settings/integrations/channel-manager`.
 
 ### Step 5: Code & QA Audit Checklist (Phase 1.5 Readiness)
 Reviewers should independently inspect and verify:
 - [ ] **No Phase 2–5 Leakage:** Confirm zero public guest search/checkout handlers, zero payment/deposit/Stripe tables or status enums on `reservations`, zero live external OTA HTTP clients inside `internal/channels/`.
 - [ ] **Migrations Integrity:** Confirm `migrations/0001_init.sql` is untouched and `migrations/0002_phase1_1.sql` migrates `availability_blocks` data into `blockout_groups` + `inventory_claims` cleanly.
 - [ ] **Conflict Enforcement:** Confirm no code relies solely on app-level checks without PostgreSQL `excl_inventory_claims_no_overlap` backing transactional commits.
-- [ ] **Security Posture:** Confirm `docker-compose.yml` fails closed without `POSTGRES_PASSWORD`/`TIRBACH_ENCRYPTION_KEY`, `TIRBACH_AUTO_SEED` is disabled in production, `internal/secrets/box.go` never logs or serializes plaintext credentials, and `must_rotate_password` gates both `/api/v1/*` and Web UI routes.
+- [ ] **Security Posture:** Confirm `docker-compose.yml` fails closed without `POSTGRES_PASSWORD`/`LOVELACE_ENCRYPTION_KEY`, `LOVELACE_AUTO_SEED` is disabled in production, `internal/secrets/box.go` never logs or serializes plaintext credentials, and `must_rotate_password` gates both `/api/v1/*` and Web UI routes.
 - [ ] **UI Interaction Coverage:** Verify progressive-enhancement calendar selection and scope toggles in `internal/webui/static/calendar.js` respect strict CSP (`script-src 'self'`, zero inline `<script>` blocks).

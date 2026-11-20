@@ -186,7 +186,7 @@ paths:
     post:
       summary: Initiate passwordless Guest Portal email OTP and browser-bound magic-link challenge
       description: >
-        Disabled by default (returns 404 when TIRBACH_GUEST_PORTAL_ENABLED=false or property guest_portal_enabled=false).
+        Disabled by default (returns 404 when LOVELACE_GUEST_PORTAL_ENABLED=false or property guest_portal_enabled=false).
         Always returns uniform 202 Accepted without enumerating whether an active guest profile exists.
         Queues a single-use 6-digit OTP (stored at rest solely as a server-keyed HMAC-SHA256 digest bound to
         challenge_id, normalized_email, and normalized_otp) and #t=<magic_token> fragment link via email_outbox

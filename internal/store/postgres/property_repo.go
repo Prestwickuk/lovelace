@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 func (s *Store) ListProperties(ctx context.Context) ([]domain.Property, error) {

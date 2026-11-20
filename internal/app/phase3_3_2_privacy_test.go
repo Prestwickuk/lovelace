@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/service"
 	"github.com/google/uuid"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/service"
 )
 
 type recordingMailer struct {
@@ -47,20 +47,20 @@ func TestPhase332AuditMinimizationAndControlledRedaction(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("load owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role, IPAddress: "127.0.0.1", UserAgent: "audit-test"}
 
 	staffUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p332staff@tirbach.wales", FullName: "P332 Staff", Role: domain.RoleStaff, Password: "p332-staff-pass-2026",
+		Email: "p332staff@example.com", FullName: "P332 Staff", Role: domain.RoleStaff, Password: "p332-staff-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create staff: %v", err)
 	}
 	viewerUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p332viewer@tirbach.wales", FullName: "P332 Viewer", Role: domain.RoleViewer, Password: "p332-viewer-pass-2026",
+		Email: "p332viewer@example.com", FullName: "P332 Viewer", Role: domain.RoleViewer, Password: "p332-viewer-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create viewer: %v", err)
@@ -153,7 +153,7 @@ func TestPhase332AuditMinimizationAndControlledRedaction(t *testing.T) {
 	// Trigger public booking hold + cancel to verify pseudonymous actor_email and minimized metadata.
 	pubClient := newClient(t)
 	hResp := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "pub-p332-audit", "", map[string]any{
-		"property_slug":  "tir-bach",
+		"property_slug":  "demo-property",
 		"unit_type_code": "grass-pitch",
 		"arrival_date":   clk.Now().AddDate(0, 0, 20).Format("2006-01-02"),
 		"departure_date": clk.Now().AddDate(0, 0, 22).Format("2006-01-02"),
@@ -252,7 +252,7 @@ func TestPhase332AuditMinimizationAndControlledRedaction(t *testing.T) {
 		t.Fatalf("expected DELETE on audit_logs to fail trigger immutability")
 	}
 
-	ownerClient, ownerCSRF := loginAdminClient(t, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	ownerClient, ownerCSRF := loginAdminClient(t, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	staffClient, staffCSRF := loginAdminClient(t, srv.URL, staffUser.Email, "p332-staff-pass-2026")
 	viewerClient, viewerCSRF := loginAdminClient(t, srv.URL, viewerUser.Email, "p332-viewer-pass-2026")
 	ownerBClient, ownerBCSRF := loginAdminClient(t, srv.URL, ownerBUser.Email, "p332-ownerb-pass-2026")
@@ -348,13 +348,13 @@ func TestPhase332BookingHoldExportAndAnonymisationLifecycle(t *testing.T) {
 	_ = mailMock
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	pubClient := newClient(t)
 
 	// 1. Abandoned public hold never confirmed -> guest_id must remain NULL.
 	abResp := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "pub-p332-holds", "", map[string]any{
-		"property_slug":    "tir-bach",
+		"property_slug":    "demo-property",
 		"unit_type_code":   "grass-pitch",
 		"arrival_date":     clk.Now().AddDate(0, 0, 8).Format("2006-01-02"),
 		"departure_date":   clk.Now().AddDate(0, 0, 10).Format("2006-01-02"),
@@ -377,7 +377,7 @@ func TestPhase332BookingHoldExportAndAnonymisationLifecycle(t *testing.T) {
 	const targetEmail = "megan.hold@example.test"
 	const targetReq = "QUIET_CORNER_SPECIAL_REQ"
 	hResp := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "pub-p332-holds", "", map[string]any{
-		"property_slug":    "tir-bach",
+		"property_slug":    "demo-property",
 		"unit_type_code":   "bell-tent",
 		"arrival_date":     clk.Now().AddDate(0, 0, 14).Format("2006-01-02"),
 		"departure_date":   clk.Now().AddDate(0, 0, 16).Format("2006-01-02"),
@@ -482,7 +482,7 @@ func TestPhase332OutboxAnonymisationRaceAndConcurrency(t *testing.T) {
 	svc.SetEmailSender(recMailer)
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	// Helper to create a guest, queue an email, returning guest + outboxID.
@@ -635,9 +635,9 @@ func TestPhase332RelationshipsConsentMergeLineageAndDismissals(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
-	ownerClient, ownerCSRF := loginAdminClient(t, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	ownerClient, ownerCSRF := loginAdminClient(t, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	units, _ := store.ListUnits(ctx, prop.ID, nil, true)
 
 	// 1. Cross-guest enquiry/reservation validation in SendGuestEmail and template preview.

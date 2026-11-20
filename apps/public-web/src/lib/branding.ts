@@ -12,7 +12,7 @@ export function sanitizeHexColor(raw?: string): string | undefined {
   return trimmed.toUpperCase();
 }
 
-export function sanitizePropertySlug(raw?: string, fallback = "tir-bach"): string {
+export function sanitizePropertySlug(raw?: string, fallback = "demo-property"): string {
   const cleaned = (raw || "").trim().toLowerCase();
   if (SAFE_SLUG_RE.test(cleaned)) {
     return cleaned;

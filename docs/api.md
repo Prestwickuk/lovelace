@@ -1,6 +1,6 @@
 # LOVELACE Booking System — REST API Reference (`/api/v1`)
 
-All endpoints return JSON and authenticate via `tirbach_session` (`HttpOnly` cookie).  
+All endpoints return JSON and authenticate via `lovelace_session` (`HttpOnly` cookie).  
 All state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) other than `/api/v1/auth/login` require header `X-CSRF-Token` matching the session's `csrf_token`.
 
 Error responses share a standard envelope:
@@ -18,7 +18,7 @@ Error responses share a standard envelope:
 - `GET /healthz` — Liveness probe (`200 OK`).
 - `GET /readyz` — Readiness probe (`200 OK` / `503 Service Unavailable`) reporting `database`, `payments`, `email` (e.g. `configured` vs `unconfigured`), and `public_api` component states.
 - Additional Phase 2.1 error codes: `409 stripe_disabled`, `409 active_checkout_exists`, `400 query_token_forbidden`, `429 rate_limited`.
-- `POST /api/v1/auth/login` — Body `{"email","password"}`. Sets `tirbach_session` cookie; returns `user` + `csrf_token`.
+- `POST /api/v1/auth/login` — Body `{"email","password"}`. Sets `lovelace_session` cookie; returns `user` + `csrf_token`.
 - `POST /api/v1/auth/logout` — Revokes current session & clears cookie.
 - `GET /api/v1/auth/me` — Returns current actor summary (`must_rotate_password`, `role`, `csrf_token`).
 - `POST /api/v1/auth/change-password` — Body `{"current_password","new_password"}`. Clears `must_rotate_password`, revokes all prior sessions, and rotates session cookie + `csrf_token`.

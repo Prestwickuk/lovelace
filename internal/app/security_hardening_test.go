@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testing.T) {
@@ -20,7 +20,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 	defer srv.Close()
 
 	ctx := context.Background()
-	globalOwner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	globalOwner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get global owner: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 	propBID, _ := uuid.NewV7()
 	propB, err := store.CreateProperty(ctx, nil, domain.Property{
 		ID: propBID, Slug: "sec-prop-b", Name: "Property B", CountryCode: "GB",
-		Timezone: "Europe/London", Currency: "GBP", ContactEmail: "b@tirbach.wales",
+		Timezone: "Europe/London", Currency: "GBP", ContactEmail: "b@example.com",
 		CheckInTime: "15:00", CheckOutTime: "10:00",
 	})
 	if err != nil {
@@ -40,21 +40,21 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 
 	// Provision property-scoped owner_admins on Property A and Property B, plus a rotating staff user on A.
 	scopedAdminA, err := svc.CreateUser(ctx, globalActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "scoped-owner-a@tirbach.wales", FullName: "Scoped Owner A",
+		PropertyID: &propA.ID, Email: "scoped-owner-a@example.com", FullName: "Scoped Owner A",
 		Role: domain.RoleOwnerAdmin, Password: "ScopedOwnerA-2026!Pass",
 	})
 	if err != nil {
 		t.Fatalf("create scopedAdminA: %v", err)
 	}
 	scopedAdminB, err := svc.CreateUser(ctx, globalActor, service.CreateUserInput{
-		PropertyID: &propB.ID, Email: "scoped-owner-b@tirbach.wales", FullName: "Scoped Owner B",
+		PropertyID: &propB.ID, Email: "scoped-owner-b@example.com", FullName: "Scoped Owner B",
 		Role: domain.RoleOwnerAdmin, Password: "ScopedOwnerB-2026!Pass",
 	})
 	if err != nil {
 		t.Fatalf("create scopedAdminB: %v", err)
 	}
 	rotatingStaffA, err := svc.CreateUser(ctx, globalActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "rot-staff-a@tirbach.wales", FullName: "Rotating Staff A",
+		PropertyID: &propA.ID, Email: "rot-staff-a@example.com", FullName: "Rotating Staff A",
 		Role: domain.RoleStaff, Password: "RotStaffA-2026!Pass", MustRotatePassword: true,
 	})
 	if err != nil {
@@ -79,13 +79,13 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 
 	// 2. Scoped owner_admin A cannot mint a global owner_admin (PropertyID: nil) or a user in Property B.
 	if _, err := svc.CreateUser(ctx, actorAdminA, service.CreateUserInput{
-		PropertyID: nil, Email: "escalate-global@tirbach.wales", FullName: "Escalated Global",
+		PropertyID: nil, Email: "escalate-global@example.com", FullName: "Escalated Global",
 		Role: domain.RoleOwnerAdmin, Password: "EscalateGlobal-2026!Pass",
 	}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("expected ErrForbidden minting global owner_admin from scoped admin, got %v", err)
 	}
 	if _, err := svc.CreateUser(ctx, actorAdminA, service.CreateUserInput{
-		PropertyID: &propB.ID, Email: "plant-in-b@tirbach.wales", FullName: "Planted B",
+		PropertyID: &propB.ID, Email: "plant-in-b@example.com", FullName: "Planted B",
 		Role: domain.RoleManager, Password: "PlantInB-2026!Pass",
 	}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("expected ErrForbidden creating user in Property B, got %v", err)
@@ -181,7 +181,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 	// 7. Verify 0029 + Phase 3 M4 (0026) audit allowlist parity: consent_status, 8-digit external_reservation_id,
 	// guest_portal_identity, PORTAL source/method, and arrival_details changed_fields survive redaction.
 	guest, err := svc.CreateGuest(ctx, actorAdminA, domain.Guest{
-		PropertyID: propA.ID, FirstName: "Carys", LastName: "Consent", Email: "carys.consent@tirbach.wales",
+		PropertyID: propA.ID, FirstName: "Carys", LastName: "Consent", Email: "carys.consent@example.com",
 	})
 	if err != nil {
 		t.Fatalf("create guest: %v", err)
@@ -275,7 +275,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 
 	// 9. Erasure-pending cluster freeze: UpdateGuest, MergeGuests, and DismissGuestDuplicate must reject with ErrConflict.
 	guest2, err := svc.CreateGuest(ctx, actorAdminA, domain.Guest{
-		PropertyID: propA.ID, FirstName: "Bryn", LastName: "Pending", Email: "bryn.pending@tirbach.wales",
+		PropertyID: propA.ID, FirstName: "Bryn", LastName: "Pending", Email: "bryn.pending@example.com",
 	})
 	if err != nil {
 		t.Fatalf("create guest2: %v", err)
@@ -333,14 +333,14 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 		t.Fatalf("create activeRes: %v", err)
 	}
 	viewerUserA, err := svc.CreateUser(ctx, actorAdminA, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "viewer-ops-sec@tirbach.wales", FullName: "Viewer Ops Sec",
+		PropertyID: &propA.ID, Email: "viewer-ops-sec@example.com", FullName: "Viewer Ops Sec",
 		Role: domain.RoleViewer, Password: "ViewerOpsSec-2026!Pass",
 	})
 	if err != nil {
 		t.Fatalf("create viewerUserA: %v", err)
 	}
 	hkUserA, err := svc.CreateUser(ctx, actorAdminA, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "hk-ops-sec@tirbach.wales", FullName: "HK Ops Sec",
+		PropertyID: &propA.ID, Email: "hk-ops-sec@example.com", FullName: "HK Ops Sec",
 		Role: domain.RoleHousekeepingStaff, Password: "HKOpsSec-2026!Pass",
 	})
 	if err != nil {
@@ -370,7 +370,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 	}
 
 	// 11. Pre-session Login CSRF protection & Portal Origin: null fail-closed rejection.
-	csrfLoginReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/auth/login", strings.NewReader(`{"email":"owner@tirbach.wales","password":"pw"}`))
+	csrfLoginReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/auth/login", strings.NewReader(`{"email":"owner@example.com","password":"pw"}`))
 	csrfLoginReq.Header.Set("Content-Type", "application/json")
 	csrfLoginReq.Header.Set("Origin", "https://evil.example")
 	csrfLoginResp, err := pubClient.Do(csrfLoginReq)
@@ -382,7 +382,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 		t.Fatalf("expected 403 for cross-origin POST /api/v1/auth/login, got %d", csrfLoginResp.StatusCode)
 	}
 
-	nullOriginWebReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/login", strings.NewReader("email=owner%40tirbach.wales&password=pw"))
+	nullOriginWebReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/login", strings.NewReader("email=owner%40example.com&password=pw"))
 	nullOriginWebReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	nullOriginWebReq.Header.Set("Origin", "null")
 	nullOriginWebResp, err := pubClient.Do(nullOriginWebReq)
@@ -394,7 +394,7 @@ func TestSecurityHardening_MultiTenantUserIsolationAndPublicHoldPrivacy(t *testi
 		t.Fatalf("expected 403 for Origin: null POST /login, got %d", nullOriginWebResp.StatusCode)
 	}
 
-	portalNullReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/public/v1/portal/auth/challenge", strings.NewReader(`{"property_slug":"tir-bach","email":"carys.consent@tirbach.wales"}`))
+	portalNullReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/public/v1/portal/auth/challenge", strings.NewReader(`{"property_slug":"demo-property","email":"carys.consent@example.com"}`))
 	portalNullReq.Header.Set("Content-Type", "application/json")
 	portalNullReq.Header.Set("X-Lovelace-Public-Key", "pub-sec-harden")
 	portalNullReq.Header.Set("Origin", "null")

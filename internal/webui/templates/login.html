@@ -14,7 +14,7 @@
       <p class="subtitle">Property, Inventory &amp; Channel Administration</p>
       {{if .NeedsBootstrap}}
       <div class="alert alert-warn mt-3" role="status">
-        <strong>First-time setup pending:</strong> No administrator account has been provisioned yet. Configure <code>TIRBACH_BOOTSTRAP_ADMIN_EMAIL</code> and <code>TIRBACH_BOOTSTRAP_ADMIN_PASSWORD</code> (or run <code>tirbach-seed -admin-only</code>) to create the initial Owner-Admin login; you will be prompted to set your own password on first sign-in.
+        <strong>First-time setup pending:</strong> No administrator account has been provisioned yet. Configure <code>LOVELACE_BOOTSTRAP_ADMIN_EMAIL</code> and <code>LOVELACE_BOOTSTRAP_ADMIN_PASSWORD</code> (or run <code>lovelace-seed -admin-only</code>) to create the initial Owner-Admin login; you will be prompted to set your own password on first sign-in.
       </div>
       {{end}}
       {{if .Error}}<div class="alert alert-err mt-3" role="alert" id="login-error">{{.Error}}</div>{{end}}

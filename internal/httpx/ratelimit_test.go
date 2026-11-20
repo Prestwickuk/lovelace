@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/config"
 )
 
 func TestExtractClientIPAndIPv6RateLimitKey(t *testing.T) {
@@ -16,7 +16,7 @@ func TestExtractClientIPAndIPv6RateLimitKey(t *testing.T) {
 	}
 
 	// Multiple X-Forwarded-For header lines must be joined rather than trusting client's forged first header.
-	r, _ := http.NewRequest(http.MethodGet, "https://admin.tirbach.wales/", nil)
+	r, _ := http.NewRequest(http.MethodGet, "https://admin.example.com/", nil)
 	r.RemoteAddr = "10.0.0.5:44321"
 	r.Header.Add("X-Forwarded-For", "198.51.100.99")
 	r.Header.Add("X-Forwarded-For", "203.0.113.42, 172.18.0.2")
@@ -26,7 +26,7 @@ func TestExtractClientIPAndIPv6RateLimitKey(t *testing.T) {
 	}
 
 	// Malformed XFF hop must fail closed to immediate peer IP rather than falling through to X-Real-IP.
-	rBad, _ := http.NewRequest(http.MethodGet, "https://admin.tirbach.wales/", nil)
+	rBad, _ := http.NewRequest(http.MethodGet, "https://admin.example.com/", nil)
 	rBad.RemoteAddr = "[::ffff:10.0.0.5]:44321"
 	rBad.Header.Set("X-Forwarded-For", "198.51.100.99, bogus-hop")
 	rBad.Header.Set("X-Real-IP", "198.51.100.88")

@@ -1,7 +1,7 @@
 # LOVELACE Booking System — Branding & Design System
 
 **Platform Product:** `LOVELACE Booking System` (`LOVELACE` wordmark)  
-**Default Managed Property:** `Tir Bach Campsite` (`properties.slug = 'tir-bach'`)
+**Default Sample Property (Local Dev Seed):** `Meadowbrook Estate` (`properties.slug = 'demo-property'`)
 
 ## 1. Platform vs. Property Separation
 

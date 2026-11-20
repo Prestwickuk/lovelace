@@ -27,7 +27,7 @@ type Assets struct {
 }
 
 // PlatformBrand centralises the permanent LOVELACE Booking System identity,
-// distinct from any managed property (such as Tir Bach Campsite).
+// distinct from any managed hospitality property.
 type PlatformBrand struct {
 	Name            string  `json:"name"`
 	Descriptor      string  `json:"descriptor"`

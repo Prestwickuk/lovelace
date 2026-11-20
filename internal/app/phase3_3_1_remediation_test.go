@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPhase331LifecyclePermissionsAndGuestDetailPrivacy(t *testing.T) {
@@ -21,26 +21,26 @@ func TestPhase331LifecyclePermissionsAndGuestDetailPrivacy(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	staffUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p331staff@tirbach.wales", FullName: "Lowri Staff", Role: domain.RoleStaff, Password: "p331-staff-pass-2026",
+		Email: "p331staff@example.com", FullName: "Lowri Staff", Role: domain.RoleStaff, Password: "p331-staff-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create staff user: %v", err)
 	}
 	viewerUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p331viewer@tirbach.wales", FullName: "Tomos Viewer", Role: domain.RoleViewer, Password: "p331-viewer-pass-2026",
+		Email: "p331viewer@example.com", FullName: "Tomos Viewer", Role: domain.RoleViewer, Password: "p331-viewer-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create viewer user: %v", err)
 	}
 	managerUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p331mgr@tirbach.wales", FullName: "Mared Manager", Role: domain.RoleManager, Password: "p331-mgr-pass-2026",
+		Email: "p331mgr@example.com", FullName: "Mared Manager", Role: domain.RoleManager, Password: "p331-mgr-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create manager user: %v", err)
@@ -191,7 +191,7 @@ func TestPhase331CrossGuestReservationIsolationAndPreview(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	units, _ := svc.ListUnits(ctx, ownerActor, prop.ID, nil)
 	tpls, _ := svc.ListCommunicationTemplates(ctx, ownerActor, prop.ID)
@@ -294,7 +294,7 @@ func TestPhase331CanonicalAliasAnonymizationCompleteness(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	units, _ := svc.ListUnits(ctx, ownerActor, prop.ID, nil)
 	tpls, _ := svc.ListCommunicationTemplates(ctx, ownerActor, prop.ID)
@@ -436,20 +436,20 @@ func TestPhase331ExportConsentRetentionDuplicatesAndInternalMessages(t *testing.
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 	viewerUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p331enqviewer@tirbach.wales", FullName: "Emyr Viewer", Role: domain.RoleViewer, Password: "p331-enqviewer-2026",
+		Email: "p331enqviewer@example.com", FullName: "Emyr Viewer", Role: domain.RoleViewer, Password: "p331-enqviewer-2026",
 	})
 	// Grant a custom user without PermGuestsNotes? RoleStaff has PermCommsRead + PermCommsWrite, and NO PermGuestsNotes!
 	staffUser, _ := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p331enqstaff@tirbach.wales", FullName: "Beca Staff", Role: domain.RoleStaff, Password: "p331-enqstaff-2026",
+		Email: "p331enqstaff@example.com", FullName: "Beca Staff", Role: domain.RoleStaff, Password: "p331-enqstaff-2026",
 	})
 	_ = viewerUser
 	staffActor := service.Actor{UserID: staffUser.ID, Email: staffUser.Email, FullName: staffUser.FullName, Role: staffUser.Role}
 
 	adminUser, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		Email: "p331admin@tirbach.wales", FullName: "Owen Owner", Role: domain.RoleOwnerAdmin, Password: "p331-owner-pass-2026",
+		Email: "p331admin@example.com", FullName: "Owen Owner", Role: domain.RoleOwnerAdmin, Password: "p331-owner-pass-2026",
 	})
 	if err != nil {
 		t.Fatalf("create adminUser: %v", err)

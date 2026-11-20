@@ -18,7 +18,7 @@ const API_BASE = (
   process.env.LOVELACE_API_BASE_URL || "http://127.0.0.1:8080"
 ).replace(/\/+$/, "");
 
-const PROPERTY_SLUG = process.env.LOVELACE_PROPERTY_SLUG || "tir-bach";
+const PROPERTY_SLUG = process.env.LOVELACE_PROPERTY_SLUG || "demo-property";
 const PUBLIC_API_SECRET = process.env.LOVELACE_PUBLIC_API_SECRET || "";
 
 export class LovelaceApiError extends Error {

@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 type CalendarQuery struct {

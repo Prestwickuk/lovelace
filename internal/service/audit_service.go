@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 func (s *Service) ListAuditLogs(ctx context.Context, actor Actor, propertyID *uuid.UUID, resourceType string, limit int) ([]domain.AuditLog, error) {

@@ -5,11 +5,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Tir Bach Campsite | Pembrokeshire Coastal Glamping & Pitches",
-    template: "%s | Tir Bach Campsite",
+    default: "Lovelace Direct Booking | Hospitality Stays, Cabins & Pitches",
+    template: "%s | Direct Bookings",
   },
   description:
-    "Wildflower meadow camping, furnished bell tents, handcrafted Preseli shepherd's huts, and coastal touring pitches in Pembrokeshire, Wales.",
+    "Direct accommodation search, live seasonal availability, handcrafted cabins, glamping stays, and touring pitches.",
 };
 
 export default async function RootLayout({

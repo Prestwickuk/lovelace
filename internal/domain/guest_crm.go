@@ -551,7 +551,7 @@ var AllowedTemplatePlaceholders = map[string]string{
 	"property_name":         "Property name",
 	"property_email":        "Property contact email",
 	"property_phone":        "Property contact phone",
-	"reservation_reference": "Reservation reference (e.g. TB-2026-0001)",
+	"reservation_reference": "Reservation reference (e.g. LV-2026-0001)",
 	"arrival_date":          "Check-in date (YYYY-MM-DD)",
 	"departure_date":        "Check-out date (YYYY-MM-DD)",
 	"check_in_time":         "Standard check-in time",

@@ -14,15 +14,15 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/tirbach/tir-bach/internal/payments"
+	"github.com/Prestwickuk/lovelace/internal/payments"
 )
 
 // Known insecure development secrets that must never be accepted in production.
 var insecureDevSecrets = []string{
-	"tir_bach_dev_password",
-	"tirbach-dev-admin-2026",
+	"lovelace_dev_password",
+	"lovelace-dev-admin-2026",
 	"dev-only-insecure-encryption-key-change-me",
-	"tirbach-dev-only-32byte-key-0001",
+	"lovelace-dev-only-32byte-key-001",
 	"dev-public-bff-secret",
 	"whsec_sandbox_dev_only",
 	"whsec_replace_me",
@@ -117,54 +117,54 @@ func (c Config) IsEmailConfigured() bool {
 
 // Load reads configuration from environment variables and fails closed on insecure production settings.
 func Load() (Config, error) {
-	appEnv := strings.ToLower(envOrDefault("TIRBACH_ENV", "development"))
+	appEnv := strings.ToLower(envOrDefault("LOVELACE_ENV", "development"))
 	defaultOrigin := "http://127.0.0.1:3000"
 	if appEnv == "production" {
 		defaultOrigin = ""
 	}
-	publicOrigin := envOrDefault("TIRBACH_PUBLIC_ORIGIN", defaultOrigin)
+	publicOrigin := envOrDefault("LOVELACE_PUBLIC_ORIGIN", defaultOrigin)
 	cfg := Config{
 		AppEnv:               appEnv,
-		ListenAddr:           envOrDefault("TIRBACH_LISTEN_ADDR", "127.0.0.1:8080"),
+		ListenAddr:           envOrDefault("LOVELACE_LISTEN_ADDR", "127.0.0.1:8080"),
 		DatabaseURL:          strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		CookieSecure:         envBool("TIRBACH_COOKIE_SECURE", false),
-		SessionTTL:           envDuration("TIRBACH_SESSION_TTL", 12*time.Hour),
-		SessionIdleTTL:       envDuration("TIRBACH_SESSION_IDLE_TTL", 2*time.Hour),
-		LoginMaxFailIP:       envInt("TIRBACH_LOGIN_MAX_FAIL_IP", 20),
-		LoginMaxFailAcc:      envInt("TIRBACH_LOGIN_MAX_FAIL_ACCOUNT", 8),
-		LoginWindow:          envDuration("TIRBACH_LOGIN_WINDOW", 15*time.Minute),
-		TrustProxy:           envBool("TIRBACH_TRUST_PROXY", false),
-		AutoSeed:             envBool("TIRBACH_AUTO_SEED", false),
+		CookieSecure:         envBool("LOVELACE_COOKIE_SECURE", false),
+		SessionTTL:           envDuration("LOVELACE_SESSION_TTL", 12*time.Hour),
+		SessionIdleTTL:       envDuration("LOVELACE_SESSION_IDLE_TTL", 2*time.Hour),
+		LoginMaxFailIP:       envInt("LOVELACE_LOGIN_MAX_FAIL_IP", 20),
+		LoginMaxFailAcc:      envInt("LOVELACE_LOGIN_MAX_FAIL_ACCOUNT", 8),
+		LoginWindow:          envDuration("LOVELACE_LOGIN_WINDOW", 15*time.Minute),
+		TrustProxy:           envBool("LOVELACE_TRUST_PROXY", false),
+		AutoSeed:             envBool("LOVELACE_AUTO_SEED", false),
 		PublicOrigin:         strings.TrimRight(publicOrigin, "/"),
-		PublicAPISecret:      strings.TrimSpace(os.Getenv("TIRBACH_PUBLIC_API_SECRET")),
-		GuestPortalEnabled:   envBool("TIRBACH_GUEST_PORTAL_ENABLED", false),
-		StripeSecretKey:      strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_SECRET_KEY")),
-		StripeWebhookSecret:  strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_WEBHOOK_SECRET")),
-		StripeAPIBaseURL:     strings.TrimRight(envOrDefault("TIRBACH_STRIPE_API_BASE_URL", "https://api.stripe.com"), "/"),
-		StripeSuccessURL:     strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_SUCCESS_URL")),
-		StripeCancelURL:      strings.TrimSpace(os.Getenv("TIRBACH_STRIPE_CANCEL_URL")),
-		StripeSandbox:        envBool("TIRBACH_STRIPE_SANDBOX", false),
-		EmailFrom:            envOrDefault("TIRBACH_EMAIL_FROM", "bookings@tirbach.wales"),
-		EmailWebhookSecret:   strings.TrimSpace(os.Getenv("TIRBACH_EMAIL_WEBHOOK_SECRET")),
-		SMTPAddr:             strings.TrimSpace(os.Getenv("TIRBACH_SMTP_ADDR")),
-		SMTPUsername:         strings.TrimSpace(os.Getenv("TIRBACH_SMTP_USERNAME")),
-		SMTPPassword:         strings.TrimSpace(os.Getenv("TIRBACH_SMTP_PASSWORD")),
-		RequireEmail:         envBool("TIRBACH_REQUIRE_EMAIL", false),
-		AttachmentStorageDir: envOrDefault("TIRBACH_ATTACHMENT_DIR", filepath.Join(os.TempDir(), "lovelace-attachments")),
-		MaxAttachmentBytes:   envInt64("TIRBACH_MAX_ATTACHMENT_BYTES", 10*1024*1024),
+		PublicAPISecret:      strings.TrimSpace(os.Getenv("LOVELACE_PUBLIC_API_SECRET")),
+		GuestPortalEnabled:   envBool("LOVELACE_GUEST_PORTAL_ENABLED", false),
+		StripeSecretKey:      strings.TrimSpace(os.Getenv("LOVELACE_STRIPE_SECRET_KEY")),
+		StripeWebhookSecret:  strings.TrimSpace(os.Getenv("LOVELACE_STRIPE_WEBHOOK_SECRET")),
+		StripeAPIBaseURL:     strings.TrimRight(envOrDefault("LOVELACE_STRIPE_API_BASE_URL", "https://api.stripe.com"), "/"),
+		StripeSuccessURL:     strings.TrimSpace(os.Getenv("LOVELACE_STRIPE_SUCCESS_URL")),
+		StripeCancelURL:      strings.TrimSpace(os.Getenv("LOVELACE_STRIPE_CANCEL_URL")),
+		StripeSandbox:        envBool("LOVELACE_STRIPE_SANDBOX", false),
+		EmailFrom:            envOrDefault("LOVELACE_EMAIL_FROM", "bookings@example.com"),
+		EmailWebhookSecret:   strings.TrimSpace(os.Getenv("LOVELACE_EMAIL_WEBHOOK_SECRET")),
+		SMTPAddr:             strings.TrimSpace(os.Getenv("LOVELACE_SMTP_ADDR")),
+		SMTPUsername:         strings.TrimSpace(os.Getenv("LOVELACE_SMTP_USERNAME")),
+		SMTPPassword:         strings.TrimSpace(os.Getenv("LOVELACE_SMTP_PASSWORD")),
+		RequireEmail:         envBool("LOVELACE_REQUIRE_EMAIL", false),
+		AttachmentStorageDir: envOrDefault("LOVELACE_ATTACHMENT_DIR", filepath.Join(os.TempDir(), "lovelace-attachments")),
+		MaxAttachmentBytes:   envInt64("LOVELACE_MAX_ATTACHMENT_BYTES", 10*1024*1024),
 	}
 	if !cfg.AutoSeed {
-		bootEmail := strings.TrimSpace(os.Getenv("TIRBACH_BOOTSTRAP_ADMIN_EMAIL"))
-		bootPass := os.Getenv("TIRBACH_BOOTSTRAP_ADMIN_PASSWORD")
-		bootName := strings.TrimSpace(os.Getenv("TIRBACH_BOOTSTRAP_ADMIN_NAME"))
+		bootEmail := strings.TrimSpace(os.Getenv("LOVELACE_BOOTSTRAP_ADMIN_EMAIL"))
+		bootPass := os.Getenv("LOVELACE_BOOTSTRAP_ADMIN_PASSWORD")
+		bootName := strings.TrimSpace(os.Getenv("LOVELACE_BOOTSTRAP_ADMIN_NAME"))
 		if bootEmail == "" && bootPass == "" {
-			legacyEmail := strings.TrimSpace(os.Getenv("TIRBACH_ADMIN_EMAIL"))
-			legacyPass := os.Getenv("TIRBACH_ADMIN_PASSWORD")
+			legacyEmail := strings.TrimSpace(os.Getenv("LOVELACE_ADMIN_EMAIL"))
+			legacyPass := os.Getenv("LOVELACE_ADMIN_PASSWORD")
 			if legacyEmail != "" || legacyPass != "" {
 				bootEmail = legacyEmail
 				bootPass = legacyPass
 				if bootName == "" {
-					bootName = strings.TrimSpace(os.Getenv("TIRBACH_ADMIN_NAME"))
+					bootName = strings.TrimSpace(os.Getenv("LOVELACE_ADMIN_NAME"))
 				}
 			}
 		}
@@ -176,85 +176,85 @@ func Load() (Config, error) {
 		cfg.BootstrapAdminPassword = bootPass
 	}
 	if (cfg.BootstrapAdminEmail != "") != (cfg.BootstrapAdminPassword != "") {
-		return Config{}, fmt.Errorf("TIRBACH_BOOTSTRAP_ADMIN_EMAIL and TIRBACH_BOOTSTRAP_ADMIN_PASSWORD must be provided together")
+		return Config{}, fmt.Errorf("LOVELACE_BOOTSTRAP_ADMIN_EMAIL and LOVELACE_BOOTSTRAP_ADMIN_PASSWORD must be provided together")
 	}
 	if cfg.BootstrapAdminPassword != "" {
 		if utf8.RuneCountInString(cfg.BootstrapAdminPassword) < 12 || len(cfg.BootstrapAdminPassword) > 256 {
-			return Config{}, fmt.Errorf("TIRBACH_BOOTSTRAP_ADMIN_PASSWORD must be between 12 characters and 256 bytes")
+			return Config{}, fmt.Errorf("LOVELACE_BOOTSTRAP_ADMIN_PASSWORD must be between 12 characters and 256 bytes")
 		}
 		if (cfg.IsProduction() || cfg.IsStaging()) && isInsecureSecret(cfg.BootstrapAdminPassword) {
-			return Config{}, fmt.Errorf("TIRBACH_BOOTSTRAP_ADMIN_PASSWORD uses a known insecure development value")
+			return Config{}, fmt.Errorf("LOVELACE_BOOTSTRAP_ADMIN_PASSWORD uses a known insecure development value")
 		}
 	}
 	if cfg.MaxAttachmentBytes < 1024 || cfg.MaxAttachmentBytes > 50*1024*1024 {
-		return Config{}, fmt.Errorf("TIRBACH_MAX_ATTACHMENT_BYTES must be between 1024 and 52428800 bytes")
+		return Config{}, fmt.Errorf("LOVELACE_MAX_ATTACHMENT_BYTES must be between 1024 and 52428800 bytes")
 	}
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL environment variable is required")
 	}
 
-	trustedRaw := strings.TrimSpace(os.Getenv("TIRBACH_TRUSTED_PROXIES"))
+	trustedRaw := strings.TrimSpace(os.Getenv("LOVELACE_TRUSTED_PROXIES"))
 	if trustedRaw == "" && cfg.TrustProxy {
 		trustedRaw = defaultTrustedProxyCIDRs
 	}
 	if trustedRaw != "" {
 		nets, err := ParseTrustedProxyCIDRs(trustedRaw)
 		if err != nil {
-			return Config{}, fmt.Errorf("invalid TIRBACH_TRUSTED_PROXIES: %w", err)
+			return Config{}, fmt.Errorf("invalid LOVELACE_TRUSTED_PROXIES: %w", err)
 		}
 		cfg.TrustedProxies = nets
 	}
 
-	rawKey := strings.TrimSpace(os.Getenv("TIRBACH_ENCRYPTION_KEY"))
+	rawKey := strings.TrimSpace(os.Getenv("LOVELACE_ENCRYPTION_KEY"))
 	if rawKey != "" {
 		key, err := parseEncryptionKey(rawKey)
 		if err != nil {
-			return Config{}, fmt.Errorf("invalid TIRBACH_ENCRYPTION_KEY: %w", err)
+			return Config{}, fmt.Errorf("invalid LOVELACE_ENCRYPTION_KEY: %w", err)
 		}
 		cfg.EncryptionKey = key
 	} else if !cfg.IsProduction() && !cfg.IsStaging() {
 		// Explicit local development/test fallback key for non-portal admin vault;
 		// production, staging, and all Guest Portal OTP/CSRF operations fail closed.
-		cfg.EncryptionKey = []byte("tirbach-dev-only-32byte-key-0001")
+		cfg.EncryptionKey = []byte("lovelace-dev-only-32byte-key-001")
 	}
 
 	if cfg.IsStaging() {
 		if cfg.StripeSandbox {
-			return Config{}, fmt.Errorf("TIRBACH_STRIPE_SANDBOX cannot be enabled in staging")
+			return Config{}, fmt.Errorf("LOVELACE_STRIPE_SANDBOX cannot be enabled in staging")
 		}
 		if len(cfg.EncryptionKey) != 32 {
-			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY (32-byte hex or base64) is required in staging")
+			return Config{}, fmt.Errorf("LOVELACE_ENCRYPTION_KEY (32-byte hex or base64) is required in staging")
 		}
 		if isInsecureSecret(rawKey) || isInsecureEncryptionKeyBytes(cfg.EncryptionKey) {
-			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure or low-entropy value")
+			return Config{}, fmt.Errorf("LOVELACE_ENCRYPTION_KEY uses a known insecure or low-entropy value")
 		}
 		if cfg.PublicAPISecret != "" && isInsecureSecret(cfg.PublicAPISecret) {
-			return Config{}, fmt.Errorf("TIRBACH_PUBLIC_API_SECRET uses a known insecure development value")
+			return Config{}, fmt.Errorf("LOVELACE_PUBLIC_API_SECRET uses a known insecure development value")
 		}
 	}
 
 	if cfg.IsProduction() {
 		if !cfg.CookieSecure {
-			return Config{}, fmt.Errorf("TIRBACH_COOKIE_SECURE must be true in production")
+			return Config{}, fmt.Errorf("LOVELACE_COOKIE_SECURE must be true in production")
 		}
 		if cfg.AutoSeed {
-			return Config{}, fmt.Errorf("TIRBACH_AUTO_SEED must be false in production")
+			return Config{}, fmt.Errorf("LOVELACE_AUTO_SEED must be false in production")
 		}
 		if cfg.StripeSandbox {
-			return Config{}, fmt.Errorf("TIRBACH_STRIPE_SANDBOX cannot be enabled in production")
+			return Config{}, fmt.Errorf("LOVELACE_STRIPE_SANDBOX cannot be enabled in production")
 		}
-		if cfg.TrustProxy && strings.TrimSpace(os.Getenv("TIRBACH_TRUSTED_PROXIES")) == "" {
-			return Config{}, fmt.Errorf("TIRBACH_TRUSTED_PROXIES must be explicitly configured when TIRBACH_TRUST_PROXY=true in production")
+		if cfg.TrustProxy && strings.TrimSpace(os.Getenv("LOVELACE_TRUSTED_PROXIES")) == "" {
+			return Config{}, fmt.Errorf("LOVELACE_TRUSTED_PROXIES must be explicitly configured when LOVELACE_TRUST_PROXY=true in production")
 		}
 		if len(cfg.EncryptionKey) != 32 {
-			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY (32-byte hex or base64) is required in production")
+			return Config{}, fmt.Errorf("LOVELACE_ENCRYPTION_KEY (32-byte hex or base64) is required in production")
 		}
 		if isInsecureSecret(rawKey) || isInsecureEncryptionKeyBytes(cfg.EncryptionKey) {
-			return Config{}, fmt.Errorf("TIRBACH_ENCRYPTION_KEY uses a known insecure or low-entropy value")
+			return Config{}, fmt.Errorf("LOVELACE_ENCRYPTION_KEY uses a known insecure or low-entropy value")
 		}
 		if cfg.PublicAPISecret != "" && isInsecureSecret(cfg.PublicAPISecret) {
-			return Config{}, fmt.Errorf("TIRBACH_PUBLIC_API_SECRET uses a known insecure development value")
+			return Config{}, fmt.Errorf("LOVELACE_PUBLIC_API_SECRET uses a known insecure development value")
 		}
 		for _, bad := range insecureDevSecrets {
 			if strings.Contains(cfg.DatabaseURL, bad) {
@@ -263,14 +263,14 @@ func Load() (Config, error) {
 		}
 		if cfg.PublicOrigin != "" {
 			if err := ValidatePublicOrigins(cfg.AllowedPublicOrigins(), true); err != nil {
-				return Config{}, fmt.Errorf("invalid TIRBACH_PUBLIC_ORIGIN: %w", err)
+				return Config{}, fmt.Errorf("invalid LOVELACE_PUBLIC_ORIGIN: %w", err)
 			}
 		}
 	}
 
 	if cfg.StripeAPIBaseURL != "" {
 		if err := validateStripeAPIBaseURL(cfg.StripeAPIBaseURL, cfg.IsProduction()); err != nil {
-			return Config{}, fmt.Errorf("invalid TIRBACH_STRIPE_API_BASE_URL: %w", err)
+			return Config{}, fmt.Errorf("invalid LOVELACE_STRIPE_API_BASE_URL: %w", err)
 		}
 	}
 
@@ -280,12 +280,12 @@ func Load() (Config, error) {
 	}
 	if cfg.StripeSuccessURL != "" {
 		if _, err := payments.ValidateCheckoutReturnURL(cfg.StripeSuccessURL, cfg.AllowedPublicOrigins(), nil, cfg.IsProduction()); err != nil {
-			return Config{}, fmt.Errorf("invalid TIRBACH_STRIPE_SUCCESS_URL: %w", err)
+			return Config{}, fmt.Errorf("invalid LOVELACE_STRIPE_SUCCESS_URL: %w", err)
 		}
 	}
 	if cfg.StripeCancelURL != "" {
 		if _, err := payments.ValidateCheckoutReturnURL(cfg.StripeCancelURL, cfg.AllowedPublicOrigins(), nil, cfg.IsProduction()); err != nil {
-			return Config{}, fmt.Errorf("invalid TIRBACH_STRIPE_CANCEL_URL: %w", err)
+			return Config{}, fmt.Errorf("invalid LOVELACE_STRIPE_CANCEL_URL: %w", err)
 		}
 	}
 
@@ -302,24 +302,24 @@ func (c Config) ValidateStripeKeys() error {
 	if hasKey {
 		live, ok := StripeKeyIsLive(c.StripeSecretKey)
 		if !ok {
-			return fmt.Errorf("invalid TIRBACH_STRIPE_SECRET_KEY format or placeholder value")
+			return fmt.Errorf("invalid LOVELACE_STRIPE_SECRET_KEY format or placeholder value")
 		}
 		if c.IsProduction() && !live {
-			return fmt.Errorf("Stripe test-mode credentials (sk_test_/rk_test_) are prohibited when TIRBACH_ENV=production; supply sk_live_ or suitably scoped rk_live_ keys")
+			return fmt.Errorf("Stripe test-mode credentials (sk_test_/rk_test_) are prohibited when LOVELACE_ENV=production; supply sk_live_ or suitably scoped rk_live_ keys")
 		}
 	}
 	if hasWebhook && !IsValidStripeWebhookSecret(c.StripeWebhookSecret, c.IsProduction()) {
-		return fmt.Errorf("invalid TIRBACH_STRIPE_WEBHOOK_SECRET format or placeholder value")
+		return fmt.Errorf("invalid LOVELACE_STRIPE_WEBHOOK_SECRET format or placeholder value")
 	}
 	if c.IsProduction() {
 		if hasKey && !hasWebhook {
-			return fmt.Errorf("TIRBACH_STRIPE_WEBHOOK_SECRET is required whenever TIRBACH_STRIPE_SECRET_KEY is configured in production")
+			return fmt.Errorf("LOVELACE_STRIPE_WEBHOOK_SECRET is required whenever LOVELACE_STRIPE_SECRET_KEY is configured in production")
 		}
 		if hasWebhook && !hasKey {
-			return fmt.Errorf("TIRBACH_STRIPE_SECRET_KEY is required whenever TIRBACH_STRIPE_WEBHOOK_SECRET is configured in production")
+			return fmt.Errorf("LOVELACE_STRIPE_SECRET_KEY is required whenever LOVELACE_STRIPE_WEBHOOK_SECRET is configured in production")
 		}
 	} else if !c.StripeSandbox && ((hasKey && !hasWebhook) || (hasWebhook && !hasKey)) {
-		return fmt.Errorf("both TIRBACH_STRIPE_SECRET_KEY and TIRBACH_STRIPE_WEBHOOK_SECRET are required together when Stripe is configured")
+		return fmt.Errorf("both LOVELACE_STRIPE_SECRET_KEY and LOVELACE_STRIPE_WEBHOOK_SECRET are required together when Stripe is configured")
 	}
 	return nil
 }
@@ -458,7 +458,7 @@ func isInsecureEncryptionKeyBytes(key []byte) bool {
 	if len(key) != 32 {
 		return true
 	}
-	if bytes.Equal(key, []byte("tirbach-dev-only-32byte-key-0001")) {
+	if bytes.Equal(key, []byte("lovelace-dev-only-32byte-key-001")) {
 		return true
 	}
 	if devHex, err := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err == nil && bytes.Equal(key, devHex) {

@@ -17,16 +17,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/backup"
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/payments"
-	"github.com/tirbach/tir-bach/internal/secrets"
-	"github.com/tirbach/tir-bach/internal/storage"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/backup"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/payments"
+	"github.com/Prestwickuk/lovelace/internal/secrets"
+	"github.com/Prestwickuk/lovelace/internal/storage"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 // Actor identifies the authenticated administrator performing an action.
@@ -395,19 +395,19 @@ func (s *Service) ValidateProductionStartup(ctx context.Context) error {
 		return nil
 	}
 	if s.cfg.StripeSandbox {
-		return errors.New("TIRBACH_STRIPE_SANDBOX cannot be enabled in production")
+		return errors.New("LOVELACE_STRIPE_SANDBOX cannot be enabled in production")
 	}
 	if err := config.ValidatePublicOrigins(s.cfg.AllowedPublicOrigins(), s.cfg.IsProduction()); err != nil {
 		return err
 	}
 	if len(s.cfg.AllowedPublicOrigins()) == 0 {
-		return errors.New("TIRBACH_PUBLIC_ORIGIN must configure at least one HTTPS public origin in production")
+		return errors.New("LOVELACE_PUBLIC_ORIGIN must configure at least one HTTPS public origin in production")
 	}
 	if strings.TrimSpace(s.cfg.PublicAPISecret) == "" {
-		return errors.New("TIRBACH_PUBLIC_API_SECRET is required in production to isolate public backend endpoints to trusted BFF callers")
+		return errors.New("LOVELACE_PUBLIC_API_SECRET is required in production to isolate public backend endpoints to trusted BFF callers")
 	}
 	if _, err := s.portalOTPHMACKey(); err != nil {
-		return fmt.Errorf("TIRBACH_ENCRYPTION_KEY is required in production for portal HMAC protection: %w", err)
+		return fmt.Errorf("LOVELACE_ENCRYPTION_KEY is required in production for portal HMAC protection: %w", err)
 	}
 	if err := s.cfg.ValidateStripeKeys(); err != nil {
 		return err
@@ -420,7 +420,7 @@ func (s *Service) ValidateProductionStartup(ctx context.Context) error {
 		return errors.New("live Stripe payments are enabled on public property settings, but valid production live Stripe credentials (sk_live_/rk_live_ and whsec_) are not configured")
 	}
 	if (activeStripeProps > 0 || s.cfg.RequireEmail) && !s.HasEmailProvider() {
-		return errors.New("confirmation email delivery (TIRBACH_SMTP_ADDR) is required in production whenever direct public payments are enabled or TIRBACH_REQUIRE_EMAIL=true")
+		return errors.New("confirmation email delivery (LOVELACE_SMTP_ADDR) is required in production whenever direct public payments are enabled or LOVELACE_REQUIRE_EMAIL=true")
 	}
 	if s.cfg.GuestPortalEnabled {
 		activePortalProps, pErr := s.store.CountActivePortalEnabledProperties(ctx)
@@ -428,7 +428,7 @@ func (s *Service) ValidateProductionStartup(ctx context.Context) error {
 			return fmt.Errorf("check portal-enabled properties: %w", pErr)
 		}
 		if activePortalProps > 0 && !s.HasEmailProvider() {
-			return errors.New("email delivery (TIRBACH_SMTP_ADDR) is required in production whenever the public guest portal is enabled on any property")
+			return errors.New("email delivery (LOVELACE_SMTP_ADDR) is required in production whenever the public guest portal is enabled on any property")
 		}
 	}
 	if att := s.attachmentReadiness(); att.Status != "ok" {
@@ -498,7 +498,7 @@ func (s *Service) Readiness(ctx context.Context) ReadinessReport {
 
 		if err := config.ValidatePublicOrigins(s.cfg.AllowedPublicOrigins(), s.cfg.IsProduction()); err != nil || len(s.cfg.AllowedPublicOrigins()) == 0 || strings.TrimSpace(s.cfg.PublicAPISecret) == "" {
 			report.Ready = false
-			detail := "missing TIRBACH_PUBLIC_API_SECRET or valid HTTPS TIRBACH_PUBLIC_ORIGIN"
+			detail := "missing LOVELACE_PUBLIC_API_SECRET or valid HTTPS LOVELACE_PUBLIC_ORIGIN"
 			if err != nil {
 				detail = err.Error()
 			}
@@ -552,7 +552,7 @@ func (s *Service) Readiness(ctx context.Context) ReadinessReport {
 			} else if activeStripeProps > 0 || activePortalProps > 0 || s.cfg.RequireEmail {
 				status = "misconfigured"
 				report.Ready = false
-				detail = "confirmation email provider is required in production when live public bookings or the guest portal are enabled, or TIRBACH_REQUIRE_EMAIL=true"
+				detail = "confirmation email provider is required in production when live public bookings or the guest portal are enabled, or LOVELACE_REQUIRE_EMAIL=true"
 			}
 		}
 		report.Email = ReadinessComponent{

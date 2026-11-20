@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/storage"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/storage"
 )
 
 func (s *Service) verifyPropertyBrandingActor(ctx context.Context, actor Actor, propertyID uuid.UUID, perm auth.Permission) (domain.AdminUser, error) {

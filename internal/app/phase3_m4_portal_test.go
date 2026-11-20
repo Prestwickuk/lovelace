@@ -23,13 +23,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/seed"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/seed"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 func setupPortalTestServer(
@@ -66,7 +66,7 @@ func setupPortalTestServer(
 	}
 
 	err = store.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, txErr := tx.Exec(ctx, `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'`); txErr != nil {
+		if _, txErr := tx.Exec(ctx, `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'`); txErr != nil {
 			return txErr
 		}
 		_, txErr := tx.Exec(ctx, `
@@ -88,9 +88,9 @@ func setupPortalTestServer(
 	}
 
 	prop, err := seed.EnsureBaseline(ctx, store, seed.Options{
-		AdminEmail:    "owner@tirbach.wales",
+		AdminEmail:    "owner@example.com",
 		AdminName:     "Sian Evans",
-		AdminPassword: "tirbach-owner-password-2026",
+		AdminPassword: "lovelace-owner-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("seed baseline: %v", err)
@@ -110,7 +110,7 @@ func setupPortalTestServer(
 		PublicAPISecret:     publicSecret,
 		GuestPortalEnabled:  globalPortalEnabled,
 		StripeWebhookSecret: "whsec_test_lovelace_phase3_m4_secret",
-		EmailFrom:           "bookings@tirbach.wales",
+		EmailFrom:           "bookings@example.com",
 	}
 
 	svc := service.New(store, cfg)
@@ -213,7 +213,7 @@ func TestPhase3Milestone4_GlobalDisabledByDefault(t *testing.T) {
 	srv, store, svc, prop, _, _, _ := setupPortalTestServer(t, pubSecret, false)
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestPhase3Milestone4_GlobalDisabledByDefault(t *testing.T) {
 
 	pubClient := newClient(t)
 	resp, _ := doPortalReq(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/properties/"+prop.Slug+"/portal/auth/challenge", pubSecret, "", "", "203.0.113.1", map[string]any{
-		"email": "any@example.wales",
+		"email": "any@example.com",
 	})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 not_found when global portal flag is disabled, got %d", resp.StatusCode)
@@ -252,7 +252,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	srv, store, svc, prop, _, mailMock, clk := setupPortalTestServer(t, pubSecret, true)
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -269,23 +269,23 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 		t.Fatalf("expected default guest_portal_enabled=false: err=%v enabled=%v", err, pol.GuestPortalEnabled)
 	}
 	disabledResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.10", map[string]any{
-		"email": "sian@example.wales",
+		"email": "sian@example.com",
 	})
 	if disabledResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected uniform 404 not_found when property flag is off, got %d", disabledResp.StatusCode)
 	}
 
-	// Enable controlled pilot for tir-bach while keeping a second property disabled.
+	// Enable controlled pilot for demo-property while keeping a second property disabled.
 	pol.GuestPortalEnabled = true
 	pol, err = svc.UpdateBookingPolicy(ctx, ownerActor, pol)
 	if err != nil || !pol.GuestPortalEnabled {
 		t.Fatalf("enable guest_portal_enabled on pilot property: %v", err)
 	}
 
-	// 2. Boundary & Session Disjointness: Admin tirbach_session NEVER authenticates portal routes,
+	// 2. Boundary & Session Disjointness: Admin lovelace_session NEVER authenticates portal routes,
 	// query-string tokens are forbidden, cross-origin mutations are rejected, and missing X-Lovelace-Public-Key fails 401.
 	adminClient := newClient(t)
-	loginStatus, _ := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	loginStatus, _ := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if loginStatus != http.StatusOK {
 		t.Fatalf("admin login status=%d", loginStatus)
 	}
@@ -298,7 +298,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 		t.Fatalf("expected 400 query_token_forbidden, got %d: %s", qTokResp.StatusCode, string(qTokBody))
 	}
 	badOriginResp, badOriginBody := doPortalReqWithOrigin(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.11", "https://evil.example", map[string]any{
-		"email": "sian@example.wales",
+		"email": "sian@example.com",
 	})
 	if badOriginResp.StatusCode != http.StatusForbidden || !strings.Contains(string(badOriginBody), "origin_not_allowed") {
 		t.Fatalf("expected 403 origin_not_allowed on cross-origin mutation, got %d: %s", badOriginResp.StatusCode, string(badOriginBody))
@@ -318,7 +318,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	directRes, err := svc.CreateReservation(ctx, ownerActor, domain.Reservation{
 		PropertyID:    prop.ID,
 		GuestName:     "Nia Griffiths",
-		GuestEmail:    "nia.portal@example.wales",
+		GuestEmail:    "nia.portal@example.com",
 		GuestPhone:    "07700900111",
 		ChannelCode:   "DIRECT",
 		ArrivalDate:   arr1,
@@ -349,7 +349,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	otaRes, err := svc.CreateReservation(ctx, ownerActor, domain.Reservation{
 		PropertyID:    prop.ID,
 		GuestName:     "Nia Griffiths",
-		GuestEmail:    "nia.portal@example.wales",
+		GuestEmail:    "nia.portal@example.com",
 		GuestPhone:    "07700900111",
 		ChannelCode:   "AIRBNB",
 		ArrivalDate:   arr2,
@@ -380,7 +380,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	seededEnq, err := svc.CreateGuestEnquiry(ctx, ownerActor, domain.GuestEnquiry{
 		PropertyID: prop.ID, GuestID: &directRes.GuestID, ReservationID: &directRes.ID,
 		Category: domain.EnqCatGeneral, Subject: "Firewood question", Description: "Can we buy logs on site?",
-		RequesterName: "Nia Griffiths", RequesterEmail: "nia.portal@example.wales",
+		RequesterName: "Nia Griffiths", RequesterEmail: "nia.portal@example.com",
 	})
 	if err != nil {
 		t.Fatalf("create seededEnq: %v", err)
@@ -400,7 +400,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 
 	// 3. Non-Enumeration: unknown email and OTA proxy email return identical 202 Accepted shape with zero outbox row queued.
 	unkResp, unkBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.20", map[string]any{
-		"email": "nobody.unknown@example.wales",
+		"email": "nobody.unknown@example.com",
 	})
 	proxyResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.21", map[string]any{
 		"email": "relay-12345@guest.booking.com",
@@ -409,7 +409,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 		t.Fatalf("expected uniform 202 on unknown/proxy emails, got %d / %d (%s)", unkResp.StatusCode, proxyResp.StatusCode, string(unkBody))
 	}
 	var outboxNoise int
-	_ = store.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM email_outbox WHERE recipient_email IN ('nobody.unknown@example.wales', 'relay-12345@guest.booking.com')`).Scan(&outboxNoise)
+	_ = store.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM email_outbox WHERE recipient_email IN ('nobody.unknown@example.com', 'relay-12345@guest.booking.com')`).Scan(&outboxNoise)
 	if outboxNoise != 0 {
 		t.Fatalf("expected 0 outbox emails for unknown/proxy addresses, got %d", outboxNoise)
 	}
@@ -433,7 +433,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 
 	// Tier A cannot use its token on Admin /api/v1/*
 	adminTryReq, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/auth/me", nil)
-	adminTryReq.AddCookie(&http.Cookie{Name: "tirbach_session", Value: tierALogin.SessionToken})
+	adminTryReq.AddCookie(&http.Cookie{Name: "lovelace_session", Value: tierALogin.SessionToken})
 	adminTryResp, err := pubClient.Do(adminTryReq)
 	if err != nil {
 		t.Fatalf("adminTryReq: %v", err)
@@ -462,7 +462,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 
 	// 5. Tier B Browser-Bound Magic Link & Outbox Security Scrubbing (Section 7.1 #1 & Section 9.2).
 	chResp, chBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.30", map[string]any{
-		"email": "nia.portal@example.wales",
+		"email": "nia.portal@example.com",
 	})
 	if chResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("challenge status=%d: %s", chResp.StatusCode, string(chBody))
@@ -489,7 +489,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	}
 	magicToken := magicMatch[1]
 
-	scrubbedBody := latestOutboxBodyForRecipient(t, store, "nia.portal@example.wales")
+	scrubbedBody := latestOutboxBodyForRecipient(t, store, "nia.portal@example.com")
 	if scrubbedBody != "[redacted security challenge]" {
 		t.Fatalf("expected email_outbox body_text scrubbed to '[redacted security challenge]' upon SENT, got %q", scrubbedBody)
 	}
@@ -555,7 +555,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 		"STAFF_ONLY_PREF_NOTE",
 		"INTERNAL_WHISPER_DO_NOT_LEAK",
 		"Sian Evans",
-		"owner@tirbach.wales",
+		"owner@example.com",
 		"45000", // OTA total_pence must not be exposed as a property invoice!
 	} {
 		if strings.Contains(combinedPayloads, forbidden) {
@@ -639,7 +639,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 		t.Fatalf("expected inventory_claims to remain ACTIVE on request-only cancellation, got %d", activeClaimCount)
 	}
 
-	// Self-service profile & structured preferences update (D10 Welsh preferred_language + preserving staff notes).
+	// Self-service profile & structured preferences update (D10 international preferred_language + preserving staff notes).
 	profUpdResp, profUpdBody := doPortalReq(t, pubClient, http.MethodPatch, portalBase+"/profile", pubSecret, tierB1.SessionToken, tierB1.Session.CSRFToken, "203.0.113.30", map[string]any{
 		"phone":                    "+447700900999",
 		"preferred_contact_method": "EMAIL",
@@ -673,11 +673,11 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 
 	// 8. Step-Up Freshness Gate (D8), Section 7.2 SAR/Erasure Invisibility, & Email Change Dual Notification.
 	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.32", map[string]any{
-		"email": "nia.portal@example.wales",
+		"email": "nia.portal@example.com",
 	})
-	otpMatch := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "nia.portal@example.wales"))
+	otpMatch := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "nia.portal@example.com"))
 	ver2Resp, ver2Body := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.32", map[string]any{
-		"email": "nia.portal@example.wales",
+		"email": "nia.portal@example.com",
 		"code":  otpMatch[1],
 	})
 	if ver2Resp.StatusCode != http.StatusOK {
@@ -700,7 +700,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	if suChResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("step-up challenge failed: %d", suChResp.StatusCode)
 	}
-	suOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "nia.portal@example.wales"))[1]
+	suOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "nia.portal@example.com"))[1]
 	suVerResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/verify", pubSecret, tierB2.SessionToken, tierB2.Session.CSRFToken, "203.0.113.32", map[string]any{
 		"code": suOTP,
 	})
@@ -739,21 +739,21 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 		t.Fatalf("expected 404 when probing SAR enquiry ID via /enquiries/{id}/messages, got %d", sarReplyProbe.StatusCode)
 	}
 
-	// Email change: nia.portal@example.wales -> nia.new@example.wales; verify alert to OLD email and revocation of tierB1!
+	// Email change: nia.portal@example.com -> nia.new@example.com; verify alert to OLD email and revocation of tierB1!
 	emInitResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/profile/email-change", pubSecret, tierB2.SessionToken, tierB2.Session.CSRFToken, "203.0.113.32", map[string]any{
-		"new_email": "nia.new@example.wales",
+		"new_email": "nia.new@example.com",
 	})
 	if emInitResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("email-change init status=%d", emInitResp.StatusCode)
 	}
-	newEmailOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "nia.new@example.wales"))[1]
+	newEmailOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "nia.new@example.com"))[1]
 	emConfResp, emConfBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/profile/email-change/confirm", pubSecret, tierB2.SessionToken, tierB2.Session.CSRFToken, "203.0.113.32", map[string]any{
 		"code": newEmailOTP,
 	})
-	if emConfResp.StatusCode != http.StatusOK || !strings.Contains(string(emConfBody), "nia.new@example.wales") {
+	if emConfResp.StatusCode != http.StatusOK || !strings.Contains(string(emConfBody), "nia.new@example.com") {
 		t.Fatalf("email-change confirm failed (%d): %s", emConfResp.StatusCode, string(emConfBody))
 	}
-	oldAlertBody := latestOutboxBodyForRecipient(t, store, "nia.portal@example.wales")
+	oldAlertBody := latestOutboxBodyForRecipient(t, store, "nia.portal@example.com")
 	if !strings.Contains(oldAlertBody, "revoked") {
 		t.Fatalf("expected security alert queued to old email address, got: %s", oldAlertBody)
 	}
@@ -765,13 +765,13 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 
 	// 9. Duplicate Shared Email Disambiguation (D3) & MergeGuests Continuity.
 	dupA, err := svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "Owen", LastName: "Shared", Email: "family.shared@example.wales",
+		PropertyID: prop.ID, FirstName: "Owen", LastName: "Shared", Email: "family.shared@example.com",
 	})
 	if err != nil {
 		t.Fatalf("create dupA: %v", err)
 	}
 	dupB, err := svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "Ceri", LastName: "Shared", Email: "family.shared@example.wales",
+		PropertyID: prop.ID, FirstName: "Ceri", LastName: "Shared", Email: "family.shared@example.com",
 	})
 	if err != nil {
 		t.Fatalf("create dupB: %v", err)
@@ -779,7 +779,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	arr3, _ := domain.ParseDate(clk.Now().AddDate(0, 0, 50).Format("2006-01-02"))
 	dep3, _ := domain.ParseDate(clk.Now().AddDate(0, 0, 52).Format("2006-01-02"))
 	dupResA, err := svc.CreateReservation(ctx, ownerActor, domain.Reservation{
-		PropertyID: prop.ID, GuestName: "Owen Shared", GuestEmail: "family.shared@example.wales",
+		PropertyID: prop.ID, GuestName: "Owen Shared", GuestEmail: "family.shared@example.com",
 		ChannelCode: "DIRECT", ArrivalDate: arr3, DepartureDate: dep3, Adults: 2,
 		Status: domain.ResStatusConfirmed, UnitIDs: []uuid.UUID{units[0].ID},
 	})
@@ -792,7 +792,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	arr4, _ := domain.ParseDate(clk.Now().AddDate(0, 0, 55).Format("2006-01-02"))
 	dep4, _ := domain.ParseDate(clk.Now().AddDate(0, 0, 57).Format("2006-01-02"))
 	dupResB, err := svc.CreateReservation(ctx, ownerActor, domain.Reservation{
-		PropertyID: prop.ID, GuestName: "Ceri Shared", GuestEmail: "family.shared@example.wales",
+		PropertyID: prop.ID, GuestName: "Ceri Shared", GuestEmail: "family.shared@example.com",
 		ChannelCode: "DIRECT", ArrivalDate: arr4, DepartureDate: dep4, Adults: 2,
 		Status: domain.ResStatusConfirmed, UnitIDs: []uuid.UUID{units[1].ID},
 	})
@@ -804,12 +804,12 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	}
 
 	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.40", map[string]any{
-		"email": "family.shared@example.wales",
+		"email": "family.shared@example.com",
 	})
-	dupOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "family.shared@example.wales"))[1]
+	dupOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "family.shared@example.com"))[1]
 
 	dupAmbResp, dupAmbBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.40", map[string]any{
-		"email": "family.shared@example.wales",
+		"email": "family.shared@example.com",
 		"code":  dupOTP,
 	})
 	if dupAmbResp.StatusCode != http.StatusConflict || !strings.Contains(string(dupAmbBody), "duplicate_guest_verification_required") {
@@ -817,7 +817,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	}
 
 	dupVerResp, dupVerBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.40", map[string]any{
-		"email":             "family.shared@example.wales",
+		"email":             "family.shared@example.com",
 		"code":              dupOTP,
 		"booking_reference": dupResB.Reference,
 	})
@@ -872,7 +872,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	propBID, _ := uuid.NewV7()
 	propB, err := store.CreateProperty(ctx, nil, domain.Property{
 		ID: propBID, Slug: "portal-prop-b", Name: "Portal Property B", CountryCode: "GB",
-		Timezone: "Europe/London", Currency: "GBP", ContactEmail: "b@tirbach.wales",
+		Timezone: "Europe/London", Currency: "GBP", ContactEmail: "b@example.com",
 		CheckInTime: "15:00", CheckOutTime: "10:00",
 	})
 	if err != nil {
@@ -883,7 +883,7 @@ func TestPhase3Milestone4_SelfServiceGuestPortalEndToEnd(t *testing.T) {
 	}
 	propBDisabledResp, _ := doPortalReq(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/properties/portal-prop-b/portal/bookings", pubSecret, tierB2.SessionToken, "", "203.0.113.32", nil)
 	if propBDisabledResp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 on un-enabled Property B while Tir Bach pilot is active, got %d", propBDisabledResp.StatusCode)
+		t.Fatalf("expected 404 on un-enabled Property B while Meadowbrook pilot is active, got %d", propBDisabledResp.StatusCode)
 	}
 	if _, err := store.Pool().Exec(ctx, `UPDATE property_booking_policies SET guest_portal_enabled = TRUE WHERE property_id = $1`, propB.ID); err != nil {
 		t.Fatalf("enable propB portal: %v", err)
@@ -963,7 +963,7 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 	srv, store, svc, prop, _, _, clk := setupPortalTestServer(t, pubSecret, true)
 
 	ctx := context.Background()
-	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, _ := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	ownerActor := service.Actor{UserID: owner.ID, Email: owner.Email, FullName: owner.FullName, Role: owner.Role}
 
 	pol, _ := svc.GetBookingPolicy(ctx, ownerActor, prop.ID)
@@ -971,7 +971,7 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 	_, _ = svc.UpdateBookingPolicy(ctx, ownerActor, pol)
 
 	if _, err := svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "Rhys", LastName: "Morgan", Email: "rhys.race@example.wales",
+		PropertyID: prop.ID, FirstName: "Rhys", LastName: "Morgan", Email: "rhys.race@example.com",
 	}); err != nil {
 		t.Fatalf("create guest: %v", err)
 	}
@@ -981,9 +981,9 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 
 	// 1. Concurrent Race Redemption: 8 goroutines redeeming the same single-use OTP simultaneously -> exactly 1 succeeds!
 	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "198.51.100.1", map[string]any{
-		"email": "rhys.race@example.wales",
+		"email": "rhys.race@example.com",
 	})
-	raceOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "rhys.race@example.wales"))[1]
+	raceOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "rhys.race@example.com"))[1]
 
 	var wg sync.WaitGroup
 	var wins atomic.Int32
@@ -996,7 +996,7 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 			defer wg.Done()
 			ip := fmt.Sprintf("198.51.100.%d", 10+idx)
 			resp, body := doPortalReq(t, newClient(t), http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", ip, map[string]any{
-				"email": "rhys.race@example.wales",
+				"email": "rhys.race@example.com",
 				"code":  raceOTP,
 			})
 			if resp.StatusCode == http.StatusOK {
@@ -1037,12 +1037,12 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 
 	// 3. Max 5 Brute-Force Attempts (D8): 5 wrong codes lock out the challenge so the 6th attempt with the RIGHT code still fails 401!
 	_, _ = svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "Elin", LastName: "Brute", Email: "elin.brute@example.wales",
+		PropertyID: prop.ID, FirstName: "Elin", LastName: "Brute", Email: "elin.brute@example.com",
 	})
 	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "198.51.100.50", map[string]any{
-		"email": "elin.brute@example.wales",
+		"email": "elin.brute@example.com",
 	})
-	validOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "elin.brute@example.wales"))[1]
+	validOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "elin.brute@example.com"))[1]
 	wrongOTP := "000000"
 	if validOTP == wrongOTP {
 		wrongOTP = "999999"
@@ -1050,7 +1050,7 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 	for attempt := 1; attempt <= 5; attempt++ {
 		ip := fmt.Sprintf("198.51.100.%d", 60+attempt)
 		r, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", ip, map[string]any{
-			"email": "elin.brute@example.wales",
+			"email": "elin.brute@example.com",
 			"code":  wrongOTP,
 		})
 		if r.StatusCode != http.StatusUnauthorized {
@@ -1058,7 +1058,7 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 		}
 	}
 	sixthResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "198.51.100.70", map[string]any{
-		"email": "elin.brute@example.wales",
+		"email": "elin.brute@example.com",
 		"code":  validOTP,
 	})
 	if sixthResp.StatusCode != http.StatusUnauthorized {
@@ -1067,15 +1067,15 @@ func TestPhase3Milestone4_ConcurrencyBruteForceAndExpiryCleanup(t *testing.T) {
 
 	// 4. 15m OTP Expiry (D8): advancing 16m expires an unredeemed challenge!
 	_, _ = svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "Guto", LastName: "Expiry", Email: "guto.expiry@example.wales",
+		PropertyID: prop.ID, FirstName: "Guto", LastName: "Expiry", Email: "guto.expiry@example.com",
 	})
 	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "198.51.100.80", map[string]any{
-		"email": "guto.expiry@example.wales",
+		"email": "guto.expiry@example.com",
 	})
-	expOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "guto.expiry@example.wales"))[1]
+	expOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "guto.expiry@example.com"))[1]
 	clk.Advance(16 * time.Minute)
 	expiredResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "198.51.100.81", map[string]any{
-		"email": "guto.expiry@example.wales",
+		"email": "guto.expiry@example.com",
 		"code":  expOTP,
 	})
 	if expiredResp.StatusCode != http.StatusUnauthorized {
@@ -1089,7 +1089,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 	ctx := context.Background()
 	pubClient := newClient(t)
 
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -1111,7 +1111,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 		PropertyID: prop.ID,
 		FirstName:  "Carys",
 		LastName:   "HMAC",
-		Email:      "carys.hmac@example.wales",
+		Email:      "carys.hmac@example.com",
 		Phone:      "+447700900555",
 	})
 	if err != nil {
@@ -1162,7 +1162,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 		PublicOrigin:       "http://127.0.0.1:3000",
 		PublicAPISecret:    pubSecret,
 		GuestPortalEnabled: true,
-		EmailFrom:          "bookings@tirbach.wales",
+		EmailFrom:          "bookings@example.com",
 	}
 	altSvc := service.New(store, altCfg)
 	altSvc.SetClock(clk.Now)
@@ -1175,17 +1175,17 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 	altPortalBase := altSrv.URL + "/api/public/v1/properties/" + prop.Slug + "/portal"
 
 	chResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/challenge", pubSecret, "", "", "203.0.113.90", map[string]any{
-		"email": "carys.hmac@example.wales",
+		"email": "carys.hmac@example.com",
 	})
 	if chResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("login challenge expected 202, got %d", chResp.StatusCode)
 	}
-	loginOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.wales"))[1]
-	_ = assertChallengeIsKeyedHMAC("carys.hmac@example.wales", domain.PortalChallengeLogin, loginOTP)
+	loginOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.com"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.hmac@example.com", domain.PortalChallengeLogin, loginOTP)
 
 	// Attempting to redeem the exact OTP against a server holding a different HMAC key must fail with 401.
 	wrongKeyResp, _ := doPortalReq(t, pubClient, http.MethodPost, altPortalBase+"/auth/verify", pubSecret, "", "", "203.0.113.91", map[string]any{
-		"email": "carys.hmac@example.wales",
+		"email": "carys.hmac@example.com",
 		"code":  loginOTP,
 	})
 	if wrongKeyResp.StatusCode != http.StatusUnauthorized {
@@ -1194,7 +1194,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 
 	// Redeeming under the matching server key succeeds (even with whitespace/case variations).
 	okLoginResp, okLoginBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.92", map[string]any{
-		"email": "  Carys.HMAC@Example.Wales ",
+		"email": "  Carys.HMAC@Example.Com ",
 		"code":  " " + loginOTP + " ",
 	})
 	if okLoginResp.StatusCode != http.StatusOK {
@@ -1209,8 +1209,8 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 	if stepChResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("step-up challenge expected 202, got %d", stepChResp.StatusCode)
 	}
-	stepOTP1 := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.wales"))[1]
-	_ = assertChallengeIsKeyedHMAC("carys.hmac@example.wales", domain.PortalChallengeStepUp, stepOTP1)
+	stepOTP1 := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.com"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.hmac@example.com", domain.PortalChallengeStepUp, stepOTP1)
 
 	wrongStep := "000000"
 	if stepOTP1 == wrongStep {
@@ -1228,7 +1228,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 	}
 
 	_, _ = doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/challenge", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.107", map[string]any{})
-	stepOTP2 := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.wales"))[1]
+	stepOTP2 := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.hmac@example.com"))[1]
 	stepVerResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/step-up/verify", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.107", map[string]any{"code": stepOTP2})
 	if stepVerResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected step-up verification 200, got %d", stepVerResp.StatusCode)
@@ -1236,13 +1236,13 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 
 	// 3. Pending-Email Change OTP path (keyed HMAC + 15m TTL + successful confirmation).
 	emChResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/profile/email-change", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.108", map[string]any{
-		"new_email": "carys.updated@example.wales",
+		"new_email": "carys.updated@example.com",
 	})
 	if emChResp.StatusCode != http.StatusAccepted {
 		t.Fatalf("email-change challenge expected 202, got %d", emChResp.StatusCode)
 	}
-	emOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.updated@example.wales"))[1]
-	_ = assertChallengeIsKeyedHMAC("carys.updated@example.wales", domain.PortalChallengeVerifyEmail, emOTP)
+	emOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.updated@example.com"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.updated@example.com", domain.PortalChallengeVerifyEmail, emOTP)
 
 	emConfResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/profile/email-change/confirm", pubSecret, loginRes.SessionToken, loginRes.Session.CSRFToken, "203.0.113.108", map[string]any{
 		"code": emOTP,
@@ -1255,11 +1255,11 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 	if err := svc.SendGuestPortalVerification(ctx, ownerActor, prop.ID, guest.ID); err != nil {
 		t.Fatalf("SendGuestPortalVerification: %v", err)
 	}
-	staffOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.updated@example.wales"))[1]
-	_ = assertChallengeIsKeyedHMAC("carys.updated@example.wales", domain.PortalChallengeLogin, staffOTP)
+	staffOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "carys.updated@example.com"))[1]
+	_ = assertChallengeIsKeyedHMAC("carys.updated@example.com", domain.PortalChallengeLogin, staffOTP)
 
 	staffRedeemResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.109", map[string]any{
-		"email": "carys.updated@example.wales",
+		"email": "carys.updated@example.com",
 		"code":  staffOTP,
 	})
 	if staffRedeemResp.StatusCode != http.StatusOK {
@@ -1274,13 +1274,13 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 		PublicOrigin:       "http://127.0.0.1:3000",
 		PublicAPISecret:    pubSecret,
 		GuestPortalEnabled: true,
-		EmailFrom:          "bookings@tirbach.wales",
+		EmailFrom:          "bookings@example.com",
 	}
 	missingKeySvc := service.New(store, missingKeyCfg)
 	missingKeySvc.SetClock(clk.Now)
 	if _, err := missingKeySvc.RequestPortalAuthChallenge(ctx, service.Actor{}, service.RequestPortalChallengeInput{
 		PropertySlug: prop.Slug,
-		Email:        "carys.updated@example.wales",
+		Email:        "carys.updated@example.com",
 		Purpose:      domain.PortalChallengeLogin,
 	}); !errors.Is(err, service.ErrPortalKeyUnavailable) {
 		t.Fatalf("expected RequestPortalAuthChallenge to fail closed with ErrPortalKeyUnavailable, got %v", err)
@@ -1293,8 +1293,8 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 		AppEnv:          "production",
 		DatabaseURL:     os.Getenv("TEST_DATABASE_URL"),
 		CookieSecure:    true,
-		EncryptionKey:   []byte("tirbach-dev-only-32byte-key-0001"),
-		PublicOrigin:    "https://book.tirbach.wales",
+		EncryptionKey:   []byte("lovelace-dev-only-32byte-key-001"),
+		PublicOrigin:    "https://book.example.com",
 		PublicAPISecret: "prod-m4-strong-public-api-secret-2026",
 	})
 	if err := insecureProdSvc.ValidateProductionStartup(ctx); !errors.Is(err, service.ErrPortalKeyUnavailable) {
@@ -1311,7 +1311,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 			otp_hash, otp_hash_alg, token_hash, browser_nonce_hash,
 			failed_attempts, max_attempts, expires_at, invalidated_at
 		) VALUES (
-			$1, $2, $3, 'carys.updated@example.wales', 'LOGIN',
+			$1, $2, $3, 'carys.updated@example.com', 'LOGIN',
 			repeat('0', 64), 'INVALIDATED_UNKEYED', $4, $5,
 			0, 5, $6, $7
 		)
@@ -1319,7 +1319,7 @@ func TestPhase3Milestone4_KeyedOTPHMACPathsAndLegacyInvalidation(t *testing.T) {
 		t.Fatalf("insert invalidated legacy challenge: %v", err)
 	}
 	legacyOTPResp, _ := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.115", map[string]any{
-		"email": "carys.updated@example.wales",
+		"email": "carys.updated@example.com",
 		"code":  "000000",
 	})
 	if legacyOTPResp.StatusCode != http.StatusUnauthorized {
@@ -1346,12 +1346,12 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	pubClient := newClient(t)
 	adminClient := newClient(t)
 
-	loginStatus, adminCSRF := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	loginStatus, adminCSRF := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if loginStatus != http.StatusOK || adminCSRF == "" {
 		t.Fatalf("admin login failed: status=%d csrf=%q", loginStatus, adminCSRF)
 	}
 
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -1370,26 +1370,26 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	portalBase := srv.URL + "/api/public/v1/properties/" + prop.Slug + "/portal"
 
 	// 1. Staging config & known development keys fail closed across staging and development.
-	t.Setenv("TIRBACH_ENV", "staging")
+	t.Setenv("LOVELACE_ENV", "staging")
 	t.Setenv("DATABASE_URL", os.Getenv("TEST_DATABASE_URL"))
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "")
 	if _, err := config.Load(); err == nil {
-		t.Fatal("expected staging config.Load() to fail closed when TIRBACH_ENCRYPTION_KEY is missing")
+		t.Fatal("expected staging config.Load() to fail closed when LOVELACE_ENCRYPTION_KEY is missing")
 	}
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
 	if _, err := config.Load(); err == nil {
 		t.Fatal("expected staging config.Load() to fail closed on known development key")
 	}
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000")
 	if _, err := config.Load(); err == nil {
 		t.Fatal("expected staging config.Load() to fail closed on all-zero key")
 	}
-	t.Setenv("TIRBACH_ENV", "test")
-	t.Setenv("TIRBACH_ENCRYPTION_KEY", "")
+	t.Setenv("LOVELACE_ENV", "test")
+	t.Setenv("LOVELACE_ENCRYPTION_KEY", "")
 
 	devHexKey, _ := hex.DecodeString("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
 	for _, devKey := range [][]byte{
-		[]byte("tirbach-dev-only-32byte-key-0001"),
+		[]byte("lovelace-dev-only-32byte-key-001"),
 		devHexKey,
 	} {
 		devSvc := service.New(store, config.Config{
@@ -1399,12 +1399,12 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 			PublicOrigin:       "http://127.0.0.1:3000",
 			PublicAPISecret:    pubSecret,
 			GuestPortalEnabled: true,
-			EmailFrom:          "bookings@tirbach.wales",
+			EmailFrom:          "bookings@example.com",
 		})
 		devSvc.SetClock(clk.Now)
 		if _, err := devSvc.RequestPortalAuthChallenge(ctx, service.Actor{}, service.RequestPortalChallengeInput{
 			PropertySlug: prop.Slug,
-			Email:        "any.guest@example.wales",
+			Email:        "any.guest@example.com",
 			Purpose:      domain.PortalChallengeLogin,
 		}); !errors.Is(err, service.ErrPortalKeyUnavailable) {
 			t.Fatalf("expected known dev key to fail closed with ErrPortalKeyUnavailable even in development, got %v", err)
@@ -1412,7 +1412,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	}
 
 	// 2. Spoofed X-Forwarded-Host on Go portal mutation fails closed with 403.
-	spoofReq, _ := http.NewRequest(http.MethodPost, portalBase+"/auth/challenge", strings.NewReader(`{"email":"any@example.wales"}`))
+	spoofReq, _ := http.NewRequest(http.MethodPost, portalBase+"/auth/challenge", strings.NewReader(`{"email":"any@example.com"}`))
 	spoofReq.Header.Set("Content-Type", "application/json")
 	spoofReq.Header.Set("X-Lovelace-Public-Key", pubSecret)
 	spoofReq.Header.Set("Origin", "http://127.0.0.1:3000")
@@ -1431,7 +1431,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 		PropertyID: prop.ID,
 		FirstName:  "Gwen",
 		LastName:   "Fencing",
-		Email:      "gwen.fencing@example.wales",
+		Email:      "gwen.fencing@example.com",
 		Phone:      "+447700900777",
 	})
 	if err != nil {
@@ -1447,7 +1447,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	if reExtractOTP.Match(sendVerifBody) || strings.Contains(string(sendVerifBody), "code") {
 		t.Fatalf("admin send-verification response must never leak OTP: %s", string(sendVerifBody))
 	}
-	staffOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "gwen.fencing@example.wales"))[1]
+	staffOTP := reExtractOTP.FindStringSubmatch(latestOutboxBodyForRecipient(t, store, "gwen.fencing@example.com"))[1]
 
 	// Verify zero challenge rows in guest_communications (only the non-secret system notification summary).
 	var leakedCommCount int
@@ -1457,7 +1457,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	}
 
 	redeemResp, redeemBody := doPortalReq(t, pubClient, http.MethodPost, portalBase+"/auth/verify", pubSecret, "", "", "203.0.113.150", map[string]any{
-		"email": "gwen.fencing@example.wales",
+		"email": "gwen.fencing@example.com",
 		"code":  staffOTP,
 	})
 	if redeemResp.StatusCode != http.StatusOK {
@@ -1507,7 +1507,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 		ID:             uuid.Must(uuid.NewV7()),
 		PropertyID:     prop.ID,
 		GuestID:        &guest.ID,
-		RecipientEmail: "gwen.fencing@example.wales",
+		RecipientEmail: "gwen.fencing@example.com",
 		Template:       "portal_verification",
 		Subject:        "Expired Code",
 		BodyText:       "Expired OTP: 654321",
@@ -1546,7 +1546,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 		ID:             uuid.Must(uuid.NewV7()),
 		PropertyID:     prop.ID,
 		GuestID:        &guest.ID,
-		RecipientEmail: "gwen.fencing@example.wales",
+		RecipientEmail: "gwen.fencing@example.com",
 		Template:       "portal_verification",
 		Subject:        "Live Dispatching Code",
 		BodyText:       "Dispatching OTP: 112233",
@@ -1590,11 +1590,11 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	}
 	// Concurrent AnonymizeGuest on a separate guest with a live DISPATCHING challenge STILL respects lease fencing (409 Conflict).
 	eraseGuest, _ := svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "Iwan", LastName: "Lease", Email: "iwan.lease@example.wales",
+		PropertyID: prop.ID, FirstName: "Iwan", LastName: "Lease", Email: "iwan.lease@example.com",
 	})
 	eraseOutbox, _ := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
 		ID: uuid.Must(uuid.NewV7()), PropertyID: prop.ID, GuestID: &eraseGuest.ID,
-		RecipientEmail: "iwan.lease@example.wales", Template: "portal_verification",
+		RecipientEmail: "iwan.lease@example.com", Template: "portal_verification",
 		Subject: "Code", BodyText: "OTP: 889900", NextAttemptAt: clk.Now(),
 	})
 	claimedErase, _ := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)
@@ -1636,11 +1636,11 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 
 	// Also verify DISPATCH_UNKNOWN -> CONFIRMED_FAILED reconciliation on a non-erased guest scrubs body & blocks manual retry.
 	unkGuest, _ := svc.CreateGuest(ctx, ownerActor, domain.Guest{
-		PropertyID: prop.ID, FirstName: "mali", LastName: "Unknown", Email: "mali.unknown@example.wales",
+		PropertyID: prop.ID, FirstName: "mali", LastName: "Unknown", Email: "mali.unknown@example.com",
 	})
 	unkOutbox, _ := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
 		ID: uuid.Must(uuid.NewV7()), PropertyID: prop.ID, GuestID: &unkGuest.ID,
-		RecipientEmail: "mali.unknown@example.wales", Template: "portal_step_up",
+		RecipientEmail: "mali.unknown@example.com", Template: "portal_step_up",
 		Subject: "Step Up", BodyText: "Step-up OTP: 445566", BodyHTML: "<p>445566</p>", NextAttemptAt: clk.Now(),
 	})
 	claimedUnk, _ := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)
@@ -1680,7 +1680,7 @@ func TestPhase3Milestone4_StagingAcceptanceHardening_OutboxFencingKeysAndAdminSu
 	// 4d. Terminal permanent failure scrubs security challenge body immediately.
 	permOutbox, _ := store.QueueEmail(ctx, nil, domain.EmailOutboxItem{
 		ID: uuid.Must(uuid.NewV7()), PropertyID: prop.ID, GuestID: &unkGuest.ID,
-		RecipientEmail: "mali.unknown@example.wales", Template: "portal_email_change_verify",
+		RecipientEmail: "mali.unknown@example.com", Template: "portal_email_change_verify",
 		Subject: "Verify Email", BodyText: "Verify OTP: 778899", BodyHTML: "<p>778899</p>", NextAttemptAt: clk.Now(),
 	})
 	claimedPerm, _ := store.ClaimDueOutboxEmails(ctx, clk.Now(), 10)

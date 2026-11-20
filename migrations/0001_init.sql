@@ -1,5 +1,5 @@
 -- Phase 1: Core Inventory & Administrative Foundation
--- Project: Tir Bach Campsite (Pembrokeshire, Wales)
+-- Project: Lovelace Hospitality Booking & Operations Platform
 --
 -- Conventions:
 --   * All timestamps stored as TIMESTAMPTZ (UTC).
@@ -10,7 +10,7 @@
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
--- 1. Properties (multi-site anchor; seeded initially with Tir Bach Campsite)
+-- 1. Properties (multi-site anchor)
 CREATE TABLE properties (
     id              UUID PRIMARY KEY,
     slug            TEXT NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),

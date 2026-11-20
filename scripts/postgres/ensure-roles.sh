@@ -9,7 +9,7 @@ set -eu
 # via \getenv and binds session parameters silently with \gset so credentials never
 # appear in psql process arguments (ps/argv) or PostgreSQL bootstrap stdout/stderr.
 
-DB_NAME="${POSTGRES_DB:-tir_bach}"
+DB_NAME="${POSTGRES_DB:-lovelace}"
 BOOTSTRAP_USER="${POSTGRES_BOOTSTRAP_USER:-postgres}"
 MIGRATOR_USER="${LOVELACE_MIGRATOR_USER:-lovelace_migrator}"
 APP_USER="${LOVELACE_APP_USER:-lovelace_app}"

@@ -27,21 +27,21 @@
 
 ### 2. Fail-Closed Stripe Policy & Production Startup Readiness
 - `InitiatePublicCheckout` checks `property_booking_policies.stripe_enabled` and refuses initiation with `409 stripe_disabled` (`domain.ErrStripeDisabled`) when disabled; `BookingWizard.tsx` renders an unavailable-payment notice when `!property.policy.stripe_enabled`.
-- `ValidateProductionStartup` (called on boot in `cmd/server/main.go`) and `/readyz` (`internal/httpapi/api.go`) fail closed in production if `TIRBACH_STRIPE_SANDBOX=true`, if `TIRBACH_PUBLIC_API_SECRET` is empty, if `TIRBACH_PUBLIC_ORIGIN` lacks valid HTTPS origins, or if any active public property has `stripe_enabled=true` without valid paired Stripe keys/webhook secret. When all properties disable Stripe (`stripe_enabled=false`), startup and `/readyz` succeed cleanly (`payments.status = "disabled"`).
+- `ValidateProductionStartup` (called on boot in `cmd/server/main.go`) and `/readyz` (`internal/httpapi/api.go`) fail closed in production if `LOVELACE_STRIPE_SANDBOX=true`, if `LOVELACE_PUBLIC_API_SECRET` is empty, if `LOVELACE_PUBLIC_ORIGIN` lacks valid HTTPS origins, or if any active public property has `stripe_enabled=true` without valid paired Stripe keys/webhook secret. When all properties disable Stripe (`stripe_enabled=false`), startup and `/readyz` succeed cleanly (`payments.status = "disabled"`).
 
 ### 3. Single Active Payment Attempt & Hold Lifecycle Atomicity
 - Added PostgreSQL partial unique index `uq_payment_attempts_one_active_per_hold` in `migrations/0006_phase2_1.sql`.
 - `CreateOrGetPaymentAttempt` (`internal/store/postgres/public_booking_repo.go`) locks the hold row (`FOR UPDATE`), reuses exact idempotency-key replays, returns `domain.ErrActiveCheckoutExists` (`409 active_checkout_exists`) when an active attempt already exists under another key, allows up to 3 retries after `FAILED`/`EXPIRED` attempts, and transitions open attempts to `EXPIRED` when holds expire.
 
 ### 4. Email Outbox Integrity (No Silent `LogSender` False Successes)
-- `service.New` no longer wires `mailer.LogSender{}` when `TIRBACH_SMTP_ADDR` is omitted (`emailSender = nil`).
+- `service.New` no longer wires `mailer.LogSender{}` when `LOVELACE_SMTP_ADDR` is omitted (`emailSender = nil`).
 - Unconfigured `DispatchPendingEmails` leaves queued emails in `PENDING` (`ErrProviderUnconfigured`), surfaced as `"email": {"status": "unconfigured"}` in `/readyz`.
 - Added atomic `FOR UPDATE SKIP LOCKED` claiming (`ClaimDueOutboxEmails`), stale lock recovery (>5 min), duplicate queuing protection (`uq_email_outbox_reservation_template`), and immediate `FAILED` transition for permanent SMTP 5xx / `mailer.Permanent` errors (`internal/mailer/errors.go`).
 
 ### 5. Rate Limiting, Trusted Proxies & Public API Isolation
-- Updated `httpx.ExtractClientIP` / `ResolveForwardedCustomerIP` and `apps/public-web/src/lib/rate-limit.ts` to validate peer IPs against explicit CIDR allowlists (`TIRBACH_TRUSTED_PROXIES`, `LOVELACE_TRUSTED_PROXIES`) and walk `X-Forwarded-For` right-to-left.
+- Updated `httpx.ExtractClientIP` / `ResolveForwardedCustomerIP` and `apps/public-web/src/lib/rate-limit.ts` to validate peer IPs against explicit CIDR allowlists (`LOVELACE_TRUSTED_PROXIES`, `LOVELACE_TRUSTED_PROXIES`) and walk `X-Forwarded-For` right-to-left.
 - Isolated rate-limiters per `httpapi.Handler` instance with both per-client and global ceilings across Go `/api/public/v1/*` and Next.js `/api/public/*`.
-- Enforced `TIRBACH_PUBLIC_API_SECRET` (`X-Lovelace-Public-Key`) in production `docker-compose.yml` and startup checks.
+- Enforced `LOVELACE_PUBLIC_API_SECRET` (`X-Lovelace-Public-Key`) in production `docker-compose.yml` and startup checks.
 
 ### 6. Next.js / React Security Upgrade & Confirmation Token Hygiene
 - Upgraded `apps/public-web` dependencies to `next@16.4.6`, `react@19.3.1`, `react-dom@19.3.1`, `vitest@^5.1.0`, eliminating all 6 advisories (`npm audit`: `found 0 vulnerabilities`).
@@ -56,12 +56,12 @@
 ## Executed Test & Command Verification (Post-Final Edit)
 
 1. **`gofmt -l internal cmd && go build ./... && go vet ./...`**: exited `0` (zero formatting issues, clean compile & vet).
-2. **`TEST_DATABASE_URL="postgres://tir_bach_test_runner:...@127.0.0.1:5432/tir_bach_test?sslmode=disable" go test -race -count=1 ./...`**: exited `0`; `internal/app` (`39.334s`, covering Phases 1, 1.1, 1.5, 1.6, 2, and 2.1), `internal/auth` (`4.216s`), and `internal/domain` (`1.360s`) all passed against PostgreSQL with race detector enabled.
+2. **`TEST_DATABASE_URL="postgres://lovelace_test_runner:...@127.0.0.1:5432/lovelace_test?sslmode=disable" go test -race -count=1 ./...`**: exited `0`; `internal/app` (`39.334s`, covering Phases 1, 1.1, 1.5, 1.6, 2, and 2.1), `internal/auth` (`4.216s`), and `internal/domain` (`1.360s`) all passed against PostgreSQL with race detector enabled.
 3. **`cd apps/public-web && npm audit`**: exited `0` (`found 0 vulnerabilities`).
 4. **`cd apps/public-web && npx tsc --noEmit && npm test`**: exited `0`; Vitest ran 2 test files / 9 tests passed (`format.test.ts`, `rate-limit.test.ts`), and `next build` (Next.js 16.4.6 Turbopack) succeeded cleanly (including inside the `docker compose -f docker-compose.dev.yml up -d --build` image build).
-5. **`docker compose -f docker-compose.dev.yml up -d --build`**: exited `0`; `tir-bach-postgres` healthy, `tir-bach-db-bootstrap` and `tir-bach-migrate` (applying `0006_phase2_1.sql`) exited `0`, `tir-bach-app` (`:8080`) and `tir-bach-public-web` (`:3000`) healthy.
+5. **`docker compose -f docker-compose.dev.yml up -d --build`**: exited `0`; `lovelace-postgres` healthy, `lovelace-db-bootstrap` and `lovelace-migrate` (applying `0006_phase2_1.sql`) exited `0`, `lovelace-app` (`:8080`) and `lovelace-public-web` (`:3000`) healthy.
 6. **Live Stack Isolation & Readiness Checks**:
    - `GET http://127.0.0.1:8080/readyz` -> `200 OK` (`database: ok`, `payments: ok (sandbox)`, `email: unconfigured (none)`).
-   - `GET http://127.0.0.1:8080/api/public/v1/properties/tir-bach` without `X-Lovelace-Public-Key` -> `401`.
+   - `GET http://127.0.0.1:8080/api/public/v1/properties/demo-property` without `X-Lovelace-Public-Key` -> `401`.
    - `GET http://127.0.0.1:3000/api/healthz` -> `200`, `GET http://127.0.0.1:3000/login` -> `404`, `GET http://127.0.0.1:8080/login` -> `200`.
 7. **`cd apps/public-web && npx playwright test`**: exited `0`; `4 passed (2.7s)` against live Docker Compose stack (homepage identity/admin isolation, sandbox open-redirect rejection & 422 checkout guard, mobile responsive layout, full booking hold -> release -> re-hold -> sandbox checkout -> token-free URL confirmation -> cancellation request -> inventory depletion).

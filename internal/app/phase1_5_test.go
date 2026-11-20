@@ -14,15 +14,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPhase1_5HardeningChannelAllocationsAndRebrand(t *testing.T) {
 	srv, store, prop := setupTestServer(t)
 	ownerClient := newClient(t)
-	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	code, csrf := apiLogin(t, ownerClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if code != http.StatusOK {
 		t.Fatalf("owner login failed: %d", code)
 	}
@@ -405,7 +405,7 @@ func TestPhase1_5HardeningChannelAllocationsAndRebrand(t *testing.T) {
 
 	// Save Smoobu HMAC config and verify secret masking & non-CONNECTED safety invariant
 	saveSmoobu := doJSON(t, ownerClient, http.MethodPut, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/integrations/channel-manager/smoobu", csrf, map[string]any{
-		"display_name": "Smoobu Tir Bach",
+		"display_name": "Smoobu Meadowbrook",
 		"inputs": map[string]string{
 			"api_key":    "smoobu_pub_key_1234",
 			"api_secret": "smoobu_hmac_secret_9988",
@@ -476,7 +476,7 @@ func TestPhase1_5HardeningChannelAllocationsAndRebrand(t *testing.T) {
 
 	// E2. Create readonly_staff user and verify Web UI renders LOVELACE-branded error.html on 403 (/users)
 	mkStaff := doJSON(t, ownerClient, http.MethodPost, srv.URL+"/api/v1/users", csrf, map[string]any{
-		"property_id": prop.ID, "email": "rostaff@tirbach.wales", "full_name": "Front Desk Staff",
+		"property_id": prop.ID, "email": "rostaff@example.com", "full_name": "Front Desk Staff",
 		"role": "staff", "password": "ro-staff-password-2026",
 	})
 	if mkStaff.StatusCode != http.StatusCreated {
@@ -487,7 +487,7 @@ func TestPhase1_5HardeningChannelAllocationsAndRebrand(t *testing.T) {
 
 	roClient := newClient(t)
 	roForm := url.Values{}
-	roForm.Set("email", "rostaff@tirbach.wales")
+	roForm.Set("email", "rostaff@example.com")
 	roForm.Set("password", "ro-staff-password-2026")
 	roLogin, err := roClient.PostForm(srv.URL+"/login", roForm)
 	if err != nil {

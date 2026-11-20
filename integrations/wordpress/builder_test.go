@@ -11,7 +11,7 @@ import (
 func TestBuildPluginZipIncludesAllFilesGuardsAndEscapesPHP(t *testing.T) {
 	rawZip, filename, err := BuildPluginZip(BundleConfig{
 		BookingOrigin:  "https://book.example.co.uk/nested/path/",
-		PropertySlug:   "tir-bach-glamping",
+		PropertySlug:   "meadowbrook-glamping",
 		PropertyName:   `O'Connor's \ Meadow\n'); phpinfo(); //`,
 		PrimaryColor:   "#1F5A4C",
 		PrimaryOnColor: "#FFFFFF",
@@ -19,8 +19,8 @@ func TestBuildPluginZipIncludesAllFilesGuardsAndEscapesPHP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPluginZip() error = %v", err)
 	}
-	if filename != "lovelace-booking-tir-bach-glamping.zip" {
-		t.Fatalf("filename = %q, want lovelace-booking-tir-bach-glamping.zip", filename)
+	if filename != "lovelace-booking-meadowbrook-glamping.zip" {
+		t.Fatalf("filename = %q, want lovelace-booking-meadowbrook-glamping.zip", filename)
 	}
 
 	zr, err := zip.NewReader(bytes.NewReader(rawZip), int64(len(rawZip)))
@@ -76,7 +76,7 @@ func TestBuildPluginZipIncludesAllFilesGuardsAndEscapesPHP(t *testing.T) {
 	defaultsPHP := files["lovelace-booking/includes/bundled-defaults.php"]
 	for _, want := range []string{
 		`'booking_origin'   => 'https://book.example.co.uk'`,
-		`'property_slug'    => 'tir-bach-glamping'`,
+		`'property_slug'    => 'meadowbrook-glamping'`,
 		`O\'Connor\'s \\ Meadow`,
 		`\'`,
 		`'primary_color'    => '#1F5A4C'`,

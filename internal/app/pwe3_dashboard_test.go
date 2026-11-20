@@ -14,9 +14,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func apiJSONRequest(
@@ -62,10 +62,10 @@ func TestPWE3_CustomisableDashboardSecurityPermissionsAndAllWidgets(t *testing.T
 	ctx := context.Background()
 
 	var ownerID uuid.UUID
-	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales'`).Scan(&ownerID); err != nil {
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com'`).Scan(&ownerID); err != nil {
 		t.Fatalf("find owner: %v", err)
 	}
-	ownerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	ownerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	// Property B (empty dataset for empty-state + cross-property checks)
 	propBID := uuid.New()
@@ -85,31 +85,31 @@ func TestPWE3_CustomisableDashboardSecurityPermissionsAndAllWidgets(t *testing.T
 
 	// Users on Property A + one on Property B
 	mgrA, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe3.mgra@tirbach.wales", FullName: "PWE3 Manager A", Role: domain.RoleManager, Password: "Pwe3ManagerPass!2026",
+		PropertyID: &propA.ID, Email: "pwe3.mgra@example.com", FullName: "PWE3 Manager A", Role: domain.RoleManager, Password: "Pwe3ManagerPass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create mgrA: %v", err)
 	}
 	hkA, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe3.hka@tirbach.wales", FullName: "PWE3 Housekeeping A", Role: domain.RoleHousekeepingStaff, Password: "Pwe3HousePass!2026",
+		PropertyID: &propA.ID, Email: "pwe3.hka@example.com", FullName: "PWE3 Housekeeping A", Role: domain.RoleHousekeepingStaff, Password: "Pwe3HousePass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create hkA: %v", err)
 	}
 	viewerA, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe3.viewera@tirbach.wales", FullName: "PWE3 Viewer A", Role: domain.RoleViewer, Password: "Pwe3ViewerPass!2026",
+		PropertyID: &propA.ID, Email: "pwe3.viewera@example.com", FullName: "PWE3 Viewer A", Role: domain.RoleViewer, Password: "Pwe3ViewerPass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create viewerA: %v", err)
 	}
 	mgrB, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		PropertyID: &propBID, Email: "pwe3.mgrb@tirbach.wales", FullName: "PWE3 Manager B", Role: domain.RoleManager, Password: "Pwe3MgrBPass!2026",
+		PropertyID: &propBID, Email: "pwe3.mgrb@example.com", FullName: "PWE3 Manager B", Role: domain.RoleManager, Password: "Pwe3MgrBPass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create mgrB: %v", err)
 	}
 	rotUser, err := appSvc.CreateUser(ctx, ownerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe3.rot@tirbach.wales", FullName: "PWE3 Rotate", Role: domain.RoleManager, Password: "Pwe3RotPass!2026", MustRotatePassword: true,
+		PropertyID: &propA.ID, Email: "pwe3.rot@example.com", FullName: "PWE3 Rotate", Role: domain.RoleManager, Password: "Pwe3RotPass!2026", MustRotatePassword: true,
 	})
 	if err != nil {
 		t.Fatalf("create rotUser: %v", err)

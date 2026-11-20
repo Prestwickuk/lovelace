@@ -23,14 +23,14 @@ Create a single Railway Project (e.g. `lovelace-production`) containing **three 
 ### Step 1 — Prerequisites & Spend Guardrails
 1. Install the Railway CLI (`brew install railway` or `npm i -g @railway/cli`) and authenticate (`railway login`).
 2. In **Railway Dashboard → Workspace → Usage / Billing**, configure a **Usage Limit** (e.g. `$25`–`$75` soft alert and `$100` hard cap) so costs stay predictable.
-3. Generate your unique production secrets locally (keep `TIRBACH_ENCRYPTION_KEY` saved safely in your password manager!):
+3. Generate your unique production secrets locally (keep `LOVELACE_ENCRYPTION_KEY` saved safely in your password manager!):
    ```bash
    POSTGRES_BOOTSTRAP_PASSWORD="$(openssl rand -hex 24)"
    LOVELACE_MIGRATOR_PASSWORD="$(openssl rand -hex 24)"
    LOVELACE_APP_PASSWORD="$(openssl rand -hex 24)"
-   TIRBACH_ENCRYPTION_KEY="$(openssl rand -hex 32)"
-   TIRBACH_PUBLIC_API_SECRET="$(openssl rand -hex 32)"
-   TIRBACH_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -base64 18)"
+   LOVELACE_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+   LOVELACE_PUBLIC_API_SECRET="$(openssl rand -hex 32)"
+   LOVELACE_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -base64 18)"
    ```
 
 ---
@@ -65,37 +65,37 @@ Create a single Railway Project (e.g. `lovelace-production`) containing **three 
 ### Step 3 — Provision `lovelace-app` & Attachment Volume Permissions
 
 1. Create empty service **`lovelace-app`** in your Railway project and attach a **Volume** mounted at `/var/lib/lovelace/attachments`.
-2. **Important Volume Permission Detail:** Railway mounts brand-new volumes owned by `root:root` (`0:0`), whereas Lovelace's `Dockerfile` runs as non-root `USER tirbach` (`uid=100, gid=101` on `alpine:3.21`).
-   - Either set Railway variable **`RAILWAY_RUN_UID=0`** *only* if running a one-time init command `chown -R 100:101 /var/lib/lovelace/attachments`, **or** run a 5-second one-shot Alpine init deploy on `lovelace-app` before deploying Lovelace so `/var/lib/lovelace/attachments` is owned by `100:101` (`tirbach:tirbach`).
+2. **Important Volume Permission Detail:** Railway mounts brand-new volumes owned by `root:root` (`0:0`), whereas Lovelace's `Dockerfile` runs as non-root `USER lovelace` (`uid=100, gid=101` on `alpine:3.21`).
+   - Either set Railway variable **`RAILWAY_RUN_UID=0`** *only* if running a one-time init command `chown -R 100:101 /var/lib/lovelace/attachments`, **or** run a 5-second one-shot Alpine init deploy on `lovelace-app` before deploying Lovelace so `/var/lib/lovelace/attachments` is owned by `100:101` (`lovelace:lovelace`).
 3. Generate a Railway public domain (or attach custom domain `admin.yourdomain.com`) targeting port **`8080`**.
 4. Configure **Variables** on `lovelace-app` (never pass `POSTGRES_BOOTSTRAP_PASSWORD` or `LOVELACE_MIGRATOR_PASSWORD` to `lovelace-app`):
 
    ```dotenv
    PORT=8080
-   TIRBACH_ENV=production
-   TIRBACH_LISTEN_ADDR=:8080
-   TIRBACH_COOKIE_SECURE=true
-   TIRBACH_TRUST_PROXY=true
+   LOVELACE_ENV=production
+   LOVELACE_LISTEN_ADDR=:8080
+   LOVELACE_COOKIE_SECURE=true
+   LOVELACE_TRUST_PROXY=true
    # Include Railway edge & IPv6 internal mesh CIDRs:
-   TIRBACH_TRUSTED_PROXIES=127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fd12::/16
+   LOVELACE_TRUSTED_PROXIES=127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,fd12::/16
    DATABASE_URL=postgres://lovelace_app:<LOVELACE_APP_PASSWORD>@lovelace-pg17.railway.internal:5432/lovelace?sslmode=disable
-   TIRBACH_ENCRYPTION_KEY=<64_CHAR_HEX_KEY>
-   TIRBACH_AUTO_SEED=false
-   TIRBACH_BOOTSTRAP_ADMIN_EMAIL=you@yourdomain.com
-   TIRBACH_BOOTSTRAP_ADMIN_NAME=Owner Administrator
-   TIRBACH_BOOTSTRAP_ADMIN_PASSWORD=<INITIAL_ADMIN_PASSWORD>
-   TIRBACH_PUBLIC_ORIGIN=https://<YOUR_PUBLIC_WEB_DOMAIN>
-   TIRBACH_PUBLIC_API_SECRET=<64_CHAR_PUBLIC_API_SECRET>
-   TIRBACH_GUEST_PORTAL_ENABLED=false
-   TIRBACH_STRIPE_SANDBOX=false
-   TIRBACH_ATTACHMENT_DIR=/var/lib/lovelace/attachments
-   TIRBACH_REQUIRE_EMAIL=true
-   TIRBACH_EMAIL_FROM=bookings@yourdomain.com
-   TIRBACH_SMTP_ADDR=smtp.resend.com:587
-   TIRBACH_SMTP_USERNAME=resend
-   TIRBACH_SMTP_PASSWORD=<RESEND_OR_SMTP_API_KEY>
+   LOVELACE_ENCRYPTION_KEY=<64_CHAR_HEX_KEY>
+   LOVELACE_AUTO_SEED=false
+   LOVELACE_BOOTSTRAP_ADMIN_EMAIL=you@yourdomain.com
+   LOVELACE_BOOTSTRAP_ADMIN_NAME=Owner Administrator
+   LOVELACE_BOOTSTRAP_ADMIN_PASSWORD=<INITIAL_ADMIN_PASSWORD>
+   LOVELACE_PUBLIC_ORIGIN=https://<YOUR_PUBLIC_WEB_DOMAIN>
+   LOVELACE_PUBLIC_API_SECRET=<64_CHAR_PUBLIC_API_SECRET>
+   LOVELACE_GUEST_PORTAL_ENABLED=false
+   LOVELACE_STRIPE_SANDBOX=false
+   LOVELACE_ATTACHMENT_DIR=/var/lib/lovelace/attachments
+   LOVELACE_REQUIRE_EMAIL=true
+   LOVELACE_EMAIL_FROM=bookings@yourdomain.com
+   LOVELACE_SMTP_ADDR=smtp.resend.com:587
+   LOVELACE_SMTP_USERNAME=resend
+   LOVELACE_SMTP_PASSWORD=<RESEND_OR_SMTP_API_KEY>
    ```
-   *(Note: Notice `TIRBACH_LISTEN_ADDR=:8080` — omitting `0.0.0.0` lets Go listen dual-stack on both IPv4 and Railway's IPv6 `.railway.internal` private network!)*
+   *(Note: Notice `LOVELACE_LISTEN_ADDR=:8080` — omitting `0.0.0.0` lets Go listen dual-stack on both IPv4 and Railway's IPv6 `.railway.internal` private network!)*
 
 ---
 
@@ -147,7 +147,7 @@ curl -fsS https://<YOUR_PUBLIC_WEB_DOMAIN>/api/healthz
 ## 3. Adapting for Other PaaS Platforms (Fly.io & Render)
 
 - **Fly.io:**
-  - Create two Fly apps (`lovelace-app` and `lovelace-public-web`) in the same region/org so `.internal` WireGuard DNS (`http://lovelace-app.internal:8080`) works privately over IPv6 (`TIRBACH_LISTEN_ADDR=:8080`, `HOSTNAME=::`).
+  - Create two Fly apps (`lovelace-app` and `lovelace-public-web`) in the same region/org so `.internal` WireGuard DNS (`http://lovelace-app.internal:8080`) works privately over IPv6 (`LOVELACE_LISTEN_ADDR=:8080`, `HOSTNAME=::`).
   - Set `auto_stop_machines = "off"` and `min_machines_running = 1` in `fly.toml` so background hold-expiry, email outbox, and scheduled cloud backup workers stay running continuously.
   - Attach a `fly volumes create lovelace_attachments` volume mounted at `/var/lib/lovelace/attachments`.
 - **Render:**

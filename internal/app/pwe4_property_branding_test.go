@@ -19,11 +19,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/storage"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/storage"
 )
 
 func buildValidTestPNG(t *testing.T, w, h int, c color.RGBA) []byte {
@@ -138,10 +138,10 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 	appSvc.SetBlobStore(bs)
 
 	var ownerID uuid.UUID
-	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales'`).Scan(&ownerID); err != nil {
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com'`).Scan(&ownerID); err != nil {
 		t.Fatalf("find owner: %v", err)
 	}
-	globalOwnerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	globalOwnerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	// Second property for cross-property isolation checks.
 	propBID := uuid.New()
@@ -154,25 +154,25 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 
 	// Create property-A owner_admin, property-A manager (read-only property perm), and property-B owner_admin.
 	adminA, err := appSvc.CreateUser(ctx, globalOwnerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe4.admina@tirbach.wales", FullName: "PWE4 Admin A", Role: domain.RoleOwnerAdmin, Password: "Pwe4AdminPass!2026",
+		PropertyID: &propA.ID, Email: "pwe4.admina@example.com", FullName: "PWE4 Admin A", Role: domain.RoleOwnerAdmin, Password: "Pwe4AdminPass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create adminA: %v", err)
 	}
 	mgrA, err := appSvc.CreateUser(ctx, globalOwnerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe4.mgra@tirbach.wales", FullName: "PWE4 Manager A", Role: domain.RoleManager, Password: "Pwe4ManagerPass!2026",
+		PropertyID: &propA.ID, Email: "pwe4.mgra@example.com", FullName: "PWE4 Manager A", Role: domain.RoleManager, Password: "Pwe4ManagerPass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create mgrA: %v", err)
 	}
 	adminB, err := appSvc.CreateUser(ctx, globalOwnerActor, service.CreateUserInput{
-		PropertyID: &propBID, Email: "pwe4.adminb@tirbach.wales", FullName: "PWE4 Admin B", Role: domain.RoleOwnerAdmin, Password: "Pwe4AdminBPass!2026",
+		PropertyID: &propBID, Email: "pwe4.adminb@example.com", FullName: "PWE4 Admin B", Role: domain.RoleOwnerAdmin, Password: "Pwe4AdminBPass!2026",
 	})
 	if err != nil {
 		t.Fatalf("create adminB: %v", err)
 	}
 	rotUser, err := appSvc.CreateUser(ctx, globalOwnerActor, service.CreateUserInput{
-		PropertyID: &propA.ID, Email: "pwe4.rotate@tirbach.wales", FullName: "Rotate User", Role: domain.RoleOwnerAdmin, Password: "Pwe4RotatePass!2026", MustRotatePassword: true,
+		PropertyID: &propA.ID, Email: "pwe4.rotate@example.com", FullName: "Rotate User", Role: domain.RoleOwnerAdmin, Password: "Pwe4RotatePass!2026", MustRotatePassword: true,
 	})
 	if err != nil {
 		t.Fatalf("create rotUser: %v", err)
@@ -269,12 +269,12 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 	// 4. Valid Save: custom #RRGGBB palette + bounded admin terminology
 	rSave, saveBody := apiJSONRequest(t, clientAdminA, http.MethodPut, srv.URL+"/api/v1/properties/"+propA.ID.String()+"/branding", csrfAdminA, map[string]any{
 		"version":         1,
-		"display_name":    "Tir Bach Sanctuary",
-		"tagline":         "Pembrokeshire Meadow & Glamping",
-		"region_label":    "West Wales Coast",
+		"display_name":    "Meadowbrook Sanctuary",
+		"tagline":         "Countryside Meadow & Glamping",
+		"region_label":    "Coastal Valley",
 		"primary_color":   "#1e4d3b",
 		"secondary_color": "#6b2737",
-		"logo_alt":        "Tir Bach Sanctuary Crest",
+		"logo_alt":        "Meadowbrook Sanctuary Crest",
 		"header_label":    "Selected Sanctuary",
 		"terminology": map[string]string{
 			"unit_singular":  "Pitch",
@@ -319,9 +319,9 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 	if !strings.Contains(previewCSS, "--property-brand: #2E475D;") {
 		t.Fatalf("expected preview CSS token #2E475D, got:\n%s", previewCSS)
 	}
-	// Saved branding and public API MUST remain untouched at #1E4D3B / Tir Bach Sanctuary!
-	_, pubRespAfterPreview := apiJSONRequest(t, anonClient, http.MethodGet, srv.URL+"/api/public/v1/properties/tir-bach", "", nil)
-	if !strings.Contains(pubRespAfterPreview, "Tir Bach Sanctuary") || strings.Contains(pubRespAfterPreview, "Draft Harbour") || strings.Contains(pubRespAfterPreview, "#2E475D") {
+	// Saved branding and public API MUST remain untouched at #1E4D3B / Meadowbrook Sanctuary!
+	_, pubRespAfterPreview := apiJSONRequest(t, anonClient, http.MethodGet, srv.URL+"/api/public/v1/properties/demo-property", "", nil)
+	if !strings.Contains(pubRespAfterPreview, "Meadowbrook Sanctuary") || strings.Contains(pubRespAfterPreview, "Draft Harbour") || strings.Contains(pubRespAfterPreview, "#2E475D") {
 		t.Fatalf("preview unexpectedly mutated public API state: %s", pubRespAfterPreview)
 	}
 
@@ -361,7 +361,7 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 		t.Fatalf("expected exactly 1 blob file after logo upload, found %d", countFilesInDir(t, blobDir))
 	}
 
-	pubLogoResp, err := anonClient.Get(srv.URL + "/api/public/v1/properties/tir-bach/logo?v=1")
+	pubLogoResp, err := anonClient.Get(srv.URL + "/api/public/v1/properties/demo-property/logo?v=1")
 	if err != nil {
 		t.Fatalf("GET public logo: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 	if countFilesInDir(t, blobDir) != 1 {
 		t.Fatalf("expected old blob deleted cleanly on replace (count=%d)", countFilesInDir(t, blobDir))
 	}
-	pubJpgResp, _ := anonClient.Get(srv.URL + "/api/public/v1/properties/tir-bach/logo?v=2")
+	pubJpgResp, _ := anonClient.Get(srv.URL + "/api/public/v1/properties/demo-property/logo?v=2")
 	pubJpgBytes, _ := io.ReadAll(pubJpgResp.Body)
 	pubJpgResp.Body.Close()
 	if pubJpgResp.StatusCode != http.StatusOK || pubJpgResp.Header.Get("Content-Type") != "image/jpeg" {
@@ -410,7 +410,7 @@ func TestPWE4_PropertyBrandingSecurityContrastLogosAndBoundaries(t *testing.T) {
 	if countFilesInDir(t, blobDir) != 0 {
 		t.Fatalf("expected 0 blob files after delete, got %d", countFilesInDir(t, blobDir))
 	}
-	pubGoneResp, _ := anonClient.Get(srv.URL + "/api/public/v1/properties/tir-bach/logo")
+	pubGoneResp, _ := anonClient.Get(srv.URL + "/api/public/v1/properties/demo-property/logo")
 	pubGoneResp.Body.Close()
 	if pubGoneResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after logo deletion, got %d", pubGoneResp.StatusCode)

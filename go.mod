@@ -1,4 +1,4 @@
-module github.com/tirbach/tir-bach
+module github.com/Prestwickuk/lovelace
 
 go 1.24
 

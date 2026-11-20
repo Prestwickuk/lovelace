@@ -29,11 +29,11 @@ describe("format utilities", () => {
     expect(formatAmenity("wood-burner")).toBe("Wood Burner");
   });
 
-  it("returns local fallback image for known Tir Bach unit type codes", () => {
+  it("returns local fallback image for known unit type codes", () => {
     const imgs = getUnitTypeGallery({
       id: "1",
       code: "shepherds-hut",
-      name: "Preseli Shepherd's Hut",
+      name: "Woodland Shepherd's Hut",
       category: "CABIN",
       description: "",
       base_capacity_adults: 2,

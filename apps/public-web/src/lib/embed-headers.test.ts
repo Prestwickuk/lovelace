@@ -26,7 +26,7 @@ describe("Next.js framing and security header routing", () => {
     expect(nonEmbedRegex.test("/book")).toBe(true);
     expect(nonEmbedRegex.test("/embedded-guide")).toBe(true);
     expect(nonEmbedRegex.test("/embed")).toBe(false);
-    expect(nonEmbedRegex.test("/embed/tir-bach")).toBe(false);
+    expect(nonEmbedRegex.test("/embed/demo-property")).toBe(false);
 
     const embedXfo = embedWildcard!.headers.find(
       (h) => h.key === "X-Frame-Options",

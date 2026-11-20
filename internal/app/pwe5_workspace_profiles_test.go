@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/channels"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/channels"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPWE5_WorkspaceProfilesRolesSecurityPrecedenceAndResets(t *testing.T) {
@@ -23,15 +23,15 @@ func TestPWE5_WorkspaceProfilesRolesSecurityPrecedenceAndResets(t *testing.T) {
 
 	ctx := context.Background()
 	var ownerID uuid.UUID
-	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@tirbach.wales'`).Scan(&ownerID); err != nil {
+	if err := migratorStore.Pool().QueryRow(ctx, `SELECT id FROM admin_users WHERE email = 'owner@example.com'`).Scan(&ownerID); err != nil {
 		t.Fatalf("find owner: %v", err)
 	}
-	globalOwnerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@tirbach.wales", Role: domain.RoleOwnerAdmin}
+	globalOwnerActor := service.Actor{UserID: ownerID, PropertyID: nil, Email: "owner@example.com", Role: domain.RoleOwnerAdmin}
 
 	propBID := uuid.New()
 	if _, err := migratorStore.Pool().Exec(ctx, `
 		INSERT INTO properties (id, slug, name, region, timezone, check_in_time, check_out_time, currency)
-		VALUES ($1, 'pwe5-prop-b', 'Preseli Pines', 'Pembrokeshire', 'Europe/London', '15:00', '10:00', 'GBP')
+		VALUES ($1, 'pwe5-prop-b', 'Woodland Pines', 'Countryside', 'Europe/London', '15:00', '10:00', 'GBP')
 	`, propBID); err != nil {
 		t.Fatalf("insert prop B: %v", err)
 	}
@@ -51,14 +51,14 @@ func TestPWE5_WorkspaceProfilesRolesSecurityPrecedenceAndResets(t *testing.T) {
 		return u
 	}
 
-	ownerA := mustCreateRoleUser("pwe5.owner@tirbach.wales", "PWE5 Owner A", domain.RoleOwnerAdmin, propA.ID, "Pwe5OwnerPass!2026", false)
-	mgrA := mustCreateRoleUser("pwe5.mgr@tirbach.wales", "PWE5 Manager A", domain.RoleManager, propA.ID, "Pwe5MgrPass!2026", false)
-	staffA := mustCreateRoleUser("pwe5.staff@tirbach.wales", "PWE5 Staff A", domain.RoleStaff, propA.ID, "Pwe5StaffPass!2026", false)
-	hkA := mustCreateRoleUser("pwe5.hk@tirbach.wales", "PWE5 Housekeeping A", domain.RoleHousekeepingStaff, propA.ID, "Pwe5HousePass!2026", false)
-	maintA := mustCreateRoleUser("pwe5.maint@tirbach.wales", "PWE5 Maintenance A", domain.RoleMaintenanceStaff, propA.ID, "Pwe5MaintPass!2026", false)
-	viewerA := mustCreateRoleUser("pwe5.viewer@tirbach.wales", "PWE5 Viewer A", domain.RoleViewer, propA.ID, "Pwe5ViewerPass!2026", false)
-	rotA := mustCreateRoleUser("pwe5.rot@tirbach.wales", "PWE5 Rotate A", domain.RoleManager, propA.ID, "Pwe5RotPass!2026", true)
-	mustCreateRoleUser("pwe5.mgrb@tirbach.wales", "PWE5 Manager B", domain.RoleManager, propBID, "Pwe5MgrBPass!2026", false)
+	ownerA := mustCreateRoleUser("pwe5.owner@example.com", "PWE5 Owner A", domain.RoleOwnerAdmin, propA.ID, "Pwe5OwnerPass!2026", false)
+	mgrA := mustCreateRoleUser("pwe5.mgr@example.com", "PWE5 Manager A", domain.RoleManager, propA.ID, "Pwe5MgrPass!2026", false)
+	staffA := mustCreateRoleUser("pwe5.staff@example.com", "PWE5 Staff A", domain.RoleStaff, propA.ID, "Pwe5StaffPass!2026", false)
+	hkA := mustCreateRoleUser("pwe5.hk@example.com", "PWE5 Housekeeping A", domain.RoleHousekeepingStaff, propA.ID, "Pwe5HousePass!2026", false)
+	maintA := mustCreateRoleUser("pwe5.maint@example.com", "PWE5 Maintenance A", domain.RoleMaintenanceStaff, propA.ID, "Pwe5MaintPass!2026", false)
+	viewerA := mustCreateRoleUser("pwe5.viewer@example.com", "PWE5 Viewer A", domain.RoleViewer, propA.ID, "Pwe5ViewerPass!2026", false)
+	rotA := mustCreateRoleUser("pwe5.rot@example.com", "PWE5 Rotate A", domain.RoleManager, propA.ID, "Pwe5RotPass!2026", true)
+	mustCreateRoleUser("pwe5.mgrb@example.com", "PWE5 Manager B", domain.RoleManager, propBID, "Pwe5MgrBPass!2026", false)
 
 	//Seed via clean domain service methods so turnaround PII exclusion & role widgets are exercised.
 	unitsA, err := migratorStore.ListUnits(ctx, propA.ID, nil, false)

@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 func TestNormalizationAndValidationHelpers(t *testing.T) {
@@ -108,9 +108,9 @@ func TestComputeRuleTriggerUTCRespectsPropertyTimezoneBSTAndGMT(t *testing.T) {
 
 func TestDuplicateCandidateScoring(t *testing.T) {
 	idA, idB, idC := uuid.New(), uuid.New(), uuid.New()
-	gA := domain.GuestListItem{Guest: domain.Guest{ID: idA, FullName: "Rhys Thomas", FirstName: "Rhys", LastName: "Thomas", Email: "rhys@example.wales", Phone: "07700 900111", Status: domain.GuestStatusActive}}
-	gB := domain.GuestListItem{Guest: domain.Guest{ID: idB, FullName: "R. Thomas", FirstName: "R.", LastName: "Thomas", Email: "RHYS@example.wales", Phone: "+44 7700 900222", Status: domain.GuestStatusActive}}
-	gC := domain.GuestListItem{Guest: domain.Guest{ID: idC, FullName: "Merged Guest", Email: "rhys@example.wales", Status: domain.GuestStatusMerged}}
+	gA := domain.GuestListItem{Guest: domain.Guest{ID: idA, FullName: "Rhys Thomas", FirstName: "Rhys", LastName: "Thomas", Email: "rhys@example.com", Phone: "07700 900111", Status: domain.GuestStatusActive}}
+	gB := domain.GuestListItem{Guest: domain.Guest{ID: idB, FullName: "R. Thomas", FirstName: "R.", LastName: "Thomas", Email: "RHYS@example.com", Phone: "+44 7700 900222", Status: domain.GuestStatusActive}}
+	gC := domain.GuestListItem{Guest: domain.Guest{ID: idC, FullName: "Merged Guest", Email: "rhys@example.com", Status: domain.GuestStatusMerged}}
 
 	scoreAB, reasonsAB := domain.ScoreDuplicatePair(gA, gB)
 	if scoreAB < 70 || len(reasonsAB) == 0 {

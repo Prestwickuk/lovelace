@@ -3,12 +3,12 @@ package app
 import (
 	"net/http"
 
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/httpapi"
-	"github.com/tirbach/tir-bach/internal/httpx"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
-	"github.com/tirbach/tir-bach/internal/webui"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/httpapi"
+	"github.com/Prestwickuk/lovelace/internal/httpx"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/webui"
 )
 
 // NewRouter builds the full Phase 1 HTTP handler with security headers, request context,

@@ -16,10 +16,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestPhase321PropertyLevelDataIsolationAndConstraints(t *testing.T) {
@@ -27,7 +27,7 @@ func TestPhase321PropertyLevelDataIsolationAndConstraints(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestPhase321PropertyLevelDataIsolationAndConstraints(t *testing.T) {
 		Name:         "Nant Glas Holiday Park",
 		Tagline:      "Carmarthenshire Valley Camping",
 		CountryCode:  "GB",
-		Region:       "Wales",
+		Region:       "Countryside",
 		AddressLine1: "Nant Glas Lane",
 		Town:         "Llandeilo",
 		Postcode:     "SA19 6AA",
@@ -170,7 +170,7 @@ func TestPhase321PropertyLevelDataIsolationAndConstraints(t *testing.T) {
 	// Property-scoped staff users
 	staffA, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &propA.ID,
-		Email:      "maint-a@tirbach.wales",
+		Email:      "maint-a@example.com",
 		FullName:   "Tech Property A",
 		Role:       domain.RoleMaintenanceStaff,
 		Password:   "propA-tech-pass-2026",
@@ -445,7 +445,7 @@ func TestPhase321InspectionCycleInvalidatedAfterReopen(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -575,7 +575,7 @@ func TestPhase321OverdueScheduleCatchUpAndConcurrency(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -767,7 +767,7 @@ func TestPhase321OverdueScheduleCatchUpAndConcurrency(t *testing.T) {
 func TestPhase321AttachmentStorageReadinessAndStartupFailure(t *testing.T) {
 	_, store, _, prop, _, _, _ := setupPhase2TestServer(t, "pub-p321-storage")
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -802,7 +802,7 @@ func TestPhase321AttachmentStorageReadinessAndStartupFailure(t *testing.T) {
 		DatabaseURL:          os.Getenv("TEST_DATABASE_URL"),
 		CookieSecure:         true,
 		EncryptionKey:        testEncryptionKey,
-		PublicOrigin:         "https://book.tirbach.wales",
+		PublicOrigin:         "https://book.example.com",
 		PublicAPISecret:      "prod-storage-secret-0123456789",
 		AttachmentStorageDir: blockerFile,
 	}
@@ -873,7 +873,7 @@ func TestPhase321AttachmentStorageReadinessAndStartupFailure(t *testing.T) {
 func TestPhase322PreventativeScheduleAssigneeValidation(t *testing.T) {
 	_, store, svc, propA, _, _, _ := setupPhase2TestServer(t, "pub-p322-sched")
 	ctx := context.Background()
-	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@tirbach.wales")
+	owner, err := store.GetAdminUserByEmail(ctx, nil, "owner@example.com")
 	if err != nil {
 		t.Fatalf("get owner: %v", err)
 	}
@@ -890,7 +890,7 @@ func TestPhase322PreventativeScheduleAssigneeValidation(t *testing.T) {
 
 	staff, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &propA.ID,
-		Email:      "sched-tech@tirbach.wales",
+		Email:      "sched-tech@example.com",
 		FullName:   "Schedule Tech",
 		Role:       domain.RoleMaintenanceStaff,
 		Password:   "sched-tech-pass-2026",
@@ -922,7 +922,7 @@ func TestPhase322PreventativeScheduleAssigneeValidation(t *testing.T) {
 	}
 	staffMoved, err := svc.CreateUser(ctx, ownerActor, service.CreateUserInput{
 		PropertyID: &propA.ID,
-		Email:      "sched-moved@tirbach.wales",
+		Email:      "sched-moved@example.com",
 		FullName:   "Schedule Moved Tech",
 		Role:       domain.RoleMaintenanceStaff,
 		Password:   "sched-moved-pass-2026",

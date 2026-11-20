@@ -9,8 +9,8 @@ import (
 
 func TestValidationRules(t *testing.T) {
 	prop := Property{
-		Slug:          "tir-bach",
-		Name:          "Tir Bach Campsite",
+		Slug:          "demo-property",
+		Name:          "Meadowbrook Estate",
 		CountryCode:   "GB",
 		Timezone:      "Europe/London",
 		Currency:      "GBP",

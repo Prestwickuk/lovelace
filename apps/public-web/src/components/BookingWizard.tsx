@@ -177,7 +177,7 @@ export function BookingWizard({
       try {
         if (data.hold?.hold_reference && data.confirmation_token) {
           sessionStorage.setItem(
-            `tb_token_${data.hold.hold_reference}`,
+            `lv_token_${data.hold.hold_reference}`,
             data.confirmation_token,
           );
         }
@@ -427,7 +427,7 @@ export function BookingWizard({
                     required
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
-                    placeholder="e.g. Nia Davies"
+                    placeholder="e.g. Alex Morgan"
                   />
                   {fieldErrors.guest_name && (
                     <small style={{ color: "var(--status-err-fg)" }}>
@@ -445,7 +445,7 @@ export function BookingWizard({
                     required
                     value={guestEmail}
                     onChange={(e) => setGuestEmail(e.target.value)}
-                    placeholder="nia@example.wales"
+                    placeholder="alex@example.com"
                   />
                   {fieldErrors.guest_email && (
                     <small style={{ color: "var(--status-err-fg)" }}>
@@ -505,7 +505,7 @@ export function BookingWizard({
                   />
                   <span>
                     I agree to{" "}
-                    {property.branding?.display_name || property.name || "Tir Bach Campsite"}
+                    {property.branding?.display_name || property.name || "Meadowbrook Estate"}
                     &apos;s{" "}
                     <Link href="/terms" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
                       Booking Terms &amp; Cancellation Policy

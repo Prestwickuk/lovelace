@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/storage"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/storage"
 )
 
 func (h *Handler) registerPropertyBrandingRoutes(mux *http.ServeMux) {

@@ -4,12 +4,12 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: tir-bach-postgres
+    container_name: lovelace-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-tir_bach}
-      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:-tir_bach}
-      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-tir_bach_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-lovelace}
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-lovelace_dev_password}
       LOVELACE_MIGRATOR_USER: lovelace_migrator
       LOVELACE_MIGRATOR_PASSWORD: lovelace_migrator_dev_pw
       LOVELACE_APP_USER: lovelace_app
@@ -17,18 +17,18 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - tir_bach_pgdata:/var/lib/postgresql/data
+      - lovelace_pgdata:/var/lib/postgresql/data
       - ./scripts/postgres/ensure-roles.sh:/usr/local/share/lovelace/ensure-roles.sh:ro
       - ./scripts/postgres/01-init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_BOOTSTRAP_USER:-tir_bach} -d ${POSTGRES_DB:-tir_bach}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_BOOTSTRAP_USER:-postgres} -d ${POSTGRES_DB:-lovelace}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   db-bootstrap:
     image: postgres:17-alpine
-    container_name: tir-bach-db-bootstrap
+    container_name: lovelace-db-bootstrap
     restart: "no"
     depends_on:
       postgres:
@@ -36,9 +36,9 @@ services:
     environment:
       PGHOST: postgres
       PGPORT: "5432"
-      PGPASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-tir_bach_dev_password}
-      POSTGRES_DB: ${POSTGRES_DB:-tir_bach}
-      POSTGRES_BOOTSTRAP_USER: ${POSTGRES_BOOTSTRAP_USER:-tir_bach}
+      PGPASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-lovelace_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-lovelace}
+      POSTGRES_BOOTSTRAP_USER: ${POSTGRES_BOOTSTRAP_USER:-postgres}
       LOVELACE_MIGRATOR_USER: lovelace_migrator
       LOVELACE_MIGRATOR_PASSWORD: lovelace_migrator_dev_pw
       LOVELACE_APP_USER: lovelace_app
@@ -52,57 +52,57 @@ services:
       context: .
       dockerfile: Dockerfile
     image: lovelace:phase2-dev
-    container_name: tir-bach-migrate
+    container_name: lovelace-migrate
     restart: "no"
     depends_on:
       db-bootstrap:
         condition: service_completed_successfully
     environment:
-      MIGRATION_DATABASE_URL: postgres://lovelace_migrator:lovelace_migrator_dev_pw@postgres:5432/${POSTGRES_DB:-tir_bach}?sslmode=disable
-    entrypoint: ["/usr/local/bin/tirbach-migrate"]
+      MIGRATION_DATABASE_URL: postgres://lovelace_migrator:lovelace_migrator_dev_pw@postgres:5432/${POSTGRES_DB:-lovelace}?sslmode=disable
+    entrypoint: ["/usr/local/bin/lovelace-migrate"]
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
     image: lovelace:phase2-dev
-    container_name: tir-bach-app
+    container_name: lovelace-app
     restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully
     environment:
-      TIRBACH_ENV: development
-      TIRBACH_LISTEN_ADDR: 0.0.0.0:8080
-      TIRBACH_COOKIE_SECURE: "false"
-      TIRBACH_TRUST_PROXY: "false"
-      DATABASE_URL: postgres://lovelace_app:lovelace_app_dev_pw@postgres:5432/${POSTGRES_DB:-tir_bach}?sslmode=disable
-      TIRBACH_ENCRYPTION_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
-      TIRBACH_AUTO_SEED: "true"
-      TIRBACH_ADMIN_EMAIL: ${TIRBACH_ADMIN_EMAIL:-owner@tirbach.wales}
-      TIRBACH_ADMIN_NAME: ${TIRBACH_ADMIN_NAME:-Tir Bach Owner}
-      TIRBACH_ADMIN_PASSWORD: ${TIRBACH_ADMIN_PASSWORD:-tirbach-dev-admin-2026}
-      TIRBACH_PUBLIC_ORIGIN: http://127.0.0.1:3000
-      TIRBACH_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:-dev-public-bff-secret}
-      TIRBACH_GUEST_PORTAL_ENABLED: ${TIRBACH_GUEST_PORTAL_ENABLED:-false}
-      TIRBACH_STRIPE_SANDBOX: ${TIRBACH_STRIPE_SANDBOX:-true}
-      TIRBACH_STRIPE_SECRET_KEY: ${TIRBACH_STRIPE_SECRET_KEY:-}
-      TIRBACH_STRIPE_WEBHOOK_SECRET: ${TIRBACH_STRIPE_WEBHOOK_SECRET:-whsec_sandbox_dev_only}
-      TIRBACH_EMAIL_FROM: bookings@tirbach.wales
-      TIRBACH_ATTACHMENT_DIR: /var/lib/lovelace/attachments
-      TIRBACH_MAX_ATTACHMENT_BYTES: "10485760"
+      LOVELACE_ENV: development
+      LOVELACE_LISTEN_ADDR: 0.0.0.0:8080
+      LOVELACE_COOKIE_SECURE: "false"
+      LOVELACE_TRUST_PROXY: "false"
+      DATABASE_URL: postgres://lovelace_app:lovelace_app_dev_pw@postgres:5432/${POSTGRES_DB:-lovelace}?sslmode=disable
+      LOVELACE_ENCRYPTION_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+      LOVELACE_AUTO_SEED: "true"
+      LOVELACE_ADMIN_EMAIL: ${LOVELACE_ADMIN_EMAIL:-owner@example.com}
+      LOVELACE_ADMIN_NAME: ${LOVELACE_ADMIN_NAME:-Property Owner}
+      LOVELACE_ADMIN_PASSWORD: ${LOVELACE_ADMIN_PASSWORD:-lovelace-dev-admin-2026}
+      LOVELACE_PUBLIC_ORIGIN: http://127.0.0.1:3000
+      LOVELACE_PUBLIC_API_SECRET: ${LOVELACE_PUBLIC_API_SECRET:-dev-public-bff-secret}
+      LOVELACE_GUEST_PORTAL_ENABLED: ${LOVELACE_GUEST_PORTAL_ENABLED:-false}
+      LOVELACE_STRIPE_SANDBOX: ${LOVELACE_STRIPE_SANDBOX:-true}
+      LOVELACE_STRIPE_SECRET_KEY: ${LOVELACE_STRIPE_SECRET_KEY:-}
+      LOVELACE_STRIPE_WEBHOOK_SECRET: ${LOVELACE_STRIPE_WEBHOOK_SECRET:-whsec_sandbox_dev_only}
+      LOVELACE_EMAIL_FROM: bookings@example.com
+      LOVELACE_ATTACHMENT_DIR: /var/lib/lovelace/attachments
+      LOVELACE_MAX_ATTACHMENT_BYTES: "10485760"
     volumes:
-      - tir_bach_attachments:/var/lib/lovelace/attachments
+      - lovelace_attachments:/var/lib/lovelace/attachments
     ports:
-      - "${TIRBACH_BIND_ADDR:-127.0.0.1}:${TIRBACH_PORT:-8080}:8080"
+      - "${LOVELACE_BIND_ADDR:-127.0.0.1}:${LOVELACE_PORT:-8080}:8080"
 
-  # Independent Next.js public booking website for Tir Bach Campsite.
+  # Independent Next.js public booking website.
   public-web:
     build:
       context: ./apps/public-web
       dockerfile: Dockerfile
     image: lovelace-public-web:phase2-dev
-    container_name: tir-bach-public-web
+    container_name: lovelace-public-web
     restart: unless-stopped
     depends_on:
       app:
@@ -110,8 +110,8 @@ services:
     environment:
       LOVELACE_ENV: development
       LOVELACE_API_BASE_URL: http://app:8080
-      LOVELACE_PROPERTY_SLUG: tir-bach
-      LOVELACE_PUBLIC_API_SECRET: ${TIRBACH_PUBLIC_API_SECRET:-dev-public-bff-secret}
+      LOVELACE_PROPERTY_SLUG: demo-property
+      LOVELACE_PUBLIC_API_SECRET: ${LOVELACE_PUBLIC_API_SECRET:-dev-public-bff-secret}
       LOVELACE_TRUST_PROXY: "false"
       LOVELACE_STRIPE_SANDBOX: ${LOVELACE_STRIPE_SANDBOX:-true}
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
@@ -119,5 +119,5 @@ services:
       - "${PUBLIC_WEB_BIND_ADDR:-127.0.0.1}:${PUBLIC_WEB_PORT:-3000}:3000"
 
 volumes:
-  tir_bach_pgdata:
-  tir_bach_attachments:
+  lovelace_pgdata:
+  lovelace_attachments:

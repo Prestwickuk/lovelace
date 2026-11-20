@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 // Message represents an outbound email ready for dispatch.
@@ -64,7 +64,7 @@ type Sender interface {
 	Send(ctx context.Context, msg Message) error
 }
 
-// SMTPSender dispatches email via net/smtp when TIRBACH_SMTP_ADDR is configured.
+// SMTPSender dispatches email via net/smtp when LOVELACE_SMTP_ADDR is configured.
 // Send honors ctx cancellation/deadlines and bounds blocking network I/O via Timeout.
 type SMTPSender struct {
 	Addr       string
@@ -265,7 +265,7 @@ func (LogSender) Send(ctx context.Context, msg Message) error {
 	return nil
 }
 
-// BuildBookingConfirmation renders a Tir Bach / property-branded confirmation & receipt email
+// BuildBookingConfirmation renders a property-branded confirmation & receipt email
 // with subtle LOVELACE platform footer attribution.
 func BuildBookingConfirmation(
 	prop domain.Property,

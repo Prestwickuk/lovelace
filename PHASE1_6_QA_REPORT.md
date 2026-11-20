@@ -9,8 +9,8 @@
 ## 1. Critical PostgreSQL Privilege Separation & Compose Hardening
 
 - **Roles Implemented ([`scripts/postgres/ensure-roles.sh`](scripts/postgres/ensure-roles.sh), [`scripts/postgres/01-init-roles.sh`](scripts/postgres/01-init-roles.sh)):**
-  1. **Bootstrap Administrator** (`POSTGRES_BOOTSTRAP_USER`, defaults to `postgres` in [`docker-compose.yml`](docker-compose.yml); preserves existing `tir_bach` superuser when upgrading pre-existing Phase 1.5 volumes without renaming): installs `btree_gist`, creates/updates roles, sets schema & object ownership, and sets default privileges. Bootstrap credentials are never exposed to `app`.
-  2. **Migration / DDL Role (`lovelace_migrator`)**: `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`; owns schema `public` and all application tables, sequences, views, and user-defined functions; runs exclusively inside [`cmd/migrate/main.go`](cmd/migrate/main.go) (`tirbach-migrate` service).
+  1. **Bootstrap Administrator** (`POSTGRES_BOOTSTRAP_USER`, defaults to `postgres` in [`docker-compose.yml`](docker-compose.yml); preserves existing `lovelace` superuser when upgrading pre-existing Phase 1.5 volumes without renaming): installs `btree_gist`, creates/updates roles, sets schema & object ownership, and sets default privileges. Bootstrap credentials are never exposed to `app`.
+  2. **Migration / DDL Role (`lovelace_migrator`)**: `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`; owns schema `public` and all application tables, sequences, views, and user-defined functions; runs exclusively inside [`cmd/migrate/main.go`](cmd/migrate/main.go) (`lovelace-migrate` service).
   3. **Runtime Application Role (`lovelace_app`)**: `NOSUPERUSER NOCREATEDB NOCREATEROLE`; holds strictly DML privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE` on application tables, `USAGE`/`SELECT` on sequences, `EXECUTE` on functions, read-only `SELECT` on `schema_migrations`), with zero `CREATE` on `public` and zero table ownership.
 - **Read-Only Startup Verification & Production Fail-Closed Guard ([`internal/store/postgres/migrate.go`](internal/store/postgres/migrate.go), [`cmd/server/main.go`](cmd/server/main.go)):**
   - `Store.Migrate` verifies `schema_migrations` checksums via read-only `SELECT` when up to date so `lovelace_app` executes zero DDL on boot, and fails fast if pending migrations exist without DDL privileges.
@@ -61,12 +61,12 @@
 
 ## 7. Live Upgrade & Test Verification Evidence
 
-- **Go Test Suite (`go test -v -race -count=1 ./...`)**: Passed all tests across `internal/app`, `internal/auth`, and `internal/domain` against PostgreSQL 17 under non-superuser `tir_bach_test_runner` (`tir_bach_test`).
+- **Go Test Suite (`go test -v -race -count=1 ./...`)**: Passed all tests across `internal/app`, `internal/auth`, and `internal/domain` against PostgreSQL 17 under non-superuser `lovelace_test_runner` (`lovelace_test`).
 - **Live Phase 1.5 → 1.6 Docker Upgrade (`docker compose -f docker-compose.dev.yml up -d --build`)**:
-  - Preserved existing `tir_bach_pgdata` volume data (`properties=1`, `reservations=2`, `audit_logs=8`) and applied `0004_phase1_6.sql` via `tir-bach-migrate` (`role=lovelace_migrator, superuser=false`).
-  - `tir-bach-app` booted as `lovelace_app` (`superuser=false, createdb=false, createrole=false`), passed `/readyz` (`{"status":"ready"}`) and `GET /login` (`HTTP 200`), and lacked `POSTGRES_*` and `LOVELACE_MIGRATOR_*` secrets in container `env`.
+  - Preserved existing `lovelace_pgdata` volume data (`properties=1`, `reservations=2`, `audit_logs=8`) and applied `0004_phase1_6.sql` via `lovelace-migrate` (`role=lovelace_migrator, superuser=false`).
+  - `lovelace-app` booted as `lovelace_app` (`superuser=false, createdb=false, createrole=false`), passed `/readyz` (`{"status":"ready"}`) and `GET /login` (`HTTP 200`), and lacked `POSTGRES_*` and `LOVELACE_MIGRATOR_*` secrets in container `env`.
   - Direct SQL check verified `CREATE TABLE should_fail (x int)` as `lovelace_app` failed with `ERROR: permission denied for schema public`.
-  - `pg_dump` → `pg_restore` into `tir_bach_restore_check` preserved `restored_props=1`, `restored_res=2`, `restored_migs=4`.
+  - `pg_dump` → `pg_restore` into `lovelace_restore_check` preserved `restored_props=1`, `restored_res=2`, `restored_migs=4`.
 
 ---
 
@@ -76,12 +76,12 @@
   - Removed all `psql -v` command-line password arguments and removed bare `SELECT set_config(...)` result-set output.
   - Invokes `psql -X -q -v ON_ERROR_STOP=1` reading credentials from environment variables via `\getenv`, binding them silently via `\gset`, immediately `\unset`ting client password variables, and clearing server session GUCs inside the anonymous `DO $$` block before idempotently creating/updating `lovelace_migrator` and `lovelace_app`.
   - Verified against a fresh `postgres:17-alpine` cluster using synthetic passwords (`SynMigPass_9x7K_2026Q`, `SynAppPass_4m2Z_2026W`) and a `psql` argv/`ps` wrapper: zero secrets appeared in container logs, stdout/stderr, `psql` arguments, or `ps` output, while both roles authenticated cleanly (`rolsuper=f`, `rolcreatedb=f`, `rolcreaterole=f`, `rolbypassrls=f`) with `btree_gist` enabled.
-  - Verified live recreated `tir-bach-db-bootstrap` logs contain only `NOTICE: extension "btree_gist" already exists, skipping`.
+  - Verified live recreated `lovelace-db-bootstrap` logs contain only `NOTICE: extension "btree_gist" already exists, skipping`.
 - **Preserved Manually Released Inventory & Explicit Reinstate ([`internal/store/postgres/blockouts_repo.go`](internal/store/postgres/blockouts_repo.go), [`internal/service/blockouts_service.go`](internal/service/blockouts_service.go), [`internal/httpapi/handlers_blockouts_releases.go`](internal/httpapi/handlers_blockouts_releases.go), [`internal/webui/handlers_phase1_1.go`](internal/webui/handlers_phase1_1.go), [`internal/webui/templates/blocks.html`](internal/webui/templates/blocks.html)):**
   - Updated `Store.UpdateBlockoutGroupDates` to lock both active `allocation_consumptions` (`CONSUMED`) and manually `RELEASED` `inventory_claims` (`FOR UPDATE`), subtract `[newStart, newEnd) \ (CONSUMED ∪ RELEASED)`, keep existing `CONSUMED` and `RELEASED` segments (plus their original `id`, `released_at`, and `released_by`) completely immutable, and activate only net-new uncovered dates (`409 Conflict` if shortening/no-op leaves zero active/consumed coverage).
   - Added explicit administrative reinstatement (`Store.ReinstateBlockoutClaims`, `Service.ReinstateBlockout`, `POST /api/v1/properties/{propertyID}/blockouts/{id}/reinstate`, Web UI `POST /blocks/groups/{id}/reinstate` + `"Reinstate Claim"` button) enforcing RBAC (`PermBlocksWrite`), channel-aware conflict checks + GiST safety, and `"blockout_group.reinstated"` audit logging.
 - **Upgrade & Backup/Restore Documentation ([`README.md`](README.md), [`docs/operations.md`](docs/operations.md), [`docker-compose.yml`](docker-compose.yml), [`docs/api.md`](docs/api.md)):**
-  - Documented fresh install (`postgres` bootstrap user) vs. pre-existing Phase 1.5 upgrade (`POSTGRES_BOOTSTRAP_USER=tir_bach` matching existing database password), PostgreSQL's initialized `PGDATA` env-var behavior, safe SQL password rotation (`ALTER ROLE`), removal of hardcoded `-U postgres` / `-U tir_bach` assumptions in backup/restore commands, and mandatory pre-upgrade `pg_dump`.
+  - Documented fresh install (`postgres` bootstrap user) vs. pre-existing Phase 1.5 upgrade (`POSTGRES_BOOTSTRAP_USER=lovelace` matching existing database password), PostgreSQL's initialized `PGDATA` env-var behavior, safe SQL password rotation (`ALTER ROLE`), removal of hardcoded `-U postgres` / `-U lovelace` assumptions in backup/restore commands, and mandatory pre-upgrade `pg_dump`.
 - **Verification:**
   - `gofmt -l cmd internal`, `go build ./...`, `go vet ./...`, and `go test -v -race -count=1 ./...` passed across all packages (including `TestPhase1_6_1PreservesReleasedInventoryAndExplicitReinstate`).
   - Live `docker compose -f docker-compose.dev.yml` upgrade preserved existing records (`properties=1`, `reservations=2`, `audit_logs=8`, `schema_migrations` `0001`–`0004`), passed `/readyz` (`HTTP 200 {"status":"ready"}`), and served `GET /login` with LOVELACE branding.

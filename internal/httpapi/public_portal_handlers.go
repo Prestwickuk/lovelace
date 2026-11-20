@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/httpx"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/httpx"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func (h *Handler) registerPublicPortalRoutes(mux *http.ServeMux) {
 	// Strictly isolated Self-Service Guest Portal API under /api/public/v1/*.
-	// Never reads admin_sessions / tirbach_session and never exposes internal CRM notes or staff identities.
+	// Never reads admin_sessions / lovelace_session and never exposes internal CRM notes or staff identities.
 	register := func(prefix string) {
 		mux.HandleFunc("POST "+prefix+"/auth/challenge", h.publicEndpoint(true, true, h.handlePortalAuthChallenge))
 		mux.HandleFunc("POST "+prefix+"/auth/verify", h.publicEndpoint(true, true, h.handlePortalAuthVerify))

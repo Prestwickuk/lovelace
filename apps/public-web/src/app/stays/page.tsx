@@ -104,8 +104,8 @@ export default async function StaysPage({
   return (
     <>
       <SiteHeader
-        propertyName={prop?.name || "Tir Bach Campsite"}
-        region={prop?.region || "Pembrokeshire, Wales"}
+        propertyName={prop?.name || "Meadowbrook Estate"}
+        region={prop?.region || "Countryside"}
         branding={prop?.branding}
         propertySlug={prop?.slug}
         portalEnabled={Boolean(prop?.policy?.guest_portal_enabled)}

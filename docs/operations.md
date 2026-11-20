@@ -4,29 +4,29 @@
 
 | Variable | Default | Production Requirement | Purpose |
 |---|---|---|---|
-| `TIRBACH_ENV` | `development` | Set to `production` | Enables fail-closed startup checks (including non-privileged DB role enforcement). |
-| `TIRBACH_LISTEN_ADDR` | `:8080` | `0.0.0.0:8080` (behind TLS proxy) | HTTP bind address. |
+| `LOVELACE_ENV` | `development` | Set to `production` | Enables fail-closed startup checks (including non-privileged DB role enforcement). |
+| `LOVELACE_LISTEN_ADDR` | `:8080` | `0.0.0.0:8080` (behind TLS proxy) | HTTP bind address. |
 | `DATABASE_URL` | (required) | `lovelace_app` DML-only DSN + `sslmode=require`/`verify-full` | Runtime PostgreSQL 17 connection DSN (`NOSUPERUSER NOCREATEDB NOCREATEROLE`). |
-| `MIGRATION_DATABASE_URL` | optional | `lovelace_migrator` DDL owner DSN | Used exclusively by `tirbach-migrate` (`cmd/migrate`) to apply embedded SQL migrations. |
-| `TIRBACH_COOKIE_SECURE` | `false` (`true` in prod compose) | Must be `true` | Marks `tirbach_session` cookie `Secure`. |
-| `TIRBACH_TRUST_PROXY` | `false` (`true` in prod compose) | `true` behind Caddy/Nginx/Cloudflare | Extracts real client IP from `X-Forwarded-For` for rate limiter & audit logs. |
-| `TIRBACH_ENCRYPTION_KEY` | dev fallback outside prod | **Required** 32-byte key (64 hex chars or 44-char base64) | AES-256-GCM encryption for `channel_connections.encrypted_credentials`. |
-| `TIRBACH_AUTO_SEED` | `false` | Must be `false` | Startup fails closed if `true` in `production`. |
-| `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` | unset | Optional first-boot email | When `admin_users` has `0` rows, provisions the initial global `owner_admin` on startup with `must_rotate_password=true` (without seeding demo property data). Ignored once any admin exists. |
-| `TIRBACH_BOOTSTRAP_ADMIN_NAME` | `Owner Administrator` | Optional display name | Display name used when bootstrapping the initial `owner_admin`. |
-| `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` | unset | `>= 12` chars (paired with email; dev placeholders rejected) | Temporary passphrase for the initial `owner_admin`; user is redirected to `/account?rotate=1` on first login to set their own permanent password, and restarts never overwrite rotated passwords. |
-| `TIRBACH_ATTACHMENT_DIR` | `/var/lib/lovelace/attachments` | Persistent writable volume | Directory storing uploaded maintenance evidence attachments (`storage_key` SHA-256 blobs). |
-| `TIRBACH_MAX_ATTACHMENT_BYTES` | `10485760` (10 MiB) | Positive integer (<= `26214400`) | Maximum byte size per uploaded maintenance attachment. |
+| `MIGRATION_DATABASE_URL` | optional | `lovelace_migrator` DDL owner DSN | Used exclusively by `lovelace-migrate` (`cmd/migrate`) to apply embedded SQL migrations. |
+| `LOVELACE_COOKIE_SECURE` | `false` (`true` in prod compose) | Must be `true` | Marks `lovelace_session` cookie `Secure`. |
+| `LOVELACE_TRUST_PROXY` | `false` (`true` in prod compose) | `true` behind Caddy/Nginx/Cloudflare | Extracts real client IP from `X-Forwarded-For` for rate limiter & audit logs. |
+| `LOVELACE_ENCRYPTION_KEY` | dev fallback outside prod | **Required** 32-byte key (64 hex chars or 44-char base64) | AES-256-GCM encryption for `channel_connections.encrypted_credentials`. |
+| `LOVELACE_AUTO_SEED` | `false` | Must be `false` | Startup fails closed if `true` in `production`. |
+| `LOVELACE_BOOTSTRAP_ADMIN_EMAIL` | unset | Optional first-boot email | When `admin_users` has `0` rows, provisions the initial global `owner_admin` on startup with `must_rotate_password=true` (without seeding demo property data). Ignored once any admin exists. |
+| `LOVELACE_BOOTSTRAP_ADMIN_NAME` | `Owner Administrator` | Optional display name | Display name used when bootstrapping the initial `owner_admin`. |
+| `LOVELACE_BOOTSTRAP_ADMIN_PASSWORD` | unset | `>= 12` chars (paired with email; dev placeholders rejected) | Temporary passphrase for the initial `owner_admin`; user is redirected to `/account?rotate=1` on first login to set their own permanent password, and restarts never overwrite rotated passwords. |
+| `LOVELACE_ATTACHMENT_DIR` | `/var/lib/lovelace/attachments` | Persistent writable volume | Directory storing uploaded maintenance evidence attachments (`storage_key` SHA-256 blobs). |
+| `LOVELACE_MAX_ATTACHMENT_BYTES` | `10485760` (10 MiB) | Positive integer (<= `26214400`) | Maximum byte size per uploaded maintenance attachment. |
 
 ### PostgreSQL Privilege Separation (Phase 1.6)
 LOVELACE separates database duties into three distinct identities:
-1. **Bootstrap Administrator** (`POSTGRES_BOOTSTRAP_USER`, default `postgres` on fresh production clusters; keep `tir_bach` only when upgrading a pre-existing Phase 1.5 cluster): installs `btree_gist`, creates roles, and assigns ownership via `scripts/postgres/ensure-roles.sh`. Credentials are **never** passed to `app`.
-2. **Migration / DDL Role** (`lovelace_migrator`, `NOSUPERUSER NOCREATEDB NOCREATEROLE`): owns schema `public` and all application tables, sequences, views, and functions; executes `tirbach-migrate` inside the one-shot `migrate` container before `app` starts.
+1. **Bootstrap Administrator** (`POSTGRES_BOOTSTRAP_USER`, default `postgres` on fresh production clusters; keep `lovelace` only when upgrading a pre-existing Phase 1.5 cluster): installs `btree_gist`, creates roles, and assigns ownership via `scripts/postgres/ensure-roles.sh`. Credentials are **never** passed to `app`.
+2. **Migration / DDL Role** (`lovelace_migrator`, `NOSUPERUSER NOCREATEDB NOCREATEROLE`): owns schema `public` and all application tables, sequences, views, and functions; executes `lovelace-migrate` inside the one-shot `migrate` container before `app` starts.
 3. **Runtime Application Role** (`lovelace_app`, `NOSUPERUSER NOCREATEDB NOCREATEROLE`): holds strictly DML privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE` on application tables, `USAGE`/`SELECT` on sequences, `EXECUTE` on functions, and read-only `SELECT` on `schema_migrations`), with zero `CREATE` privilege on `public` and zero table ownership. In `production`, `noteG-server` refuses to boot if connected as a `SUPERUSER`, `CREATEDB`, or `CREATEROLE` role.
 
 ### Generating Secrets
 ```bash
-openssl rand -hex 32   # Use output for TIRBACH_ENCRYPTION_KEY
+openssl rand -hex 32   # Use output for LOVELACE_ENCRYPTION_KEY
 openssl rand -base64 24 # Strong PostgreSQL / initial admin passphrase
 ```
 
@@ -35,23 +35,23 @@ openssl rand -base64 24 # Strong PostgreSQL / initial admin passphrase
 ## 2. Running Locally vs Production Docker Compose
 
 ### Production Compose (`docker-compose.yml`)
-`docker-compose.yml` is standalone — **never** combine it with `docker-compose.dev.yml`. It fails closed unless bootstrap, migrator, app passwords, and `TIRBACH_ENCRYPTION_KEY` are supplied:
+`docker-compose.yml` is standalone — **never** combine it with `docker-compose.dev.yml`. It fails closed unless bootstrap, migrator, app passwords, and `LOVELACE_ENCRYPTION_KEY` are supplied:
 ```bash
 export POSTGRES_BOOTSTRAP_PASSWORD="<strong-bootstrap-password>"
 export LOVELACE_MIGRATOR_PASSWORD="<strong-migrator-password>"
 export LOVELACE_APP_PASSWORD="<strong-app-password>"
-export TIRBACH_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+export LOVELACE_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker compose up -d --build
 ```
 Place behind a TLS-terminating reverse proxy (Nginx, Caddy, or Traefik) serving HTTPS on `:443` and forwarding `X-Forwarded-For` and `X-Forwarded-Proto: https` to `127.0.0.1:8080`.
 
-On a fresh empty database (`admin_users = 0` rows), set `TIRBACH_BOOTSTRAP_ADMIN_EMAIL` and `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` (`>= 12` characters) in your container environment (or run `tirbach-seed -admin-only`) so `noteG-server` automatically provisions the initial `owner_admin` with `must_rotate_password=true` on first boot without seeding demo property/guest data. Signing in redirects immediately to `/account?rotate=1` to set your permanent password, automatically generates **8 one-time Recovery Codes** (downloadable/copyable in `/account`, stored solely as keyed HMAC-SHA256 digests in `admin_recovery_codes`) for email-free self-service reset at **`/login/recover`**, and never overwrites existing accounts on subsequent restarts. Once your password is set, **`/onboarding`** launches the **6-Step Guided Property Setup Wizard** (supporting Campsite/Glamping, Holiday Cottage/Airbnb, Boutique Hotel/B&B, or Custom venues, bulk unit/pitch generation, seasonal rate uplifts, extras, deposits, house rules, and optional staff accounts while keeping Stripe Checkout and Guest Portal safely dark by default), and **`/settings/backups`** provides self-service local `.zip` / encrypted `.zip.enc` backups, scheduled off-site sync to **AWS S3**, **S3-compatible buckets (Cloudflare R2 / Backblaze B2)**, **Google Cloud Storage**, and **Microsoft Azure Blob Storage**, SHA-256 archive verification, and safe restore into an empty environment. For other staff accounts, `owner_admin` can also issue a temporary reset password (`must_rotate_password=true`) directly in **`/users`**.
+On a fresh empty database (`admin_users = 0` rows), set `LOVELACE_BOOTSTRAP_ADMIN_EMAIL` and `LOVELACE_BOOTSTRAP_ADMIN_PASSWORD` (`>= 12` characters) in your container environment (or run `lovelace-seed -admin-only`) so `noteG-server` automatically provisions the initial `owner_admin` with `must_rotate_password=true` on first boot without seeding demo property/guest data. Signing in redirects immediately to `/account?rotate=1` to set your permanent password, automatically generates **8 one-time Recovery Codes** (downloadable/copyable in `/account`, stored solely as keyed HMAC-SHA256 digests in `admin_recovery_codes`) for email-free self-service reset at **`/login/recover`**, and never overwrites existing accounts on subsequent restarts. Once your password is set, **`/onboarding`** launches the **6-Step Guided Property Setup Wizard** (supporting Campsite/Glamping, Holiday Cottage/Airbnb, Boutique Hotel/B&B, or Custom venues, bulk unit/pitch generation, seasonal rate uplifts, extras, deposits, house rules, and optional staff accounts while keeping Stripe Checkout and Guest Portal safely dark by default), and **`/settings/backups`** provides self-service local `.zip` / encrypted `.zip.enc` backups, scheduled off-site sync to **AWS S3**, **S3-compatible buckets (Cloudflare R2 / Backblaze B2)**, **Google Cloud Storage**, and **Microsoft Azure Blob Storage**, SHA-256 archive verification, and safe restore into an empty environment. For other staff accounts, `owner_admin` can also issue a temporary reset password (`must_rotate_password=true`) directly in **`/users`**.
 
 Initial bootstrap of both a baseline property and owner user (for standalone non-production demos) can also be run explicitly via `cmd/seed`:
 ```bash
-DATABASE_URL="postgres://lovelace_app:<app-pw>@127.0.0.1:5432/tir_bach?sslmode=disable" \
+DATABASE_URL="postgres://lovelace_app:<app-pw>@127.0.0.1:5432/lovelace?sslmode=disable" \
   go run ./cmd/seed \
-  -admin-email "owner@tirbach.wales" \
+  -admin-email "owner@example.com" \
   -admin-name "Sian Evans" \
   -admin-password "<strong-initial-passphrase>"
 ```
@@ -66,15 +66,15 @@ docker compose -f docker-compose.dev.yml up -d --build
 
 ## 3. Database Upgrades, Password Rotation, Backup & Recovery
 
-Migrations in `migrations/` (`0001_init.sql` through `0018_phase3_3_2_final_acceptance.sql`) are embedded in the binary and applied transactionally by `tirbach-migrate` (`lovelace_migrator`) into `schema_migrations`. `noteG-server` (`lovelace_app`) verifies checksums via read-only `SELECT` on startup without executing DDL. Migration `0018` adds the resource-type-aware audit replacement snapshot validator, replaces the redaction function, and applies the same validation in the overlay insert trigger with restricted execution grants. The existing `audit_logs_effective` view continues to present overlays. The migration does not rewrite earlier migration files or existing raw audit rows and redaction overlays.
+Migrations in `migrations/` (`0001_init.sql` through `0018_phase3_3_2_final_acceptance.sql`) are embedded in the binary and applied transactionally by `lovelace-migrate` (`lovelace_migrator`) into `schema_migrations`. `noteG-server` (`lovelace_app`) verifies checksums via read-only `SELECT` on startup without executing DDL. Migration `0018` adds the resource-type-aware audit replacement snapshot validator, replaces the redaction function, and applies the same validation in the overlay insert trigger with restricted execution grants. The existing `audit_logs_effective` view continues to present overlays. The migration does not rewrite earlier migration files or existing raw audit rows and redaction overlays.
 
 ### Phase 3 Milestone 3.2 acceptance verification
 
 The supported verification environment is **Go 1.24** and **PostgreSQL 17** (including the PostgreSQL 17 client tools). The workflow at `.github/workflows/phase3-m3.2-acceptance.yml` provisions a disposable PostgreSQL 17 service, separate non-superuser `lovelace_migrator`, `lovelace_app`, and `lovelace_test_runner` roles, and isolated `_test` databases. Its role passwords are CI-only fixtures; no production secrets are used. It runs formatting, build, vet, full PostgreSQL-backed Go tests, race tests, a fresh migration, and an upgrade from migration `0017` with existing audit history and an overlay.
 
-For local verification, use a local PostgreSQL 17 server and create disposable databases whose names end in `_test`. Keep the migration role as the database/schema owner and give `lovelace_app` only the runtime grants. The ordinary application integration suite uses `TEST_DATABASE_URL` for the non-superuser test runner and `TEST_APP_DATABASE_URL` for the real app role; set both to the same isolated integration database. Never point either variable at `tir_bach`, a shared development database, or production. Run:
+For local verification, use a local PostgreSQL 17 server and create disposable databases whose names end in `_test`. Keep the migration role as the database/schema owner and give `lovelace_app` only the runtime grants. The ordinary application integration suite uses `TEST_DATABASE_URL` for the non-superuser test runner and `TEST_APP_DATABASE_URL` for the real app role; set both to the same isolated integration database. Never point either variable at `lovelace`, a shared development database, or production. Run:
 
-With the project's isolated development Compose PostgreSQL container, `scripts/setup-test-db.sh` provisions/reset only its `tir_bach_test` database and test-runner role. Use it only when that database is disposable. Set `TEST_DATABASE_URL` to the resulting test-runner connection and `TEST_APP_DATABASE_URL` to `lovelace_app` on the same test database; obtain credentials from the local development setup without copying them into source control. For local PostgreSQL without Docker, use the role and database provisioning pattern in the acceptance workflow, substituting local-only credentials.
+With the project's isolated development Compose PostgreSQL container, `scripts/setup-test-db.sh` provisions/reset only its `lovelace_test` database and test-runner role. Use it only when that database is disposable. Set `TEST_DATABASE_URL` to the resulting test-runner connection and `TEST_APP_DATABASE_URL` to `lovelace_app` on the same test database; obtain credentials from the local development setup without copying them into source control. For local PostgreSQL without Docker, use the role and database provisioning pattern in the acceptance workflow, substituting local-only credentials.
 
 ```bash
 gofmt -l .
@@ -86,19 +86,19 @@ TEST_DATABASE_URL="$TEST_DATABASE_URL" TEST_APP_DATABASE_URL="$TEST_APP_DATABASE
 
 To verify the clean-install path, set `MIGRATION_DATABASE_URL` to an empty disposable `_test` database owned by `lovelace_migrator` and run `go run ./cmd/migrate`. To exercise the upgrade path, point the same variable at a separate empty disposable `_test` database owned by that role, run `scripts/test-migration-upgrade.sh` to apply `0001`–`0017` and create representative pre-existing audit and overlay rows, then run `go run ./cmd/migrate` to apply `0018`. Check `schema_migrations` and `audit_logs_effective`; the existing overlay must remain visible while the immutable raw `audit_logs` row remains unchanged. The script refuses any database that is not empty, `_test`-named, and connected as the non-superuser `lovelace_migrator`.
 
-Before applying `0018` to an existing environment, take a verified PostgreSQL backup, quiesce writes during the migration window, and run the normal `tirbach-migrate` binary using `MIGRATION_DATABASE_URL` for `lovelace_migrator`. Do not edit or replay migrations `0001`–`0017` to install this change. Verify the recorded migration version and audit read path before starting the application with `lovelace_app`.
+Before applying `0018` to an existing environment, take a verified PostgreSQL backup, quiesce writes during the migration window, and run the normal `lovelace-migrate` binary using `MIGRATION_DATABASE_URL` for `lovelace_migrator`. Do not edit or replay migrations `0001`–`0017` to install this change. Verify the recorded migration version and audit read path before starting the application with `lovelace_app`.
 
 ### Fresh Installation vs. Pre-Existing Phase 1.5 Database Volumes
 
 1. **Fresh PostgreSQL Installation (`PGDATA` empty):**
    - `POSTGRES_BOOTSTRAP_USER` defaults to `postgres`.
    - `POSTGRES_BOOTSTRAP_PASSWORD` sets the initial bootstrap superuser password during cluster creation (`/docker-entrypoint-initdb.d/01-init-roles.sh`), and `db-bootstrap` creates/updates non-superuser `lovelace_migrator` and `lovelace_app` cleanly without logging passwords.
-2. **Existing Phase 1.5 Volume (`tir_bach_pgdata` already initialised):**
-   - Earlier Phase 1.5 volumes were initialised using the `tir_bach` superuser rather than `postgres`.
+2. **Existing Phase 1.5 Volume (`lovelace_pgdata` already initialised):**
+   - Earlier Phase 1.5 volumes were initialised using the `lovelace` superuser rather than `postgres`.
    - Before upgrading, explicitly configure:
      ```bash
-     export POSTGRES_BOOTSTRAP_USER=tir_bach
-     export POSTGRES_BOOTSTRAP_PASSWORD="<EXISTING_TIR_BACH_DB_PASSWORD>"
+     export POSTGRES_BOOTSTRAP_USER=lovelace
+     export POSTGRES_BOOTSTRAP_PASSWORD="<EXISTING_LOVELACE_DB_PASSWORD>"
      ```
    - **Important PostgreSQL behaviour:** Changing Docker Compose environment variables (`POSTGRES_USER` or `POSTGRES_PASSWORD`) **does NOT** rename existing roles or change passwords inside an already-initialised `PGDATA` volume — the PostgreSQL Docker entrypoint skips cluster initialisation whenever persistent data already exists.
    - **Never delete or recreate persistent volumes (`docker compose down -v`) during upgrades.** Take a pre-upgrade snapshot first (below), then run `docker compose up -d --build`. `db-bootstrap` transfers schema and table ownership to `lovelace_migrator` idempotently while preserving all existing Phase 1.5 data.
@@ -108,9 +108,9 @@ Before applying `0018` to an existing environment, take a verified PostgreSQL ba
 If you wish to rotate the bootstrap superuser password (or role credentials) on an already-initialised cluster, authenticate with the **existing** credential first, rotate via SQL, and then update your `.env` / secret store:
 ```bash
 # 1. Authenticate using the existing bootstrap role and rotate its password in PostgreSQL:
-docker exec -it tir-bach-postgres psql \
+docker exec -it lovelace-postgres psql \
   -U "${POSTGRES_BOOTSTRAP_USER:-postgres}" \
-  -d "${POSTGRES_DB:-tir_bach}" \
+  -d "${POSTGRES_DB:-lovelace}" \
   -c "ALTER ROLE \"${POSTGRES_BOOTSTRAP_USER:-postgres}\" WITH PASSWORD '<NEW_STRONG_BOOTSTRAP_PASSWORD>';"
 
 # 2. Update POSTGRES_BOOTSTRAP_PASSWORD (and LOVELACE_MIGRATOR_PASSWORD / LOVELACE_APP_PASSWORD if desired),
@@ -120,47 +120,47 @@ docker compose up -d --no-deps db-bootstrap migrate app
 
 ### Pre-Upgrade Backup & Restoration (Parameterised Bootstrap Identity)
 
-Never hardcode `-U postgres` or `-U tir_bach`; use your actual configured `${POSTGRES_BOOTSTRAP_USER}` (`postgres` on fresh installs, `tir_bach` on pre-existing Phase 1.5 volumes):
+Never hardcode `-U postgres` or `-U lovelace`; use your actual configured `${POSTGRES_BOOTSTRAP_USER}` (`postgres` on fresh installs, `lovelace` on pre-existing Phase 1.5 volumes):
 
 ```bash
 # Mandatory pre-upgrade backup (custom compressed format):
 BOOTSTRAP_USER="${POSTGRES_BOOTSTRAP_USER:-postgres}"
-DB_NAME="${POSTGRES_DB:-tir_bach}"
-docker exec tir-bach-postgres pg_dump -U "$BOOTSTRAP_USER" -Fc "$DB_NAME" > "tir_bach_pre_upgrade_$(date +%Y%m%d_%H%M%S).dump"
+DB_NAME="${POSTGRES_DB:-lovelace}"
+docker exec lovelace-postgres pg_dump -U "$BOOTSTRAP_USER" -Fc "$DB_NAME" > "lovelace_pre_upgrade_$(date +%Y%m%d_%H%M%S).dump"
 
 # Routine scheduled backup:
-docker exec tir-bach-postgres pg_dump -U "$BOOTSTRAP_USER" -Fc "$DB_NAME" > "tir_bach_$(date +%Y%m%d_%H%M%S).dump"
+docker exec lovelace-postgres pg_dump -U "$BOOTSTRAP_USER" -Fc "$DB_NAME" > "lovelace_$(date +%Y%m%d_%H%M%S).dump"
 
 # Rollback / restore into a clean database using the actual bootstrap identity:
-docker exec -i tir-bach-postgres pg_restore -U "$BOOTSTRAP_USER" -d "$DB_NAME" --clean --if-exists < tir_bach_pre_upgrade_backup.dump
+docker exec -i lovelace-postgres pg_restore -U "$BOOTSTRAP_USER" -d "$DB_NAME" --clean --if-exists < lovelace_pre_upgrade_backup.dump
 ```
 
 ---
 
 ## 4. Test Database Safety Guardrails
-Provision the unprivileged test database role via `./scripts/setup-test-db.sh` (`tir_bach_test_runner`).  
+Provision the unprivileged test database role via `./scripts/setup-test-db.sh` (`lovelace_test_runner`).  
 Integration tests (`internal/app`) call `verifySafeTestDatabase` prior to any `TRUNCATE`:
 - Only executes when `TEST_DATABASE_URL` is set.
-- Both URL DB path and PostgreSQL `SELECT current_database()` must explicitly match `*_test` or `*-test`, must agree, and must not contain `prod` or equal `tir_bach` / `postgres`.
-- Connected host must be loopback/local and role must be **non-superuser** (`rolsuper = false`, non-`postgres`, non-`tir_bach`).
-- `audit_logs` is reset only inside a transaction that sets `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'` on a `*_test` DB.
+- Both URL DB path and PostgreSQL `SELECT current_database()` must explicitly match `*_test` or `*-test`, must agree, and must not contain `prod` or equal `lovelace` / `postgres`.
+- Connected host must be loopback/local and role must be **non-superuser** (`rolsuper = false`, non-`postgres`, non-`lovelace`).
+- `audit_logs` is reset only inside a transaction that sets `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'` on a `*_test` DB.
 
 ---
 
 ## 5. Phase 2 / 2.1 / 2.1.1 Public Frontend, Stripe & Email Outbox Operations
 
-- **Two-Frontend Architecture & BFF Isolation:** `public-web` runs as a separate Next.js container (`:3000`) communicating strictly via Go's `/api/public/v1/*` API (`LOVELACE_API_BASE_URL` + server-side `LOVELACE_PUBLIC_API_SECRET`). It must never receive `DATABASE_URL` or administrative credentials, and `src/lib/lovelace-api.ts` / `src/lib/bff-response.ts` enforce `import "server-only"` so server secrets cannot leak into client bundles. In `production`, `TIRBACH_PUBLIC_API_SECRET` is **mandatory**; startup and `/readyz` fail closed if missing.
-- **Canonical Origin & Proxy Boundary:** Set `TIRBACH_PUBLIC_ORIGIN` explicitly in production (e.g., `https://book.tirbach.wales` for Tir Bach Campsite; comma-separated if multiple approved domains). Production compose and startup fail closed if `TIRBACH_PUBLIC_ORIGIN` is omitted rather than silently substituting an unconfigured domain. Configure `TIRBACH_TRUST_PROXY` + `TIRBACH_TRUSTED_PROXIES` and `LOVELACE_TRUST_PROXY` + `LOVELACE_TRUSTED_PROXIES` with trusted reverse-proxy CIDRs only; `X-Forwarded-For` is walked right-to-left only when the socket peer is trusted.
+- **Two-Frontend Architecture & BFF Isolation:** `public-web` runs as a separate Next.js container (`:3000`) communicating strictly via Go's `/api/public/v1/*` API (`LOVELACE_API_BASE_URL` + server-side `LOVELACE_PUBLIC_API_SECRET`). It must never receive `DATABASE_URL` or administrative credentials, and `src/lib/lovelace-api.ts` / `src/lib/bff-response.ts` enforce `import "server-only"` so server secrets cannot leak into client bundles. In `production`, `LOVELACE_PUBLIC_API_SECRET` is **mandatory**; startup and `/readyz` fail closed if missing.
+- **Canonical Origin & Proxy Boundary:** Set `LOVELACE_PUBLIC_ORIGIN` explicitly in production (e.g., `https://book.example.com` for Meadowbrook Estate; comma-separated if multiple approved domains). Production compose and startup fail closed if `LOVELACE_PUBLIC_ORIGIN` is omitted rather than silently substituting an unconfigured domain. Configure `LOVELACE_TRUST_PROXY` + `LOVELACE_TRUSTED_PROXIES` and `LOVELACE_TRUST_PROXY` + `LOVELACE_TRUSTED_PROXIES` with trusted reverse-proxy CIDRs only; `X-Forwarded-For` is walked right-to-left only when the socket peer is trusted.
 - **Process-Local Rate Limiting & Horizontal Scaling:** The current rate limiters (`internal/httpx/ratelimit.go` in Go and `apps/public-web/src/lib/rate-limit.ts` in Next.js) maintain **process-local** in-memory sliding counters designed for a single-instance deployment (1 Go `app` instance + 1 Next.js `public-web` instance). Do not introduce Redis solely for this initial single-site footprint, **but before horizontally scaling** either tier across multiple replicas, replace process-local counters with a shared backing store (e.g., Redis) so attackers cannot multiply rate budgets across instances.
 - **Stripe Configuration, Live-Mode Enforcement & Webhook Livemode Validation:**
-  - **Production live credentials only:** When `TIRBACH_ENV=production`, `TIRBACH_STRIPE_SECRET_KEY` must use a live key (`sk_live_...` or appropriately scoped `rk_live_...` with Checkout Sessions write, PaymentIntents read, and Refunds write permissions) paired with a live `TIRBACH_STRIPE_WEBHOOK_SECRET` (`whsec_...`), and `TIRBACH_STRIPE_SANDBOX` must be `false`. Test keys (`sk_test_`, `rk_test_`) and sandbox secrets fail startup closed in production (`sk_test_`/`rk_test_` remain supported only in non-production development/test environments).
+  - **Production live credentials only:** When `LOVELACE_ENV=production`, `LOVELACE_STRIPE_SECRET_KEY` must use a live key (`sk_live_...` or appropriately scoped `rk_live_...` with Checkout Sessions write, PaymentIntents read, and Refunds write permissions) paired with a live `LOVELACE_STRIPE_WEBHOOK_SECRET` (`whsec_...`), and `LOVELACE_STRIPE_SANDBOX` must be `false`. Test keys (`sk_test_`, `rk_test_`) and sandbox secrets fail startup closed in production (`sk_test_`/`rk_test_` remain supported only in non-production development/test environments).
   - **Webhook `livemode` verification:** After HMAC `Stripe-Signature` verification, `ProcessStripeWebhook` compares the event's top-level `livemode` boolean against the mode derived from the configured Stripe key (`true` in production; `false` for `sk_test_`/`rk_test_`/sandbox in dev). Mismatched events are **never** allowed to confirm bookings or record payments, are written immutably to `audit_logs` (`payment.webhook_livemode_mismatch`), and are persisted as `REJECTED` in `payment_webhook_events` so duplicate deliveries return idempotently (`duplicate: true`) without reprocessing.
-  - Checkout `success_url` and `cancel_url` are derived strictly on the Go server from configured `TIRBACH_PUBLIC_ORIGIN` (e.g., `https://book.tirbach.wales`) and validated against an HTTPS/domain allowlist; client-supplied redirect URLs are rejected (`422`).
+  - Checkout `success_url` and `cancel_url` are derived strictly on the Go server from configured `LOVELACE_PUBLIC_ORIGIN` (e.g., `https://book.example.com`) and validated against an HTTPS/domain allowlist; client-supplied redirect URLs are rejected (`422`).
   - If online payments are intentionally disabled for all properties (`property_booking_policies.stripe_enabled=false`), production startup and `/readyz` succeed with `payments.status="disabled"`, while public checkout refuses initiation (`409 stripe_disabled`). When any active public property has `stripe_enabled=true`, missing, placeholder, or test-mode Stripe secrets fail startup closed.
-  - Non-production Sandbox Mode: `TIRBACH_STRIPE_SANDBOX=true` (blocked in `TIRBACH_ENV=production`) routes guests through `/checkout/sandbox` to trigger locally signed HMAC webhooks (`livemode: false`) without external network keys.
-- **Mandatory Transactional Email Policy for Live Public Bookings:** Confirmation emails are queued idempotently inside `email_outbox` and claimed atomically via `FOR UPDATE SKIP LOCKED`. Without `TIRBACH_SMTP_ADDR` configured, outbox items **remain `PENDING`** (never silently marked `SENT` by a log sink). In `production`:
-  - **Live public bookings (`stripe_enabled=true`) ALWAYS require a genuine SMTP provider**: startup and `/readyz` (`email.status="misconfigured"`) fail closed AND live checkout refuses initiation if SMTP is missing, regardless of `TIRBACH_REQUIRE_EMAIL`.
-  - **Administration-only or payments-disabled mode (`stripe_enabled=false` across properties)**: may operate without SMTP only when `TIRBACH_REQUIRE_EMAIL=false` (`docker-compose.yml` defaults `TIRBACH_REQUIRE_EMAIL` to `true`).
+  - Non-production Sandbox Mode: `LOVELACE_STRIPE_SANDBOX=true` (blocked in `LOVELACE_ENV=production`) routes guests through `/checkout/sandbox` to trigger locally signed HMAC webhooks (`livemode: false`) without external network keys.
+- **Mandatory Transactional Email Policy for Live Public Bookings:** Confirmation emails are queued idempotently inside `email_outbox` and claimed atomically via `FOR UPDATE SKIP LOCKED`. Without `LOVELACE_SMTP_ADDR` configured, outbox items **remain `PENDING`** (never silently marked `SENT` by a log sink). In `production`:
+  - **Live public bookings (`stripe_enabled=true`) ALWAYS require a genuine SMTP provider**: startup and `/readyz` (`email.status="misconfigured"`) fail closed AND live checkout refuses initiation if SMTP is missing, regardless of `LOVELACE_REQUIRE_EMAIL`.
+  - **Administration-only or payments-disabled mode (`stripe_enabled=false` across properties)**: may operate without SMTP only when `LOVELACE_REQUIRE_EMAIL=false` (`docker-compose.yml` defaults `LOVELACE_REQUIRE_EMAIL` to `true`).
   - Permanent SMTP failures (e.g., 5xx) move items immediately to `FAILED`; transient errors remain retryable with backoff.
 
 ---
@@ -188,10 +188,10 @@ Integration tests (`internal/app`) call `verifySafeTestDatabase` prior to any `T
 
 ## 7. Phase 3 Milestone 2 — Maintenance Management, Attachment Storage & RBAC
 
-- **Attachment Volume, Readiness & Backup (`tir_bach_attachments`):**
-  - Uploaded repair photographs and inspection documents are stored under `TIRBACH_ATTACHMENT_DIR` (`/var/lib/lovelace/attachments`, mounted via the `tir_bach_attachments` Docker volume in `docker-compose.yml` and `docker-compose.dev.yml`).
-  - Back up `TIRBACH_ATTACHMENT_DIR` alongside PostgreSQL `pg_dump` snapshots so metadata in `maintenance_attachments` stays consistent with blobs on disk during disaster recovery.
-  - At startup and on `/readyz`, LOVELACE verifies that `TIRBACH_ATTACHMENT_DIR` exists, is a directory, and is writable (creating and deleting a transient `.healthcheck-*` probe). Unwritable or misconfigured attachment paths fail `ValidateProductionStartup` in production and report `attachments.status = "unhealthy"` (`HTTP 503` on `/readyz`).
+- **Attachment Volume, Readiness & Backup (`lovelace_attachments`):**
+  - Uploaded repair photographs and inspection documents are stored under `LOVELACE_ATTACHMENT_DIR` (`/var/lib/lovelace/attachments`, mounted via the `lovelace_attachments` Docker volume in `docker-compose.yml` and `docker-compose.dev.yml`).
+  - Back up `LOVELACE_ATTACHMENT_DIR` alongside PostgreSQL `pg_dump` snapshots so metadata in `maintenance_attachments` stays consistent with blobs on disk during disaster recovery.
+  - At startup and on `/readyz`, LOVELACE verifies that `LOVELACE_ATTACHMENT_DIR` exists, is a directory, and is writable (creating and deleting a transient `.healthcheck-*` probe). Unwritable or misconfigured attachment paths fail `ValidateProductionStartup` in production and report `attachments.status = "unhealthy"` (`HTTP 503` on `/readyz`).
 - **Maintenance RBAC Matrix (`internal/auth/rbac.go`):**
   - `owner_admin`, `manager`: full maintenance access (`maintenance:read`, `maintenance:report`, `maintenance:write`, `maintenance:inspect`, `maintenance:manage`, plus `blocks:write` for inventory restrictions).
   - `staff`: `maintenance:read`, `maintenance:report`, `maintenance:write`, `blocks:write` (can report, update, add work notes, and trigger restrictions, but cannot record inspection sign-off, manage preventative schedules/facilities metadata, or manually release/manage restricted admin settings).
@@ -214,9 +214,9 @@ Integration tests (`internal/app`) call `verifySafeTestDatabase` prior to any `T
 - **Automated Communication Sweeper (`cmd/server/main.go`):**
   - Alongside `DispatchPendingEmails` and `SweepDueMaintenanceSchedules`, the 30-second background loop calls `SweepDueCommunicationJobs` (`FOR UPDATE OF cj SKIP LOCKED`) to render versioned property templates for due pre-arrival, check-in, and post-stay jobs into `email_outbox` + `guest_communications`.
   - When bookings are cancelled, checked out, or have stay dates amended, `SyncReservationAutomationJobs` cancels or supersedes stale `SCHEDULED` jobs immediately so cancelled guests never receive pre-arrival reminders.
-- **Email Delivery Truthfulness & Webhook Configuration (`TIRBACH_EMAIL_WEBHOOK_SECRET`):**
+- **Email Delivery Truthfulness & Webhook Configuration (`LOVELACE_EMAIL_WEBHOOK_SECRET`):**
   - `MarkOutboxEmailSent` records `guest_communications.delivery_status = 'ACCEPTED'` upon SMTP relay handoff (not `DELIVERED`).
-  - Downstream provider `DELIVERED`, `BOUNCED`, `FAILED`, and `COMPLAINT` events arrive at `POST /api/v1/webhooks/email-events` signed with HMAC-SHA256 in `X-Email-Signature` (`sha256=<hex>` using `TIRBACH_EMAIL_WEBHOOK_SECRET`), deduplicated idempotently in `communication_delivery_events`.
+  - Downstream provider `DELIVERED`, `BOUNCED`, `FAILED`, and `COMPLAINT` events arrive at `POST /api/v1/webhooks/email-events` signed with HMAC-SHA256 in `X-Email-Signature` (`sha256=<hex>` using `LOVELACE_EMAIL_WEBHOOK_SECRET`), deduplicated idempotently in `communication_delivery_events`.
   - Permanent failures (`FAILED`/`BOUNCED`) and uncertain timed-out dispatches (`DISPATCH_UNKNOWN`) surface in the Operations Centre **Email Delivery & Communication Alerts** panel and `/communications/settings` (`DISPATCH_UNKNOWN` cannot be auto-retried and exposes reconciliation only to roles holding `comms:reconcile`).
 - **Active Dispatches, Worker Liveness Fencing, SMTP Timeouts & Unknown Dispatch Reconciliation (`0015` / `0016` / `0017`):**
   - **Worker Lease, DB Clock Authority & Heartbeat Liveness:** `BeginOutboxDispatchLease` claims `PROCESSING -> DISPATCHING` with a monotonic `dispatch_fence_epoch`, `dispatch_worker_id`, and renewable `dispatch_lease_expires_at`. Canonical production defaults (`service.DefaultDispatchConfig()`) are **`60s` `LeaseTTL`**, **`20s` `HeartbeatInterval`** (one-third of `LeaseTTL`), and **`30s` `TransportTimeout`** (`ValidateDispatchConfig` enforces `0 < HeartbeatInterval <= LeaseTTL/2` and `0 < TransportTimeout < LeaseTTL`, and bounds `SMTPSender.Timeout` strictly within the dispatch context deadline). Production lease creation, `RenewOutboxDispatchHeartbeat`, `SweepStaleOutboxDispatches`, settlement, and reconciliation evaluate **PostgreSQL `clock_timestamp()`** as the single distributed clock authority so worker host clock skew cannot prematurely fail or extend leases. `RenewOutboxDispatchHeartbeat` only extends leases where `dispatch_lease_expires_at > clock_timestamp()` is still true; expired or fenced workers cannot renew, settle, retry, or overwrite the row even before the sweeper runs. Any heartbeat rejection (`renewed = false`) or heartbeat DB error/timeout cancels `sendCtx` immediately, halting external transport and keeping local active registration held until both transport termination and PG state transition finish. While a worker renews cleanly, `SweepStaleOutboxDispatches` never fences it based solely on elapsed `dispatched_at`; expired leases (`dispatch_lease_expires_at <= clock_timestamp()`) are fenced atomically (`dispatch_fenced_at`, incremented `dispatch_fence_epoch`, `dispatch_outcome='WORKER_FENCED'`) into `DISPATCH_UNKNOWN`.
@@ -225,7 +225,7 @@ Integration tests (`internal/app`) call `verifySafeTestDatabase` prior to any `T
     1. Stop existing application/outbox worker instances cleanly before upgrading (`docker compose stop backend`).
     2. Verify no pre-hardening outbox workers remain running against the database so no legacy unleased worker continues an external SMTP transaction without heartbeat fencing.
     3. Take a full PostgreSQL backup (`pg_dump -Fc`) prior to schema changes.
-    4. Run `tirbach-migrate` (`lovelace_migrator`) cleanly to apply pending migrations, including `0018_phase3_3_2_final_acceptance.sql`. Note: migration `0016` backfills `dispatch_lease_expires_at = dispatched_at + INTERVAL '60 seconds'` on any pre-existing `DISPATCHING` rows missing an expiry timestamp; this backfill is intended strictly for quiet/upgraded deployments rather than live pre-0016 workers.
+    4. Run `lovelace-migrate` (`lovelace_migrator`) cleanly to apply pending migrations, including `0018_phase3_3_2_final_acceptance.sql`. Note: migration `0016` backfills `dispatch_lease_expires_at = dispatched_at + INTERVAL '60 seconds'` on any pre-existing `DISPATCHING` rows missing an expiry timestamp; this backfill is intended strictly for quiet/upgraded deployments rather than live pre-0016 workers.
     5. Deploy the hardened `noteG-server` binary / container images (`lovelace_app`).
     6. Start the hardened workers.
     7. Immediately inspect `email_outbox` for any `DISPATCHING` or `DISPATCH_UNKNOWN` items carried across the upgrade window (`SELECT id, property_id, status, dispatched_at, dispatch_lease_expires_at, dispatch_outcome FROM email_outbox WHERE status IN ('DISPATCHING', 'DISPATCH_UNKNOWN')`).

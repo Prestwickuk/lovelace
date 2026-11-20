@@ -3,10 +3,10 @@ import { buildPropertyBrandCssVars, getPublicLogoSrc } from "@/lib/branding";
 import type { PublicPropertyBranding, PublicPropertyView } from "@/lib/types";
 
 export function SiteHeader({
-  propertyName = "Tir Bach Campsite",
-  region = "Pembrokeshire, Wales",
+  propertyName = "Meadowbrook Estate",
+  region = "Countryside",
   branding,
-  propertySlug = "tir-bach",
+  propertySlug = "demo-property",
   portalEnabled = false,
 }: {
   propertyName?: string;
@@ -53,7 +53,7 @@ export function SiteHeader({
 }
 
 export function SiteFooter({ property }: { property?: PublicPropertyView }) {
-  const name = property?.name || "Tir Bach Campsite";
+  const name = property?.name || "Meadowbrook Estate";
   const email = property?.contact_email || "";
   const phone = property?.contact_phone || "";
   const addr = [property?.address_line1, property?.town, property?.postcode]

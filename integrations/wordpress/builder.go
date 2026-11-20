@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/branding"
 )
 
 //go:embed lovelace-booking

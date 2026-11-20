@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/secrets"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/secrets"
 )
 
 const (

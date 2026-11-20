@@ -16,12 +16,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/seed"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/seed"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 var testEncryptionKey = []byte("0123456789abcdef0123456789abcdef")
@@ -32,7 +32,7 @@ func verifySafeTestDatabase(dbURL, currentDB, currentUser string, isSuperuser bo
 		return fmt.Errorf("invalid TEST_DATABASE_URL: %w", err)
 	}
 	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
-	if os.Getenv("TIRBACH_ALLOW_REMOTE_TEST_DB") != "true" {
+	if os.Getenv("LOVELACE_ALLOW_REMOTE_TEST_DB") != "true" {
 		switch host {
 		case "127.0.0.1", "localhost", "::1", "postgres", "db":
 		default:
@@ -44,15 +44,15 @@ func verifySafeTestDatabase(dbURL, currentDB, currentUser string, isSuperuser bo
 		return fmt.Errorf("refusing destructive test reset on non-test database (url_db=%q, current_database=%q)", urlDB, currentDB)
 	}
 	lowUser := strings.ToLower(strings.TrimSpace(currentUser))
-	if isSuperuser || lowUser == "" || lowUser == "postgres" || lowUser == "tir_bach" || strings.Contains(lowUser, "prod") {
-		return fmt.Errorf("refusing destructive test reset as privileged or non-test role (user=%q, superuser=%v); run scripts/setup-test-db.sh and use tir_bach_test_runner", currentUser, isSuperuser)
+	if isSuperuser || lowUser == "" || lowUser == "postgres" || lowUser == "lovelace" || strings.Contains(lowUser, "prod") {
+		return fmt.Errorf("refusing destructive test reset as privileged or non-test role (user=%q, superuser=%v); run scripts/setup-test-db.sh and use lovelace_test_runner", currentUser, isSuperuser)
 	}
 	return nil
 }
 
 func isExplicitTestDBName(name string) bool {
 	low := strings.ToLower(strings.TrimSpace(name))
-	if low == "" || low == "tir_bach" || low == "postgres" || strings.Contains(low, "prod") {
+	if low == "" || low == "lovelace" || low == "postgres" || strings.Contains(low, "prod") {
 		return false
 	}
 	return strings.HasSuffix(low, "_test") || strings.HasSuffix(low, "-test") || strings.Contains(low, "_test_")
@@ -90,7 +90,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *postgres.Store, domain.Pr
 
 	// Reset tables cleanly for deterministic test runs inside an explicitly token-scoped TX.
 	err = store.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, txErr := tx.Exec(ctx, `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'`); txErr != nil {
+		if _, txErr := tx.Exec(ctx, `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'`); txErr != nil {
 			return txErr
 		}
 		_, txErr := tx.Exec(ctx, `
@@ -112,9 +112,9 @@ func setupTestServer(t *testing.T) (*httptest.Server, *postgres.Store, domain.Pr
 	}
 
 	prop, err := seed.EnsureBaseline(ctx, store, seed.Options{
-		AdminEmail:    "owner@tirbach.wales",
+		AdminEmail:    "owner@example.com",
 		AdminName:     "Sian Evans",
-		AdminPassword: "tirbach-owner-password-2026",
+		AdminPassword: "lovelace-owner-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("seed baseline: %v", err)
@@ -227,7 +227,7 @@ func TestPhase1EndToEnd(t *testing.T) {
 	}
 
 	// 3. Login as owner_admin
-	code, ownerCSRF := apiLogin(t, ownerClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	code, ownerCSRF := apiLogin(t, ownerClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if code != http.StatusOK || ownerCSRF == "" {
 		t.Fatalf("expected 200 login with CSRF token, got %d", code)
 	}
@@ -344,7 +344,7 @@ func TestPhase1EndToEnd(t *testing.T) {
 
 	// 8. RBAC: create a staff user and verify permissions
 	staffCreate := doJSON(t, ownerClient, http.MethodPost, srv.URL+"/api/v1/users", ownerCSRF, map[string]any{
-		"property_id": prop.ID, "email": "staff@tirbach.wales", "full_name": "Gareth Davies",
+		"property_id": prop.ID, "email": "staff@example.com", "full_name": "Gareth Davies",
 		"role": "staff", "password": "gareth-staff-password-2026",
 	})
 	staffCreate.Body.Close()
@@ -353,7 +353,7 @@ func TestPhase1EndToEnd(t *testing.T) {
 	}
 
 	staffClient := newClient(t)
-	staffCode, staffCSRF := apiLogin(t, staffClient, srv.URL, "staff@tirbach.wales", "gareth-staff-password-2026")
+	staffCode, staffCSRF := apiLogin(t, staffClient, srv.URL, "staff@example.com", "gareth-staff-password-2026")
 	if staffCode != http.StatusOK {
 		t.Fatalf("staff login failed: %d", staffCode)
 	}
@@ -385,7 +385,7 @@ func TestPhase1EndToEnd(t *testing.T) {
 	badClient := newClient(t)
 	var lastStatus int
 	for i := 0; i < 6; i++ {
-		lastStatus, _ = apiLogin(t, badClient, srv.URL, "nobody@tirbach.wales", "wrong-password-12345")
+		lastStatus, _ = apiLogin(t, badClient, srv.URL, "nobody@example.com", "wrong-password-12345")
 	}
 	if lastStatus != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 rate limited after repeated failures, got %d", lastStatus)
@@ -394,8 +394,8 @@ func TestPhase1EndToEnd(t *testing.T) {
 	// 11. Web UI smoke test: login form -> dashboard & inventory pages return 200 HTML
 	webClient := newClient(t)
 	form := url.Values{}
-	form.Set("email", "owner@tirbach.wales")
-	form.Set("password", "tirbach-owner-password-2026")
+	form.Set("email", "owner@example.com")
+	form.Set("password", "lovelace-owner-password-2026")
 	webLoginResp, err := webClient.PostForm(srv.URL+"/login", form)
 	if err != nil {
 		t.Fatalf("web login: %v", err)
@@ -416,8 +416,8 @@ func TestPhase1EndToEnd(t *testing.T) {
 		if pageResp.StatusCode != http.StatusOK {
 			t.Fatalf("expected 200 for %s, got %d", path, pageResp.StatusCode)
 		}
-		if !strings.Contains(buf.String(), "Tir Bach") {
-			t.Fatalf("expected Tir Bach property content on %s", path)
+		if !strings.Contains(buf.String(), "Meadowbrook") {
+			t.Fatalf("expected Meadowbrook property content on %s", path)
 		}
 		if !strings.Contains(buf.String(), "LOVELACE") {
 			t.Fatalf("expected LOVELACE platform branding on %s", path)

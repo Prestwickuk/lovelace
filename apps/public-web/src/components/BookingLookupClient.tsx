@@ -15,8 +15,8 @@ export function BookingLookupClient({ portalEnabled }: { portalEnabled: boolean 
     const t = token.trim();
     if (!r || !t) return;
     try {
-      sessionStorage.setItem(`tb_token_${r}`, t);
-      sessionStorage.setItem(`tb_token_${r.toUpperCase()}`, t);
+      sessionStorage.setItem(`lv_token_${r}`, t);
+      sessionStorage.setItem(`lv_token_${r.toUpperCase()}`, t);
     } catch {
       // Fallback handled on confirmation page if storage is unavailable
     }
@@ -27,7 +27,7 @@ export function BookingLookupClient({ portalEnabled }: { portalEnabled: boolean 
     <div className="card-panel">
       <h1 className="section-title">Retrieve Your Booking</h1>
       <p style={{ color: "var(--text-muted)" }}>
-        Enter your reservation or hold reference (e.g. <code>TB-2026-...</code> or{" "}
+        Enter your reservation or hold reference (e.g. <code>LV-2026-...</code> or{" "}
         <code>HOLD-...</code>) together with the private access token shown during checkout.
         Tokens are never placed in the URL.
       </p>
@@ -41,7 +41,7 @@ export function BookingLookupClient({ portalEnabled }: { portalEnabled: boolean 
             required
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            placeholder="e.g. TB-2026-AB12CD"
+            placeholder="e.g. LV-2026-AB12CD"
           />
         </div>
 

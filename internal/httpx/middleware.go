@@ -10,13 +10,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/auth"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/auth"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 const (
-	SessionCookieName = "tirbach_session"
+	SessionCookieName = "lovelace_session"
 	MaxJSONBodyBytes  = 1 << 20 // 1 MiB
 	MaxFormBodyBytes  = 1 << 20 // 1 MiB
 )

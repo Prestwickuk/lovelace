@@ -407,9 +407,9 @@ func ValidatePortalProfileUpdate(phone, contactMethod, preferredLang string) (cl
 		cleanLang = "en"
 	}
 	switch cleanLang {
-	case "en", "cy":
+	case "en", "fr", "de", "es", "nl", "it", "cy":
 	default:
-		errs["preferred_language"] = "must be en or cy"
+		errs["preferred_language"] = "must be a supported language code (en, fr, de, es, nl, it, cy)"
 	}
 	if len(errs) > 0 {
 		return "", "", "", NewValidationError(errs)

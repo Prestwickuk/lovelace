@@ -10,10 +10,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/branding"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/service"
 )
 
 func TestAccountPersonalisationTemplateRenderingAndCSP(t *testing.T) {
@@ -65,7 +65,7 @@ func TestAccountPersonalisationTemplateRenderingAndCSP(t *testing.T) {
 		CanReadReservations: true,
 		CanReadGuests:       true,
 		CanReadMaintenance:  true,
-		Property:            domain.Property{ID: uuid.New(), Slug: "tir-bach", Name: "Tir Bach Meadows", Region: "Pembrokeshire"},
+		Property:            domain.Property{ID: uuid.New(), Slug: "demo-property", Name: "Meadowbrook Meadows", Region: "Countryside"},
 		Actor:               service.Actor{UserID: uuid.New(), FullName: "Carys", Email: "carys@example.test", Role: domain.RoleManager},
 		AccountPrefs: &accountPersonalisationData{
 			Enabled:         true,

@@ -18,14 +18,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/tirbach/tir-bach/internal/app"
-	"github.com/tirbach/tir-bach/internal/config"
-	"github.com/tirbach/tir-bach/internal/domain"
-	"github.com/tirbach/tir-bach/internal/mailer"
-	"github.com/tirbach/tir-bach/internal/payments"
-	"github.com/tirbach/tir-bach/internal/seed"
-	"github.com/tirbach/tir-bach/internal/service"
-	"github.com/tirbach/tir-bach/internal/store/postgres"
+	"github.com/Prestwickuk/lovelace/internal/app"
+	"github.com/Prestwickuk/lovelace/internal/config"
+	"github.com/Prestwickuk/lovelace/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/mailer"
+	"github.com/Prestwickuk/lovelace/internal/payments"
+	"github.com/Prestwickuk/lovelace/internal/seed"
+	"github.com/Prestwickuk/lovelace/internal/service"
+	"github.com/Prestwickuk/lovelace/internal/store/postgres"
 )
 
 type fakeStripeProvider struct {
@@ -126,7 +126,7 @@ func setupPhase2TestServer(t *testing.T, publicSecret string) (*httptest.Server,
 	}
 
 	err = store.WithTx(ctx, func(tx pgx.Tx) error {
-		if _, txErr := tx.Exec(ctx, `SET LOCAL tirbach.test_reset_token = 'allow_test_reset'`); txErr != nil {
+		if _, txErr := tx.Exec(ctx, `SET LOCAL lovelace.test_reset_token = 'allow_test_reset'`); txErr != nil {
 			return txErr
 		}
 		_, txErr := tx.Exec(ctx, `
@@ -148,9 +148,9 @@ func setupPhase2TestServer(t *testing.T, publicSecret string) (*httptest.Server,
 	}
 
 	prop, err := seed.EnsureBaseline(ctx, store, seed.Options{
-		AdminEmail:    "owner@tirbach.wales",
+		AdminEmail:    "owner@example.com",
 		AdminName:     "Sian Evans",
-		AdminPassword: "tirbach-owner-password-2026",
+		AdminPassword: "lovelace-owner-password-2026",
 	})
 	if err != nil {
 		t.Fatalf("seed baseline: %v", err)
@@ -169,7 +169,7 @@ func setupPhase2TestServer(t *testing.T, publicSecret string) (*httptest.Server,
 		PublicOrigin:        "http://127.0.0.1:3000",
 		PublicAPISecret:     publicSecret,
 		StripeWebhookSecret: "whsec_test_lovelace_phase2_secret",
-		EmailFrom:           "bookings@tirbach.wales",
+		EmailFrom:           "bookings@example.com",
 	}
 
 	svc := service.New(store, cfg)
@@ -248,7 +248,7 @@ func TestPhase2PublicIsolationAndOriginSecurity(t *testing.T) {
 	pubClient := newClient(t)
 
 	// Missing X-Lovelace-Public-Key must fail with 401 when configured.
-	respNoKey := doPublicJSON(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/properties/tir-bach", "", "http://127.0.0.1:3000", nil)
+	respNoKey := doPublicJSON(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/properties/demo-property", "", "http://127.0.0.1:3000", nil)
 	respNoKey.Body.Close()
 	if respNoKey.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without public key, got %d", respNoKey.StatusCode)
@@ -266,18 +266,18 @@ func TestPhase2PublicIsolationAndOriginSecurity(t *testing.T) {
 		t.Fatalf("expected 204 and matching ACAO, got %d (%q)", goodOpt.StatusCode, goodOpt.Header.Get("Access-Control-Allow-Origin"))
 	}
 
-	// Public catalog returns Tir Bach property + accommodation without admin fields or secrets.
-	resp := doPublicJSON(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/accommodation?property=tir-bach", pubSecret, "http://127.0.0.1:3000", nil)
+	// Public catalog returns Meadowbrook property + accommodation without admin fields or secrets.
+	resp := doPublicJSON(t, pubClient, http.MethodGet, srv.URL+"/api/public/v1/accommodation?property=demo-property", pubSecret, "http://127.0.0.1:3000", nil)
 	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 catalog, got %d: %s", resp.StatusCode, string(raw))
 	}
 	bodyStr := string(raw)
-	if !strings.Contains(bodyStr, "Tir Bach Campsite") || !strings.Contains(bodyStr, "bell-tent") {
-		t.Fatalf("expected Tir Bach & bell-tent in public catalog: %s", bodyStr)
+	if !strings.Contains(bodyStr, "Meadowbrook Estate") || !strings.Contains(bodyStr, "bell-tent") {
+		t.Fatalf("expected Meadowbrook & bell-tent in public catalog: %s", bodyStr)
 	}
-	for _, forbidden := range []string{"internal_notes", "password_hash", "credentials_ciphertext", "owner@tirbach.wales"} {
+	for _, forbidden := range []string{"internal_notes", "password_hash", "credentials_ciphertext", "owner@example.com"} {
 		if strings.Contains(bodyStr, forbidden) {
 			t.Fatalf("sensitive admin field %q leaked in public catalog!", forbidden)
 		}
@@ -294,10 +294,10 @@ func TestPhase2PublicIsolationAndOriginSecurity(t *testing.T) {
 func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 	srv, store, _, prop, _, _, clk := setupPhase2TestServer(t, "")
 	adminClient := newClient(t)
-	if status, csrf := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026"); status != http.StatusOK {
+	if status, csrf := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026"); status != http.StatusOK {
 		t.Fatalf("admin login failed: %d", status)
 	} else {
-		// Create maintenance blockout on SH-PRESELI for nights 10..12, AIRBNB-only restriction on BT-OAK (should NOT block DIRECT),
+		// Create maintenance blockout on SH-WOODLAND for nights 10..12, AIRBNB-only restriction on BT-OAK (should NOT block DIRECT),
 		// and future scheduled release rule covering nights 25..28 on GP-MEADOW-1..2!
 		units, err := store.ListUnits(context.Background(), prop.ID, nil, false)
 		if err != nil {
@@ -305,7 +305,7 @@ func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 		}
 		var hutUnitID, bellOakID string
 		for _, u := range units {
-			if u.Code == "SH-PRESELI" {
+			if u.Code == "SH-WOODLAND" {
 				hutUnitID = u.ID.String()
 			}
 			if u.Code == "BT-OAK" {
@@ -316,7 +316,7 @@ func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 		d10 := clk.Now().AddDate(0, 0, 10).Format("2006-01-02")
 		d13 := clk.Now().AddDate(0, 0, 13).Format("2006-01-02")
 
-		// Block SH-PRESELI for maintenance.
+		// Block SH-WOODLAND for maintenance.
 		bResp := doJSON(t, adminClient, http.MethodPost, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/blockouts", csrf, map[string]any{
 			"scope_type":    "UNITS",
 			"category":      "MAINTENANCE",
@@ -349,7 +349,7 @@ func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 		// Search availability for d10..d13 with 2 adults -> shepherds-hut must be absent (maintenance), bell-tent must have 2 units!
 		pubClient := newClient(t)
 		sResp := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/availability", "", "", map[string]any{
-			"property_slug":  "tir-bach",
+			"property_slug":  "demo-property",
 			"arrival_date":   d10,
 			"departure_date": d13,
 			"adults":         2,
@@ -404,7 +404,7 @@ func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 		}
 
 		sResp2 := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/availability", "", "", map[string]any{
-			"property_slug":  "tir-bach",
+			"property_slug":  "demo-property",
 			"arrival_date":   d25,
 			"departure_date": d28,
 			"adults":         2,
@@ -420,7 +420,7 @@ func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 
 		// 5 adults exceeds bell-tent max_adults=2 and shepherds-hut max_adults=2 -> neither appears; touring/tent pitches remain!
 		sResp3 := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/availability", "", "", map[string]any{
-			"property_slug":  "tir-bach",
+			"property_slug":  "demo-property",
 			"arrival_date":   d10,
 			"departure_date": d13,
 			"adults":         4,
@@ -440,7 +440,7 @@ func TestPhase2AvailabilityChannelReleaseAndOccupancyRules(t *testing.T) {
 func TestPhase2PricingDepositSnapshotAndConcurrencyHoldRace(t *testing.T) {
 	srv, store, _, prop, _, _, clk := setupPhase2TestServer(t, "")
 	adminClient := newClient(t)
-	status, csrf := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	status, csrf := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	if status != http.StatusOK {
 		t.Fatalf("admin login failed: %d", status)
 	}
@@ -462,7 +462,7 @@ func TestPhase2PricingDepositSnapshotAndConcurrencyHoldRace(t *testing.T) {
 		t.Fatalf("update booking policy failed: %d", pResp.StatusCode)
 	}
 
-	// Pick shepherds-hut (only 1 physical unit: SH-PRESELI!) > BalanceDueDaysBeforeArrival (21 days) so 25% deposit applies!
+	// Pick shepherds-hut (only 1 physical unit: SH-WOODLAND!) > BalanceDueDaysBeforeArrival (21 days) so 25% deposit applies!
 	arr := clk.Now().AddDate(0, 0, 30).Format("2006-01-02")
 	dep := clk.Now().AddDate(0, 0, 32).Format("2006-01-02") // 2 nights
 
@@ -482,7 +482,7 @@ func TestPhase2PricingDepositSnapshotAndConcurrencyHoldRace(t *testing.T) {
 			c := newClient(t)
 			<-startGate
 			resp := doPublicJSON(t, c, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "", "", map[string]any{
-				"property_slug":  "tir-bach",
+				"property_slug":  "demo-property",
 				"unit_type_code": "shepherds-hut",
 				"arrival_date":   arr,
 				"departure_date": dep,
@@ -549,7 +549,7 @@ func TestPhase2PricingDepositSnapshotAndConcurrencyHoldRace(t *testing.T) {
 		}
 	}
 	qResp := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/pricing", "", "", map[string]any{
-		"property_slug":  "tir-bach",
+		"property_slug":  "demo-property",
 		"unit_type_code": "grass-pitch",
 		"arrival_date":   arr,
 		"departure_date": dep,
@@ -584,13 +584,13 @@ func TestPhase2CheckoutWebhookEmailConfirmationAndCancellationFlow(t *testing.T)
 
 	// 1. Create hold on bell-tent (2 nights * 9500 = 19000p).
 	hResp := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "", "", map[string]any{
-		"property_slug":    "tir-bach",
+		"property_slug":    "demo-property",
 		"unit_type_code":   "bell-tent",
 		"arrival_date":     arr,
 		"departure_date":   dep,
 		"adults":           2,
 		"guest_name":       "Carys Pritchard",
-		"guest_email":      "carys@example.wales",
+		"guest_email":      "carys@example.com",
 		"guest_phone":      "+447700900456",
 		"special_requests": "Near the top hedgerow please",
 		"accept_terms":     true,
@@ -685,7 +685,7 @@ func TestPhase2CheckoutWebhookEmailConfirmationAndCancellationFlow(t *testing.T)
 		t.Fatalf("get full bell-tent: %v", err)
 	}
 	adminClient := newClient(t)
-	_, csrf := apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	_, csrf := apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	mutResp := doJSON(t, adminClient, http.MethodPatch, srv.URL+"/api/v1/properties/"+prop.ID.String()+"/unit-types/"+ut.ID.String(), csrf, map[string]any{
 		"code":                    ut.Code,
 		"name":                    ut.Name,
@@ -813,7 +813,7 @@ func TestPhase2ExpiredHoldPaidReconciliationAndAutoRefund(t *testing.T) {
 
 	// Guest A creates hold on unique shepherds-hut + initiates checkout, then abandons payment until TTL expires!
 	hA := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "", "", map[string]any{
-		"property_slug":  "tir-bach",
+		"property_slug":  "demo-property",
 		"unit_type_code": "shepherds-hut",
 		"arrival_date":   arr,
 		"departure_date": dep,
@@ -849,7 +849,7 @@ func TestPhase2ExpiredHoldPaidReconciliationAndAutoRefund(t *testing.T) {
 
 	// Guest B immediately books the now-freed shepherds-hut and pays cleanly!
 	hB := doPublicJSON(t, pubClient, http.MethodPost, srv.URL+"/api/public/v1/booking/holds", "", "", map[string]any{
-		"property_slug":  "tir-bach",
+		"property_slug":  "demo-property",
 		"unit_type_code": "shepherds-hut",
 		"arrival_date":   arr,
 		"departure_date": dep,
@@ -913,7 +913,7 @@ func TestPhase2ExpiredHoldPaidReconciliationAndAutoRefund(t *testing.T) {
 	}
 
 	adminClient := newClient(t)
-	_, _ = apiLogin(t, adminClient, srv.URL, "owner@tirbach.wales", "tirbach-owner-password-2026")
+	_, _ = apiLogin(t, adminClient, srv.URL, "owner@example.com", "lovelace-owner-password-2026")
 	exResp, _ := adminClient.Get(srv.URL + "/api/v1/properties/" + prop.ID.String() + "/payment-exceptions")
 	var exOut struct {
 		Items []domain.PaymentException `json:"items"`

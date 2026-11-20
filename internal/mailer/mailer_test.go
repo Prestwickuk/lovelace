@@ -47,7 +47,7 @@ func TestSMTPSender_PreDataTimeoutReturnsTerminatedBeforeSend(t *testing.T) {
 		Timeout: 60 * time.Millisecond,
 	}
 	err = s.Send(context.Background(), Message{
-		From:     "bookings@tirbach.wales",
+		From:     "bookings@example.com",
 		To:       "guest@example.test",
 		Subject:  "Pre-DATA hang test",
 		BodyText: "Hello",
@@ -117,7 +117,7 @@ func TestSMTPSender_PostDataTimeoutReturnsUncertain(t *testing.T) {
 		Timeout: 100 * time.Millisecond,
 	}
 	err = s.Send(context.Background(), Message{
-		From:     "bookings@tirbach.wales",
+		From:     "bookings@example.com",
 		To:       "guest@example.test",
 		Subject:  "Post-DATA hang test",
 		BodyText: "Hello",
@@ -167,7 +167,7 @@ func TestSMTPSender_ParentDeadlineCapsOversizedTimeout(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	err = s.Send(ctx, Message{
-		From:     "bookings@tirbach.wales",
+		From:     "bookings@example.com",
 		To:       "guest@example.test",
 		Subject:  "Deadline cap test",
 		BodyText: "Hello",

@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/tirbach/tir-bach/internal/branding"
+	"github.com/Prestwickuk/lovelace/internal/branding"
 )
 
 const (

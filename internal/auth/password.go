@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/Prestwickuk/lovelace/internal/domain"
 )
 
 const (
