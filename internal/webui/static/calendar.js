@@ -344,4 +344,43 @@
     btProvider.addEventListener("change", syncBackupProvider);
     syncBackupProvider();
   }
+
+  // Copy-to-clipboard buttons for website booking embed code blocks
+  var copyBtns = document.querySelectorAll("[data-copy-target]");
+  if (copyBtns.length > 0) {
+    copyBtns.forEach(function (btn) {
+      var defaultLabel = btn.textContent;
+      btn.addEventListener("click", function () {
+        var targetId = btn.getAttribute("data-copy-target");
+        var targetEl = targetId ? document.getElementById(targetId) : null;
+        if (!targetEl) return;
+        var text = typeof targetEl.value === "string" ? targetEl.value : (targetEl.textContent || "");
+        var markCopied = function () {
+          btn.textContent = "Copied!";
+          window.setTimeout(function () {
+            btn.textContent = defaultLabel;
+          }, 2200);
+        };
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText(text).then(markCopied).catch(function () {
+            if (typeof targetEl.select === "function") {
+              targetEl.focus();
+              targetEl.select();
+              try {
+                document.execCommand("copy");
+                markCopied();
+              } catch (_) {}
+            }
+          });
+        } else if (typeof targetEl.select === "function") {
+          targetEl.focus();
+          targetEl.select();
+          try {
+            document.execCommand("copy");
+            markCopied();
+          } catch (_) {}
+        }
+      });
+    });
+  }
 })();

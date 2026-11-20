@@ -56,6 +56,39 @@ test.describe("Tir Bach Public Direct Booking Engine", () => {
     expect(overflow).toBeFalsy();
   });
 
+  test("embeddable /embed/[slug] widget allows external HTTPS framing while non-embed routes stay DENY", async ({
+    page,
+  }) => {
+    const arr = futureDate(84);
+    const dep = futureDate(86);
+    const embedResp = await page.goto(
+      `/embed/tir-bach?arrival=${arr}&departure=${dep}&adults=2`,
+    );
+    expect(embedResp?.status()).toBe(200);
+    expect(embedResp?.headers()["x-frame-options"]).toBeUndefined();
+    expect(embedResp?.headers()["content-security-policy"]).toContain(
+      "frame-ancestors https:",
+    );
+    expect(embedResp?.headers()["x-content-type-options"]).toBe("nosniff");
+
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Tir Bach/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Select & Book" }).first(),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Select & Book" }).first().click();
+    await expect(
+      page.getByRole("button", { name: "Hold Dates & Review Payment" }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.getByRole("button", {
+        name: /Choose Different Dates or Accommodation/i,
+      }),
+    ).toBeVisible();
+  });
+
   test("complete end-to-end search -> hold -> release -> re-hold -> sandbox Stripe -> confirmation -> cancel request", async ({
     page,
     request,

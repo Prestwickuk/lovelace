@@ -5,20 +5,25 @@ const isHttpsProd =
   (process.env.LOVELACE_ENV || "").trim().toLowerCase() === "production" ||
   (process.env.NEXT_PUBLIC_SITE_URL || "").trim().toLowerCase().startsWith("https://");
 
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  isDev
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "font-src 'self' data:",
-  isDev ? "connect-src 'self' ws: wss:" : "connect-src 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join("; ");
+function buildCsp(frameAncestors: string): string {
+  return [
+    "default-src 'self'",
+    isDev
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    isDev ? "connect-src 'self' ws: wss:" : "connect-src 'self'",
+    "object-src 'none'",
+    `frame-ancestors ${frameAncestors}`,
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; ");
+}
+
+const contentSecurityPolicy = buildCsp("'none'");
+const embedContentSecurityPolicy = buildCsp(isHttpsProd ? "https:" : "https: http:");
 
 const globalSecurityHeaders = [
   { key: "Content-Security-Policy", value: contentSecurityPolicy },
@@ -32,6 +37,22 @@ const globalSecurityHeaders = [
   ...(isHttpsProd
     ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
     : []),
+];
+
+const embedSecurityHeaders = [
+  { key: "Content-Security-Policy", value: embedContentSecurityPolicy },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  {
+    key: "Permissions-Policy",
+    value: "geolocation=(), microphone=(), camera=()",
+  },
+  ...(isHttpsProd
+    ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+    : []),
+  { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, private" },
+  { key: "Pragma", value: "no-cache" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-Robots-Tag", value: "noindex, nofollow" },
 ];
 
 const privateNoStoreHeaders = [
@@ -50,8 +71,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        source: "/((?!embed(?:/|$)).*)",
         headers: globalSecurityHeaders,
+      },
+      {
+        source: "/embed",
+        headers: embedSecurityHeaders,
+      },
+      {
+        source: "/embed/:path*",
+        headers: embedSecurityHeaders,
       },
       {
         source: "/booking/confirmation",

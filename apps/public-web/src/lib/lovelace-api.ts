@@ -51,6 +51,13 @@ function assertSafePathSegment(value: string, fieldName: string): string {
   return clean;
 }
 
+function resolvePropertySlug(candidate?: unknown): string {
+  if (typeof candidate === "string" && candidate.trim() !== "") {
+    return assertSafePathSegment(candidate, "property slug");
+  }
+  return assertSafePathSegment(PROPERTY_SLUG, "property slug");
+}
+
 function assertValidUuid(value: string, fieldName: string): string {
   const clean = (value || "").trim();
   if (!UUID_RE.test(clean)) {
@@ -162,12 +169,13 @@ export async function searchPublicAvailability(
   },
   clientIp = "",
 ): Promise<PublicAvailabilityResponse> {
+  const propertySlug = resolvePropertySlug(params.property_slug);
   return callLovelacePublic<PublicAvailabilityResponse>(
     "/api/public/v1/availability",
     {
       method: "POST",
       body: JSON.stringify({
-        property_slug: PROPERTY_SLUG,
+        property_slug: propertySlug,
         arrival_date: params.arrival_date,
         departure_date: params.departure_date,
         adults: params.adults,
@@ -193,12 +201,13 @@ export async function computePublicPricing(
   },
   clientIp = "",
 ): Promise<{ quote: BookingQuote }> {
+  const propertySlug = resolvePropertySlug(params.property_slug);
   return callLovelacePublic<{ quote: BookingQuote }>(
     "/api/public/v1/pricing",
     {
       method: "POST",
       body: JSON.stringify({
-        property_slug: PROPERTY_SLUG,
+        property_slug: propertySlug,
         unit_type_code: params.unit_type_code,
         arrival_date: params.arrival_date,
         departure_date: params.departure_date,
@@ -216,13 +225,14 @@ export async function createPublicHold(
   payload: Record<string, unknown>,
   clientIp = "",
 ): Promise<CreateHoldResponse> {
+  const propertySlug = resolvePropertySlug(payload.property_slug);
   return callLovelacePublic<CreateHoldResponse>(
     "/api/public/v1/booking/holds",
     {
       method: "POST",
       body: JSON.stringify({
         ...payload,
-        property_slug: PROPERTY_SLUG,
+        property_slug: propertySlug,
       }),
     },
     clientIp,

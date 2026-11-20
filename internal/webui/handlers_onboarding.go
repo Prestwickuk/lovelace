@@ -23,6 +23,8 @@ func (h *Handler) registerOnboardingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /onboarding/step4", h.requirePageAuth(true, h.handleOnboardingStep4Post))
 	mux.HandleFunc("POST /onboarding/step5/user", h.requirePageAuth(true, h.handleOnboardingStep5UserPost))
 	mux.HandleFunc("POST /onboarding/step5/next", h.requirePageAuth(true, h.handleOnboardingStep5NextPost))
+	mux.HandleFunc("POST /onboarding/step6/backup-target", h.requirePageAuth(true, h.handleOnboardingStep6BackupPost))
+	mux.HandleFunc("POST /onboarding/step6/next", h.requirePageAuth(true, h.handleOnboardingStep6NextPost))
 	mux.HandleFunc("POST /onboarding/complete", h.requirePageAuth(true, h.handleOnboardingCompletePost))
 	mux.HandleFunc("POST /property/switch", h.requirePageAuth(true, h.handlePropertySwitchPost))
 }
@@ -53,6 +55,8 @@ type onboardingViewData struct {
 	DefaultPlan        domain.RatePlan
 	RateRules          []domain.RateRule
 	TeamUsers          []domain.AdminUser
+	BackupTargets      []domain.BackupStorageTarget
+	EmbedSnippets      WebsiteEmbedSnippets
 	DefaultPeakStart   string
 	DefaultPeakEnd     string
 	OnboardingComplete bool
@@ -65,7 +69,7 @@ func onboardingURL(propertyID uuid.UUID, step int, isNew bool) string {
 	} else if propertyID != uuid.Nil {
 		q.Set("property_id", propertyID.String())
 	}
-	if step >= 1 && step <= 6 {
+	if step >= 1 && step <= 7 {
 		q.Set("step", fmt.Sprintf("%d", step))
 	}
 	if len(q) == 0 {
@@ -148,7 +152,7 @@ func (h *Handler) handleOnboardingGet(w http.ResponseWriter, r *http.Request, ac
 			savedStep = st.CurrentStep
 			onboardingComplete = st.IsComplete()
 		} else {
-			savedStep = 6
+			savedStep = 7
 			onboardingComplete = true
 		}
 	}
@@ -158,7 +162,7 @@ func (h *Handler) handleOnboardingGet(w http.ResponseWriter, r *http.Request, ac
 	spec := domain.GetOnboardingPresetSpec(selectedPreset)
 
 	step := savedStep
-	if qStep := parseIntDefault(r.URL.Query().Get("step"), 0); qStep >= 1 && qStep <= 6 {
+	if qStep := parseIntDefault(r.URL.Query().Get("step"), 0); qStep >= 1 && qStep <= 7 {
 		step = qStep
 	}
 	if isNew || targetProp.ID == uuid.Nil {
@@ -185,6 +189,8 @@ func (h *Handler) handleOnboardingGet(w http.ResponseWriter, r *http.Request, ac
 		defaultPlan    domain.RatePlan
 		rateRules      []domain.RateRule
 		teamUsers      []domain.AdminUser
+		backupTargets  []domain.BackupStorageTarget
+		embedSnippets  WebsiteEmbedSnippets
 	)
 	unitCountByType := make(map[uuid.UUID]int)
 	existingExtraCodes := make(map[string]bool)
@@ -225,6 +231,12 @@ func (h *Handler) handleOnboardingGet(w http.ResponseWriter, r *http.Request, ac
 				}
 			}
 		}
+		if base.CanCreateProperty {
+			if ov, berr := h.svc.GetBackupOverview(r.Context(), actor); berr == nil {
+				backupTargets = ov.Targets
+			}
+		}
+		embedSnippets = buildWebsiteEmbedSnippets(h.cfg.PublicOrigin, targetProp, targetBranding)
 	} else {
 		targetBranding.Terminology = spec.Terminology
 		targetBranding.ResolvedTerms = branding.ResolveTerminology(spec.Terminology)
@@ -236,7 +248,8 @@ func (h *Handler) handleOnboardingGet(w http.ResponseWriter, r *http.Request, ac
 		"3. Pricing & Extras",
 		"4. Rules & Deposits",
 		"5. Team Access",
-		"6. Review & Finish",
+		"6. Cloud Backup",
+		"7. Review & Website",
 	}
 	steps := make([]onboardingStepNav, 0, len(labels))
 	for i, lbl := range labels {
@@ -288,6 +301,8 @@ func (h *Handler) handleOnboardingGet(w http.ResponseWriter, r *http.Request, ac
 		DefaultPlan:        defaultPlan,
 		RateRules:          rateRules,
 		TeamUsers:          teamUsers,
+		BackupTargets:      backupTargets,
+		EmbedSnippets:      embedSnippets,
 		DefaultPeakStart:   domain.FormatDate(peakStart),
 		DefaultPeakEnd:     domain.FormatDate(peakEnd),
 		OnboardingComplete: onboardingComplete,
@@ -611,7 +626,75 @@ func (h *Handler) handleOnboardingStep5NextPost(w http.ResponseWriter, r *http.R
 		h.redirectErr(w, r, onboardingURL(propID, 5, false), err)
 		return
 	}
-	redirectMsg(w, r, onboardingURL(propID, 6, false), "Ready to review your property setup.")
+	redirectMsg(w, r, onboardingURL(propID, 6, false), "Saved team settings. Optional next step: connect an off-site cloud backup bucket, or skip for now.")
+}
+
+func (h *Handler) handleOnboardingStep6BackupPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, err := uuid.Parse(strings.TrimSpace(r.FormValue("property_id")))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Property", "Missing property identifier.")
+		return
+	}
+	step6URL := onboardingURL(propID, 6, false)
+
+	creds := map[string]string{
+		"access_key_id":        r.FormValue("access_key_id"),
+		"secret_access_key":    r.FormValue("secret_access_key"),
+		"service_account_json": r.FormValue("service_account_json"),
+		"account_name":         r.FormValue("account_name"),
+		"account_key":          r.FormValue("account_key"),
+		"sas_token":            r.FormValue("sas_token"),
+		"archive_passphrase":   r.FormValue("archive_passphrase"),
+	}
+	saved, err := h.svc.SaveBackupTarget(r.Context(), actor, service.SaveBackupTargetInput{
+		Version:               1,
+		CurrentPassword:       r.FormValue("current_password"),
+		Name:                  r.FormValue("name"),
+		Provider:              domain.BackupProvider(r.FormValue("provider")),
+		BucketOrContainer:     r.FormValue("bucket_or_container"),
+		Region:                r.FormValue("region"),
+		EndpointURL:           r.FormValue("endpoint_url"),
+		KeyPrefix:             r.FormValue("key_prefix"),
+		EncryptArchive:        r.FormValue("encrypt_archive") == "true",
+		ScheduleEnabled:       r.FormValue("schedule_enabled") == "true",
+		ScheduleIntervalHours: parseIntDefault(r.FormValue("schedule_interval_hours"), 24),
+		RetentionCount:        parseIntDefault(r.FormValue("retention_count"), 14),
+		IsActive:              true,
+		Credentials:           creds,
+	})
+	if err != nil {
+		h.redirectErr(w, r, step6URL, err)
+		return
+	}
+
+	verifiedNote := ""
+	if r.FormValue("verify_now") == "true" {
+		if _, verr := h.svc.VerifyBackupTarget(r.Context(), actor, saved.ID); verr != nil {
+			h.redirectErr(w, r, step6URL, fmt.Errorf("saved %q, but live bucket check failed: %w", saved.Name, verr))
+			return
+		}
+		verifiedNote = " and verified bucket connectivity"
+	}
+
+	if r.FormValue("after_action") == "add_more" {
+		redirectMsg(w, r, step6URL, fmt.Sprintf("Saved cloud backup destination %q (%s)%s.", saved.Name, saved.Provider.Label(), verifiedNote))
+		return
+	}
+	_, _ = h.svc.SetOnboardingStep(r.Context(), actor, propID, 7)
+	redirectMsg(w, r, onboardingURL(propID, 7, false), fmt.Sprintf("Saved cloud backup destination %q (%s)%s.", saved.Name, saved.Provider.Label(), verifiedNote))
+}
+
+func (h *Handler) handleOnboardingStep6NextPost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	propID, err := uuid.Parse(strings.TrimSpace(r.FormValue("property_id")))
+	if err != nil {
+		h.renderError(w, http.StatusBadRequest, "Invalid Property", "Missing property identifier.")
+		return
+	}
+	if _, err := h.svc.SetOnboardingStep(r.Context(), actor, propID, 7); err != nil {
+		h.redirectErr(w, r, onboardingURL(propID, 6, false), err)
+		return
+	}
+	redirectMsg(w, r, onboardingURL(propID, 7, false), "Ready to review your property setup and website booking code.")
 }
 
 func (h *Handler) handleOnboardingCompletePost(w http.ResponseWriter, r *http.Request, actor service.Actor) {
@@ -622,7 +705,7 @@ func (h *Handler) handleOnboardingCompletePost(w http.ResponseWriter, r *http.Re
 	}
 	completed, err := h.svc.CompleteOnboarding(r.Context(), actor, propID)
 	if err != nil {
-		h.redirectErr(w, r, onboardingURL(propID, 6, false), err)
+		h.redirectErr(w, r, onboardingURL(propID, 7, false), err)
 		return
 	}
 	h.setActivePropertyCookie(w, completed.ID)

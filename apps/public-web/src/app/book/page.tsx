@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { BookingWizard } from "@/components/BookingWizard";
+import { sanitizePropertySlug } from "@/lib/branding";
 import { defaultSearchDates } from "@/lib/format";
 import {
   computePublicPricing,
@@ -17,6 +18,13 @@ export default async function BookPage({
 }) {
   const sp = await searchParams;
   const defaults = defaultSearchDates();
+  const explicitProperty =
+    typeof sp.property === "string" && sp.property.trim()
+      ? sanitizePropertySlug(sp.property, "")
+      : "";
+  const staysHref = explicitProperty
+    ? `/stays?property=${encodeURIComponent(explicitProperty)}`
+    : "/stays";
 
   const unitTypeCode =
     typeof sp.unit_type === "string" && sp.unit_type ? sp.unit_type : "bell-tent";
@@ -36,7 +44,10 @@ export default async function BookPage({
   let loadError = "";
 
   try {
-    detail = await fetchAccommodationDetail(unitTypeCode);
+    detail = await fetchAccommodationDetail(
+      unitTypeCode,
+      explicitProperty || undefined,
+    );
     const priced = await computePublicPricing({
       property_slug: detail.property.slug,
       unit_type_code: unitTypeCode,
@@ -67,7 +78,7 @@ export default async function BookPage({
 
       <main className="container section">
         <div style={{ marginBottom: "1.25rem" }}>
-          <Link href="/stays" style={{ color: "var(--brand-forest)", fontWeight: 600 }}>
+          <Link href={staysHref} style={{ color: "var(--brand-forest)", fontWeight: 600 }}>
             ← Change Dates or Accommodation
           </Link>
         </div>
@@ -79,7 +90,7 @@ export default async function BookPage({
             <div className="alert alert-err" role="alert">
               {loadError || "Selected stay could not be loaded."}
             </div>
-            <Link href="/stays" className="btn btn-primary">
+            <Link href={staysHref} className="btn btn-primary">
               Search Available Dates
             </Link>
           </div>

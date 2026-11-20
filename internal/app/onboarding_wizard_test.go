@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -55,7 +56,8 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 			return txErr
 		}
 		_, txErr := tx.Exec(ctx, `
-			TRUNCATE TABLE admin_recovery_codes,
+			TRUNCATE TABLE backup_runs, backup_storage_targets,
+			               admin_recovery_codes,
 			               guest_portal_sessions, guest_portal_challenges, guest_portal_identities,
 			               email_outbox, confirmation_access_tokens, payment_exceptions,
 			               payment_webhook_events, refunds, payments, payment_attempts,
@@ -354,12 +356,55 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 		"csrf_token":  {csrf},
 		"property_id": {campProp.ID.String()},
 	})
-	if !strings.Contains(s6HTML, "Step 6 — Review Summary") {
-		t.Fatalf("expected Step 6 review summary")
+	if !strings.Contains(s6HTML, "Step 6 — Off-Site Cloud Backup Source") {
+		t.Fatalf("expected Step 6 optional cloud backup step")
 	}
 
-	// Step 6: Finish setup -> redirects to Operations Centre without resume banner!
+	// Step 6: Configure an optional S3-compatible off-site cloud backup destination, then advance to Step 7.
 	csrf = extractCSRF(s6HTML)
+	_, s6SavedHTML := postForm(followClient, "/onboarding/step6/backup-target", url.Values{
+		"csrf_token":              {csrf},
+		"property_id":             {campProp.ID.String()},
+		"name":                    {"Meadowbrook R2 Off-Site"},
+		"provider":                {"S3_COMPATIBLE"},
+		"bucket_or_container":     {"meadowbrook-backups"},
+		"key_prefix":              {"nightly/"},
+		"region":                  {"auto"},
+		"endpoint_url":            {"https://demo-account.r2.cloudflarestorage.com"},
+		"access_key_id":           {"AKIAIOSFODNN7EXAMPLE"},
+		"secret_access_key":       {"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"},
+		"encrypt_archive":         {"true"},
+		"archive_passphrase":      {"ArchivePassphrase!13579"},
+		"schedule_enabled":        {"true"},
+		"schedule_interval_hours": {"24"},
+		"retention_count":         {"14"},
+		"current_password":        {permPw},
+		"after_action":            {"add_more"},
+	})
+	if !strings.Contains(s6SavedHTML, "Meadowbrook R2 Off-Site") || strings.Contains(s6SavedHTML, "wJalrXUtnFEMI") {
+		t.Fatalf("expected saved cloud backup target in Step 6 without leaking secret access key")
+	}
+
+	csrf = extractCSRF(s6SavedHTML)
+	_, s7HTML := postForm(followClient, "/onboarding/step6/next", url.Values{
+		"csrf_token":  {csrf},
+		"property_id": {campProp.ID.String()},
+	})
+	s7Decoded := html.UnescapeString(s7HTML)
+	for _, want := range []string{
+		"Step 7 — Review Summary, Website Booking Code",
+		"Cloud Sync Ready",
+		"http://127.0.0.1:3000/embed/meadowbrook-coastal-glamping",
+		`<input type="hidden" name="property" value="meadowbrook-coastal-glamping">`,
+		"lovelace:embed:resize",
+	} {
+		if !strings.Contains(s7Decoded, want) {
+			t.Fatalf("expected Step 7 decoded HTML to contain %q", want)
+		}
+	}
+
+	// Step 7: Finish setup -> redirects to Operations Centre without resume banner!
+	csrf = extractCSRF(s7HTML)
 	doneResp, opsHTML := postForm(followClient, "/onboarding/complete", url.Values{
 		"csrf_token":  {csrf},
 		"property_id": {campProp.ID.String()},
@@ -368,11 +413,23 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 		t.Fatalf("expected completed setup to land on Operations Centre without resume banner")
 	}
 
-	// Verify saving /property later preserves onboarding completion state in Property.Settings.
+	// Verify /property exposes Website Booking Section copy-paste code blocks AND preserves onboarding completion state on save.
 	propPageResp, _ := followClient.Get(srv.URL + "/property")
 	propPageBytes, _ := io.ReadAll(propPageResp.Body)
 	propPageResp.Body.Close()
-	csrf = extractCSRF(string(propPageBytes))
+	propPageHTML := string(propPageBytes)
+	for _, want := range []string{
+		`id="website-embed"`,
+		`data-copy-target="embed-iframe-code"`,
+		`data-copy-target="embed-searchbar-code"`,
+		`data-copy-target="embed-button-code"`,
+		"http://127.0.0.1:3000/embed/meadowbrook-coastal-glamping",
+	} {
+		if !strings.Contains(propPageHTML, want) {
+			t.Fatalf("expected /property HTML to contain %q", want)
+		}
+	}
+	csrf = extractCSRF(propPageHTML)
 	freshCamp, _ := store.GetPropertyByID(ctx, nil, campProp.ID)
 	_, _ = postForm(followClient, "/property", url.Values{
 		"csrf_token":     {csrf},

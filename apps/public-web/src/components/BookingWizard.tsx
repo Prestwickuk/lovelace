@@ -36,6 +36,8 @@ export function BookingWizard({
   childrenCount,
   infants,
   cancelledReturn,
+  embedMode = false,
+  onBackToSearch,
 }: {
   property: PublicPropertyView;
   unitType: PublicUnitTypeView;
@@ -47,6 +49,8 @@ export function BookingWizard({
   childrenCount: number;
   infants: number;
   cancelledReturn?: boolean;
+  embedMode?: boolean;
+  onBackToSearch?: () => void;
 }) {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [quote, setQuote] = useState<BookingQuote>(initialQuote);
@@ -212,6 +216,20 @@ export function BookingWizard({
           setErrorMsg("Payment gateway returned an invalid checkout redirect URL.");
           return;
         }
+        const framed =
+          embedMode ||
+          (typeof window !== "undefined" && Boolean(window.top && window.top !== window));
+        if (framed) {
+          try {
+            if (window.top) {
+              window.top.location.href = target;
+              return;
+            }
+          } catch {
+            const opened = window.open(target, "_top");
+            if (opened) return;
+          }
+        }
         window.location.href = target;
       } else {
         setErrorMsg("Payment gateway did not return a checkout URL.");
@@ -245,6 +263,19 @@ export function BookingWizard({
   return (
     <div className="two-col-booking">
       <div>
+        {onBackToSearch && !hold && (
+          <div style={{ marginBottom: "1rem" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: "0.45rem 0.9rem", fontSize: "0.88rem" }}
+              onClick={onBackToSearch}
+            >
+              ← Choose Different Dates or Accommodation
+            </button>
+          </div>
+        )}
+
         {!stripeEnabled && (
           <div className="alert alert-warn" role="status">
             <strong>Online Card Checkout Unavailable:</strong> Live online Stripe
@@ -473,7 +504,9 @@ export function BookingWizard({
                     required
                   />
                   <span>
-                    I agree to Tir Bach Campsite&apos;s{" "}
+                    I agree to{" "}
+                    {property.branding?.display_name || property.name || "Tir Bach Campsite"}
+                    &apos;s{" "}
                     <Link href="/terms" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
                       Booking Terms &amp; Cancellation Policy
                     </Link>{" "}

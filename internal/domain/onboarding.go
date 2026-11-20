@@ -496,7 +496,7 @@ func DecodeOnboardingState(raw json.RawMessage) (OnboardingState, bool) {
 	if !st.Preset.Valid() {
 		st.Preset = OnboardingPresetCampsite
 	}
-	if st.CurrentStep < 1 || st.CurrentStep > 6 {
+	if st.CurrentStep < 1 || st.CurrentStep > 7 {
 		st.CurrentStep = 1
 	}
 	return st, true
@@ -514,8 +514,8 @@ func MergeOnboardingState(existing json.RawMessage, state OnboardingState) (json
 	if state.CurrentStep < 1 {
 		state.CurrentStep = 1
 	}
-	if state.CurrentStep > 6 {
-		state.CurrentStep = 6
+	if state.CurrentStep > 7 {
+		state.CurrentStep = 7
 	}
 	sub, err := json.Marshal(state)
 	if err != nil {

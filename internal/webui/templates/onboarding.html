@@ -642,12 +642,12 @@
   <div class="page-header mb-2">
     <div>
       <h2>Step 5 — Team &amp; Staff Accounts (Optional)</h2>
-      <p class="subtitle">Running the property yourself? Your Owner Admin login already has full access — click <strong>Continue to Review</strong> whenever you are ready.</p>
+      <p class="subtitle">Running the property yourself? Your Owner Admin login already has full access — click <strong>Continue to Step 6</strong> whenever you are ready.</p>
     </div>
     <form method="post" action="/onboarding/step5/next">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
-      <button type="submit" class="btn btn-primary">Continue to Step 6: Review &amp; Finish →</button>
+      <button type="submit" class="btn btn-primary">Continue to Step 6: Cloud Backup (Optional) →</button>
     </form>
   </div>
 
@@ -715,14 +715,192 @@
       </div>
     </form>
   </fieldset>
+  {{else}}
+  <div class="days-row mt-2">
+    <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=4" class="btn btn-secondary">← Back to Step 4</a>
+  </div>
   {{end}}
 </div>
 {{end}}
 
 {{if eq .Step 6}}
 <div class="card mb-3">
-  <h2>Step 6 — Review Summary &amp; Finish Setup</h2>
-  <p class="subtitle mb-3">Review your configuration below. Everything can be edited later at any time from the sidebar.</p>
+  <div class="page-header mb-2">
+    <div>
+      <h2>Step 6 — Off-Site Cloud Backup Source (Optional)</h2>
+      <p class="subtitle">Connect an Amazon S3, Cloudflare R2 / Backblaze B2, Google Cloud Storage, or Azure Blob bucket for automatic AES-256-GCM encrypted off-site backups — or skip and use local <code>.zip</code> downloads anytime.</p>
+    </div>
+    <form method="post" action="/onboarding/step6/next">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+      <button type="submit" class="btn btn-secondary">{{if .BackupTargets}}Continue to Step 7: Review &amp; Website Code →{{else}}Skip for Now &amp; Continue to Step 7 →{{end}}</button>
+    </form>
+  </div>
+
+  {{if .BackupTargets}}
+  <div class="alert alert-ok mb-3" role="status">
+    <strong>Cloud backup connected:</strong> {{len .BackupTargets}} off-site storage destination(s) configured. You can manage schedules or trigger manual uploads anytime under <a href="/settings/backups">Settings → Backups &amp; Cloud Sync</a>.
+  </div>
+  <div class="table-wrap mb-3">
+    <table>
+      <thead>
+        <tr>
+          <th>Destination</th>
+          <th>Provider &amp; Bucket</th>
+          <th>Schedule</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .BackupTargets}}
+        <tr>
+          <td><strong>{{.Name}}</strong></td>
+          <td>{{.Provider.Label}} · <span class="mono">{{.BucketOrContainer}}</span></td>
+          <td>{{if and .IsActive .ScheduleEnabled}}<span class="badge badge-info">Every {{.ScheduleIntervalHours}}h (keep {{.RetentionCount}})</span>{{else}}<span class="badge badge-muted">Manual only</span>{{end}}</td>
+          <td>
+            {{if eq .LastStatus "SUCCEEDED"}}<span class="badge badge-ok">SUCCEEDED</span>
+            {{else if eq .LastStatus "VERIFIED"}}<span class="badge badge-info">VERIFIED</span>
+            {{else if eq .LastStatus "FAILED"}}<span class="badge badge-err">FAILED</span>
+            {{else}}<span class="badge badge-muted">READY</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+
+  {{if .CanCreateProperty}}
+  <fieldset class="branding-fieldset">
+    <legend>{{if .BackupTargets}}+ Add Another Cloud Backup Destination (Optional){{else}}Connect an Off-Site Cloud Backup Bucket (Optional){{end}}</legend>
+    <p class="field-hint mt-1 mb-2">Cloud credentials are encrypted at rest before storage and are never echoed back to the browser. Archives include all PostgreSQL tables plus uploaded property logos and maintenance photos, verified by per-file SHA-256 checksums.</p>
+    <form method="post" action="/onboarding/step6/backup-target" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="bt_name">Destination Label</label>
+          <input id="bt_name" name="name" type="text" required placeholder="e.g. Nightly Off-Site Backup" value="Nightly Off-Site Backup">
+        </div>
+        <div class="field">
+          <label for="bt_provider">Cloud Storage Provider</label>
+          <select id="bt_provider" name="provider">
+            <option value="AWS_S3">Amazon S3 (AWS)</option>
+            <option value="S3_COMPATIBLE">S3-Compatible (Cloudflare R2 / Backblaze B2 / Wasabi)</option>
+            <option value="GCS">Google Cloud Storage (GCP)</option>
+            <option value="AZURE_BLOB">Microsoft Azure Blob Storage</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="bt_bucket">Bucket or Container Name</label>
+          <input id="bt_bucket" name="bucket_or_container" type="text" required placeholder="e.g. my-property-backups">
+        </div>
+        <div class="field">
+          <label for="bt_prefix">Folder / Key Prefix</label>
+          <input id="bt_prefix" name="key_prefix" type="text" value="lovelace-backups/">
+        </div>
+        <div class="field" id="bt_region_wrap">
+          <label for="bt_region">Region (Required for AWS S3, e.g. eu-west-2)</label>
+          <input id="bt_region" name="region" type="text" placeholder="eu-west-2" value="eu-west-2">
+        </div>
+        <div class="field" id="bt_endpoint_wrap">
+          <label for="bt_endpoint">Custom HTTPS Endpoint URL (Required for R2 / S3-Compatible)</label>
+          <input id="bt_endpoint" name="endpoint_url" type="text" placeholder="https://&lt;account&gt;.r2.cloudflarestorage.com">
+        </div>
+      </div>
+
+      <div id="bt_creds_s3" class="form-grid mt-2">
+        <div class="field">
+          <label for="bt_s3_ak">Access Key ID</label>
+          <input id="bt_s3_ak" name="access_key_id" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="bt_s3_sk">Secret Access Key</label>
+          <input id="bt_s3_sk" name="secret_access_key" type="password" autocomplete="new-password">
+        </div>
+      </div>
+
+      <div id="bt_creds_gcs" class="form-grid mt-2 hidden">
+        <div class="field field-full">
+          <label for="bt_gcs_sa">GCP Service Account JSON Key</label>
+          <textarea id="bt_gcs_sa" name="service_account_json" rows="3" placeholder="{&quot;type&quot;:&quot;service_account&quot;,&quot;client_email&quot;:&quot;...&quot;,&quot;private_key&quot;:&quot;-----BEGIN PRIVATE KEY-----...&quot;}"></textarea>
+        </div>
+      </div>
+
+      <div id="bt_creds_azure" class="form-grid mt-2 hidden">
+        <div class="field">
+          <label for="bt_az_acct">Azure Storage Account Name</label>
+          <input id="bt_az_acct" name="account_name" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="bt_az_key">Account Key (Base64)</label>
+          <input id="bt_az_key" name="account_key" type="password" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="bt_az_sas">Or Container SAS Token (Optional alternative to Account Key)</label>
+          <input id="bt_az_sas" name="sas_token" type="password" autocomplete="new-password" placeholder="sv=2021-08-06&amp;ss=b...">
+        </div>
+      </div>
+
+      <div class="form-grid mt-2">
+        <div class="checkbox-row">
+          <input id="bt_encrypt" name="encrypt_archive" type="checkbox" value="true" checked>
+          <label for="bt_encrypt">Encrypt Cloud Archives with AES-256-GCM (.zip.enc)</label>
+        </div>
+        <div class="field">
+          <label for="bt_passphrase">Archive Encryption Passphrase (min 12 chars)</label>
+          <input id="bt_passphrase" name="archive_passphrase" type="password" minlength="12" autocomplete="new-password" placeholder="Store safely alongside your recovery codes">
+        </div>
+        <div class="checkbox-row">
+          <input id="bt_sched" name="schedule_enabled" type="checkbox" value="true" checked>
+          <label for="bt_sched">Enable Scheduled Automatic Backups</label>
+        </div>
+        <div class="field">
+          <label for="bt_interval">Backup Every (Hours, 1–720)</label>
+          <input id="bt_interval" name="schedule_interval_hours" type="number" min="1" max="720" value="24">
+        </div>
+        <div class="field">
+          <label for="bt_retention">Keep Most Recent Backups (1–365)</label>
+          <input id="bt_retention" name="retention_count" type="number" min="1" max="365" value="14">
+        </div>
+        <div class="checkbox-row">
+          <input id="bt_verify_now" name="verify_now" type="checkbox" value="true">
+          <label for="bt_verify_now">Test live bucket connectivity immediately on save</label>
+        </div>
+        <div class="field">
+          <label for="bt_curr_pw">Confirm Your Admin Password to Encrypt &amp; Save</label>
+          <input id="bt_curr_pw" name="current_password" type="password" autocomplete="current-password" required>
+        </div>
+      </div>
+
+      <div class="days-row mt-3">
+        <button type="submit" name="after_action" value="continue" class="btn btn-primary">Save Cloud Backup &amp; Continue to Step 7 →</button>
+        <button type="submit" name="after_action" value="add_more" class="btn btn-secondary">Save &amp; Add Another Bucket</button>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=5" class="btn btn-secondary">← Back to Step 5</a>
+      </div>
+    </form>
+  </fieldset>
+  {{else}}
+  <div class="alert alert-info mb-3" role="status">
+    Global system backups and cloud storage buckets are managed by your Global Owner Administrator under <strong>Settings → Backups &amp; Cloud Sync</strong>.
+  </div>
+  <div class="days-row">
+    <form method="post" action="/onboarding/step6/next">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
+      <button type="submit" class="btn btn-primary">Continue to Step 7: Review &amp; Website Code →</button>
+    </form>
+    <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=5" class="btn btn-secondary">← Back to Step 5</a>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{if eq .Step 7}}
+<div class="card mb-3">
+  <h2>Step 7 — Review Summary, Website Booking Code &amp; Finish</h2>
+  <p class="subtitle mb-3">Review your configuration below and grab the optional HTML code blocks to embed bookings on your own website. Everything can be updated later from the sidebar.</p>
 
   <div class="wizard-summary-grid mb-3">
     <div class="property-preview-panel">
@@ -766,7 +944,66 @@
       <p>Check-in <strong>{{.TargetProperty.CheckInTime}}</strong> · Check-out <strong>{{.TargetProperty.CheckOutTime}}</strong> · Deposit: <strong>{{.Policy.DepositMode}}</strong></p>
       <p class="field-hint">{{len .TeamUsers}} admin/staff account(s) with access · <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=5">Manage Team</a></p>
     </div>
+
+    <div class="property-preview-panel">
+      <div class="page-header mb-1">
+        <h3>5. Backups &amp; Cloud Sync</h3>
+        <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=6" class="btn btn-secondary btn-sm">Configure</a>
+      </div>
+      {{if .BackupTargets}}
+      <p><span class="badge badge-ok">Cloud Sync Ready</span> <strong>{{len .BackupTargets}}</strong> bucket(s)</p>
+      <p class="field-hint">{{range $i, $bt := .BackupTargets}}{{if $i}}, {{end}}{{$bt.Name}} ({{$bt.Provider.Label}}){{end}}</p>
+      {{else}}
+      <p><span class="badge badge-info">Local .zip Mode</span></p>
+      <p class="field-hint">Download encrypted <code>.zip.enc</code> archives or connect AWS S3, R2, GCS, or Azure anytime in <a href="/settings/backups">Backups</a>.</p>
+      {{end}}
+    </div>
   </div>
+
+  <fieldset class="branding-fieldset mb-3" id="wizard-website-embed">
+    <legend>Drop-In Booking Code for Your Existing Website (Optional)</legend>
+    <p class="field-hint mt-1 mb-2">Already have a website on WordPress, Squarespace, Wix, Webflow, or HTML? Copy and paste any snippet below into your page — you can also access these anytime in <a href="/property#website-embed">Site Settings → Website Booking Section</a>.</p>
+    <div class="embed-option-grid mt-2">
+      <div class="embed-option-card">
+        <div class="ops-section-head">
+          <div>
+            <strong>Option A — Full Embedded Live Booking Section (Auto-Resizing Iframe)</strong>
+            <div class="field-hint">Displays live availability, pricing, extras, and guest details directly inside your site.</div>
+          </div>
+          <div class="days-row">
+            <button type="button" class="btn btn-primary btn-sm" data-copy-target="wiz-embed-iframe">Copy Embed Code</button>
+            <a href="{{.EmbedSnippets.EmbedURL}}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Preview Widget ↗</a>
+          </div>
+        </div>
+        <label for="wiz-embed-iframe" class="sr-only">Embedded live booking section HTML code</label>
+        <textarea id="wiz-embed-iframe" class="mono embed-code-box" rows="7" readonly>{{.EmbedSnippets.IframeSnippet}}</textarea>
+      </div>
+
+      <div class="embed-option-card">
+        <div class="ops-section-head">
+          <div>
+            <strong>Option B — Pure HTML Availability Search Bar (Zero JavaScript)</strong>
+            <div class="field-hint">Compact Check-in / Check-out / Guests bar for headers or hero banners.</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-copy-target="wiz-embed-searchbar">Copy Search Bar Code</button>
+        </div>
+        <label for="wiz-embed-searchbar" class="sr-only">Drop-in availability search bar HTML code</label>
+        <textarea id="wiz-embed-searchbar" class="mono embed-code-box" rows="6" readonly>{{.EmbedSnippets.SearchBarSnippet}}</textarea>
+      </div>
+
+      <div class="embed-option-card">
+        <div class="ops-section-head">
+          <div>
+            <strong>Option C — Branded &ldquo;Book Direct&rdquo; Button</strong>
+            <div class="field-hint">Simple call-to-action button styled in your property&rsquo;s brand colour.</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" data-copy-target="wiz-embed-button">Copy Button Code</button>
+        </div>
+        <label for="wiz-embed-button" class="sr-only">Direct booking button HTML code</label>
+        <textarea id="wiz-embed-button" class="mono embed-code-box" rows="3" readonly>{{.EmbedSnippets.ButtonSnippet}}</textarea>
+      </div>
+    </div>
+  </fieldset>
 
   <div class="alert alert-info mb-3" role="status">
     <strong>Safe Dark-by-Default Launch Mode:</strong>
@@ -778,7 +1015,7 @@
     <input type="hidden" name="property_id" value="{{.TargetProperty.ID}}">
     <div class="days-row">
       <button type="submit" class="btn btn-primary">Finish Setup &amp; Open Operations Centre →</button>
-      <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=5" class="btn btn-secondary">← Back to Step 5</a>
+      <a href="/onboarding?property_id={{.TargetProperty.ID}}&amp;step=6" class="btn btn-secondary">← Back to Step 6</a>
     </div>
   </form>
 </div>
