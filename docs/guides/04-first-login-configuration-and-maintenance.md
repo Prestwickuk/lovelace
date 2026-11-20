@@ -158,7 +158,7 @@ curl -fsS http://127.0.0.1:3000/api/healthz
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
-| `tirbach-server` exits on startup with `privileged database role rejected` | `DATABASE_URL` connected as `postgres` or a superuser in `TIRBACH_ENV=production` | Point `DATABASE_URL` to the non-superuser `lovelace_app` role created by `scripts/postgres/ensure-roles.sh`. |
+| `noteG-server` exits on startup with `privileged database role rejected` | `DATABASE_URL` connected as `postgres` or a superuser in `TIRBACH_ENV=production` | Point `DATABASE_URL` to the non-superuser `lovelace_app` role created by `scripts/postgres/ensure-roles.sh`. |
 | `GET /readyz` returns `503` mentioning `email` | `TIRBACH_REQUIRE_EMAIL=true` while `TIRBACH_SMTP_ADDR` is blank | Configure `TIRBACH_SMTP_ADDR` / `USERNAME` / `PASSWORD`, or set `TIRBACH_REQUIRE_EMAIL=false` until ready to send emails. |
 | Logo or maintenance photo upload fails with `permission denied` | Persistent volume at `/var/lib/lovelace/attachments` is owned by `root:root` | Set ownership on the mounted directory to `100:101` (`chown -R 100:101 /var/lib/lovelace/attachments` inside Alpine). |
 | Login returns `403 Security Token Invalid` | Accessing admin UI over plain `http://` while `TIRBACH_COOKIE_SECURE=true`, or proxy stripping `Origin` / `Host` | Access via `https://` and ensure reverse proxy forwards `Host` and `X-Forwarded-Proto: https`. |

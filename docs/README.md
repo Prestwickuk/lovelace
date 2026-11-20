@@ -52,14 +52,14 @@ Every production Lovelace instance consists of **two strictly isolated HTTP serv
 ```
 
 ### Why Two Separate Services?
-1. **`lovelace-app` (`Dockerfile`, port `8080`):** Serves the server-rendered **Lovelace Admin Console** (`/login`, `/onboarding`, `/calendar`, `/reservations`, `/maintenance`, `/guests`, `/reports`, `/settings/backups`), signed payment/email webhooks (`/api/webhooks/stripe`), background workers (hold expiry, email outbox, OTA sync, scheduled cloud backups), and the internal `/api/public/v1/*` JSON API.
+1. **`lovelace-app` (`Dockerfile`, binary `noteG-server` — named in homage to Ada Lovelace's 1843 *Note G*, port `8080`):** Serves the server-rendered **Lovelace Admin Console** (`/login`, `/onboarding`, `/calendar`, `/reservations`, `/maintenance`, `/guests`, `/reports`, `/settings/backups`), signed payment/email webhooks (`/api/webhooks/stripe`), background workers (hold expiry, email outbox, OTA sync, scheduled cloud backups), and the internal `/api/public/v1/*` JSON API.
 2. **`lovelace-public-web` (`apps/public-web/Dockerfile`, port `3000`):** Serves the guest-facing booking website (`/`, `/stays`, `/book`, `/lookup`), embeddable website widgets (`/embed/[slug]`), and the official WordPress plugin's catalog endpoint (`/api/public/catalog`). It talks to `lovelace-app` strictly server-to-server using `X-Lovelace-Public-Key` (`TIRBACH_PUBLIC_API_SECRET`) and **never** holds database credentials or encryption keys.
 
 ### Three-Role PostgreSQL 17 Privilege Separation
 Lovelace enforces least-privilege database separation in all environments (`scripts/postgres/ensure-roles.sh`):
 1. **Bootstrap Admin (`postgres` / cloud admin):** Used *only* during initial provisioning to enable `pgcrypto` and `btree_gist` and create the two non-superuser roles below.
 2. **Migration Owner (`lovelace_migrator`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Owns schema `public` and runs `tirbach-migrate` (`cmd/migrate`) during deployments.
-3. **Runtime App Role (`lovelace_app`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Strictly DML-only (`SELECT`, `INSERT`, `UPDATE`, `DELETE` — no `DROP`, `ALTER`, `TRUNCATE`, or `CREATE`). In `TIRBACH_ENV=production`, `tirbach-server` **refuses to start** if connected as a privileged or superuser role.
+3. **Runtime App Role (`lovelace_app`):** `NOSUPERUSER NOCREATEDB NOCREATEROLE`. Strictly DML-only (`SELECT`, `INSERT`, `UPDATE`, `DELETE` — no `DROP`, `ALTER`, `TRUNCATE`, or `CREATE`). In `TIRBACH_ENV=production`, `noteG-server` **refuses to start** if connected as a privileged or superuser role.
 
 ---
 

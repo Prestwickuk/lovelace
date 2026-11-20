@@ -63,7 +63,7 @@ Read-only inspection of GitHub (`Prestwickuk/lovelace`) and Railway workspace `3
 Execute [ensure-roles.sh](../scripts/postgres/ensure-roles.sh) and `tirbach-migrate` (`cmd/migrate`) under strict three-role separation:
 1. **`postgres` (Bootstrap / Backup Superuser):** Used solely during initial cluster bootstrap (`btree_gist` extension + role provisioning) and `pg_dump`/`pg_restore`; credentials are stored offline/sealed and **never** injected into `lovelace-prod-app` or `lovelace-prod-public-web`.
 2. **`lovelace_migrator` (`NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`):** Owns schema `public` and executes one-shot `tirbach-migrate` (`MIGRATION_DATABASE_URL`) under advisory lock `748291043` to apply migrations `0001_init.sql` through `0029_security_and_integrity_hardening.sql`.
-3. **`lovelace_app` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`):** Runtime `DATABASE_URL` role for `lovelace-prod-app`. Holds `USAGE` only (`CREATE` revoked) on `public`, DML on application tables, `INSERT`-only on `audit_logs`, `SELECT`-only on `schema_migrations` & `audit_logs_effective`, and `0` access to raw `audit_log_redactions`. `tirbach-server` (`cmd/server/main.go:62`) fails closed at startup in `production` if connected with `SUPERUSER`, `CREATEDB`, or `CREATEROLE`.
+3. **`lovelace_app` (`NOSUPERUSER NOCREATEDB NOCREATEROLE`):** Runtime `DATABASE_URL` role for `lovelace-prod-app`. Holds `USAGE` only (`CREATE` revoked) on `public`, DML on application tables, `INSERT`-only on `audit_logs`, `SELECT`-only on `schema_migrations` & `audit_logs_effective`, and `0` access to raw `audit_log_redactions`. `noteG-server` (`cmd/server/main.go:62`) fails closed at startup in `production` if connected with `SUPERUSER`, `CREATEDB`, or `CREATEROLE`.
 4. **Upgrade Sequence for Future Migrations (`0030+`):** Mandatory `pg_dump -Fc` snapshot -> quiesce/stop `lovelace-prod-app` workers -> run `tirbach-migrate` as `lovelace_migrator` -> re-run `ensure-roles.sh` idempotently -> verify `schema_migrations` checksums & `email_outbox` (`DISPATCHING`/`DISPATCH_UNKNOWN = 0`) -> deploy and boot `lovelace-prod-app`.
 
 ---
@@ -96,7 +96,7 @@ Execute [ensure-roles.sh](../scripts/postgres/ensure-roles.sh) and `tirbach-migr
 | **Infrastructure Capacity & Backups** | Platform metrics & backup cron | PostgreSQL/attachment volume `> 80%` used, memory `> 85%`, `5xx` rate `> 1%`, or missed daily `pg_dump` snapshot -> page | Platform / Security Operator |
 
 ### 4.4 Controlled `Owner-Admin` Bootstrap
-1. Keep `TIRBACH_AUTO_SEED=false` permanently (`tirbach-server` refuses production boot if `true`).
+1. Keep `TIRBACH_AUTO_SEED=false` permanently (`noteG-server` refuses production boot if `true`).
 2. Execute a one-shot authenticated bootstrap (`tirbach-seed` or isolated SQL/CLI bootstrap as `lovelace_app` with `MustRotatePassword=true`) supplying the owner's verified email (`e.g. owner@tirbach.wales`) and a high-entropy one-time passphrase via sealed stdin/env (never CLI flags or chat).
 3. `Tir Bach Owner-Admin` signs in immediately at `https://admin.tirbach.wales`, completes mandatory password rotation (`>= 12` chars, Argon2id `64 MiB` / `t=3`), verifies `admin_user.created` & `admin_user.password_changed` in `/audit` (`audit_logs_effective`), and purges the one-time bootstrap secret.
 
