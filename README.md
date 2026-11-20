@@ -8,7 +8,9 @@ Multi-property campsite & accommodation booking platform built with a **Go 1.24 
 
 ## Official Deployment, Setup & Maintenance Documentation
 
-Start with the **[Lovelace Documentation Hub](docs/README.md)** for architecture diagrams, deployment target comparisons, and the complete environment variable reference:
+- **[The Property Owner's Everyday Guide (Plain-English Illustrated Handbook)](docs/owner-handbook/README.md)** — Warm, jargon-free, step-by-step instructions with annotated screenshots for everyday hospitality tasks (signing in, making text larger, phone bookings, blocking dates, prices, WordPress/website booking boxes, and saving backups).
+
+For technical setup and hosting, start with the **[Lovelace Documentation Hub](docs/README.md)**:
 
 1. **[Local Evaluation & Self-Hosted Linux Server Guide](docs/guides/01-local-and-self-hosted-server.md)** — 2-minute local Docker evaluation (`docker-compose.dev.yml`), production Ubuntu/Debian Linux setup (`docker-compose.yml`), automatic HTTPS with **Caddy** or **Nginx**, firewall hardening, and native `systemd` installation.
 2. **[Cloud Deployment Guide (AWS, GCP & Azure)](docs/guides/02-cloud-deployments-aws-gcp-azure.md)** — Production architectures and step-by-step commands for **AWS** (ECS Fargate + RDS PostgreSQL 17 + EFS + S3), **Google Cloud** (Cloud Run + Cloud SQL + GCS), and **Microsoft Azure** (Container Apps + Flexible Server + Azure Files/Blob).
