@@ -1,6 +1,8 @@
 package app_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"html"
 	"io"
@@ -420,6 +422,7 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 	propPageHTML := string(propPageBytes)
 	for _, want := range []string{
 		`id="website-embed"`,
+		`id="wordpress-plugin"`,
 		`data-copy-target="embed-iframe-code"`,
 		`data-copy-target="embed-searchbar-code"`,
 		`data-copy-target="embed-button-code"`,
@@ -430,6 +433,40 @@ func TestGuidedPropertyOnboardingWizardAndMultiPropertySwitch(t *testing.T) {
 		}
 	}
 	csrf = extractCSRF(propPageHTML)
+
+	// Verify downloading the pre-configured WordPress plugin .zip returns a valid archive with property defaults injected.
+	wpZipResp, err := followClient.Get(srv.URL + "/property/wordpress-plugin.zip?property_id=" + campProp.ID.String())
+	if err != nil {
+		t.Fatalf("GET /property/wordpress-plugin.zip: %v", err)
+	}
+	wpZipBytes, _ := io.ReadAll(wpZipResp.Body)
+	wpZipResp.Body.Close()
+	if wpZipResp.StatusCode != http.StatusOK || wpZipResp.Header.Get("Content-Type") != "application/zip" {
+		t.Fatalf("expected 200 application/zip from /property/wordpress-plugin.zip, got %d %q", wpZipResp.StatusCode, wpZipResp.Header.Get("Content-Type"))
+	}
+	if !strings.Contains(wpZipResp.Header.Get("Content-Disposition"), "lovelace-booking-meadowbrook-coastal-glamping.zip") {
+		t.Fatalf("unexpected Content-Disposition: %q", wpZipResp.Header.Get("Content-Disposition"))
+	}
+	wpZr, err := zip.NewReader(bytes.NewReader(wpZipBytes), int64(len(wpZipBytes)))
+	if err != nil {
+		t.Fatalf("zip.NewReader(wpZipBytes): %v", err)
+	}
+	foundDefaults := false
+	for _, zf := range wpZr.File {
+		if zf.Name == "lovelace-booking/includes/bundled-defaults.php" {
+			foundDefaults = true
+			rc, _ := zf.Open()
+			rawPHP, _ := io.ReadAll(rc)
+			_ = rc.Close()
+			phpText := string(rawPHP)
+			if !strings.Contains(phpText, "'http://127.0.0.1:3000'") || !strings.Contains(phpText, "'meadowbrook-coastal-glamping'") {
+				t.Fatalf("expected pre-configured origin & slug inside bundled-defaults.php, got:\n%s", phpText)
+			}
+		}
+	}
+	if !foundDefaults {
+		t.Fatalf("lovelace-booking/includes/bundled-defaults.php missing from WordPress plugin .zip")
+	}
 	freshCamp, _ := store.GetPropertyByID(ctx, nil, campProp.ID)
 	_, _ = postForm(followClient, "/property", url.Values{
 		"csrf_token":     {csrf},

@@ -343,6 +343,21 @@
   {{end}}
 
   <div class="embed-option-grid">
+    <div class="embed-option-card" id="wordpress-plugin">
+      <div class="ops-section-head">
+        <div>
+          <h3>Official WordPress Plugin (.zip — Pre-Configured for {{.Property.Name}})</h3>
+          <p class="field-hint">Running WordPress (Gutenberg, Elementor, Divi, or Classic Editor)? Upload this official plugin in <strong>WordPress → Plugins → Add New → Upload Plugin</strong>. Your Booking URL, Property Slug (<code>{{.EmbedSnippets.PropertySlug}}</code>), and verified brand colours come pre-filled — no API keys or guest PII are stored in WordPress.</p>
+        </div>
+        <div class="days-row">
+          <a href="/property/wordpress-plugin.zip?property_id={{.Property.ID}}" class="btn btn-primary btn-sm">Download WordPress Plugin (.zip)</a>
+        </div>
+      </div>
+      <div class="field-hint">
+        Includes 4 Gutenberg blocks &amp; shortcodes: <code>[lovelace_booking]</code> (full booking section), <code>[lovelace_search]</code> (availability bar), <code>[lovelace_book_button]</code> (modal &ldquo;Book Direct&rdquo; button), and <code>[lovelace_accommodation]</code> (SEO accommodation cards).
+      </div>
+    </div>
+
     <div class="embed-option-card">
       <div class="ops-section-head">
         <div>
