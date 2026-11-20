@@ -10,6 +10,7 @@ Lovelace is an open, security-hardened multi-property booking and operations pla
 
 | Guide | What It Covers |
 | :--- | :--- |
+| **[0. Property Owner's Everyday Handbook (Illustrated)](owner-handbook/README.md)** | **Start here for non-technical hospitality owners:** Plain-English, jargon-free step-by-step instructions with annotated screenshots for daily arrivals, phone bookings, blocking dates, seasonal prices, WordPress/website embeds, larger text settings, and safety backups. |
 | **[1. Local & Self-Hosted Server Guide](guides/01-local-and-self-hosted-server.md)** | 2-minute local Docker evaluation (`docker-compose.dev.yml`), production Ubuntu/Debian Linux deployment (`docker-compose.yml`), automatic HTTPS with **Caddy** or **Nginx**, firewall rules, and bare-metal `systemd` setup. |
 | **[2. Cloud Deployment Guide (AWS, GCP & Azure)](guides/02-cloud-deployments-aws-gcp-azure.md)** | Production architectures and step-by-step commands for **AWS** (ECS Fargate + RDS PostgreSQL 17 + EFS + S3), **Google Cloud** (Cloud Run + Cloud SQL + Filestore/GCS), and **Microsoft Azure** (Container Apps + Flexible Server + Azure Files/Blob). |
 | **[3. Railway & PaaS Deployment Guide](guides/03-railway-and-paas-deployment.md)** | Deploying Lovelace on **Railway** (plus notes for **Fly.io** and **Render**) using private IPv6 service networking, persistent volumes, least-privilege DB roles, and custom HTTPS domains. |
