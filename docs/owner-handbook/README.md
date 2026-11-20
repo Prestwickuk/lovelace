@@ -18,6 +18,7 @@ Welcome! This handbook is written in plain English — with zero technical jargo
 8. [Checking or Changing Seasonal & Weekend Prices](#task-8-checking-or-changing-seasonal--weekend-prices)
 9. [Putting Your Booking Box onto Your Own Website (or WordPress)](#task-9-putting-your-booking-box-onto-your-own-website-or-wordpress)
 10. [Saving a Safety Copy (Backup) of All Your Bookings](#task-10-saving-a-safety-copy-backup-of-all-your-bookings)
+11. ["Don't Panic!" — Quick Fixes When Something Goes Wrong](#dont-panic--quick-fixes-when-something-goes-wrong)
 
 ---
 
@@ -187,3 +188,46 @@ For complete peace of mind, we recommend downloading a safety copy of your booki
 - **Switching between multiple properties:** If you look after more than one cottage or site, use the property selector right underneath the **LOVELACE** badge at the top-left of the screen to switch between them.
 - **Online card payments stay safely off until you are ready:** Guests cannot accidentally pay live card money while you are still setting up. Whenever you are ready to take live card payments with Stripe, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
 - **Signing out on a shared reception computer:** Always click **Sign out** at the bottom-left of the dark green sidebar if other people use the same computer.
+
+---
+
+## "Don't Panic!" — Quick Fixes When Something Goes Wrong
+
+Whether you run a grassy campsite, luxury glamping pods, a cosy B&B, a holiday cottage, or several properties at once, almost every mistake in Lovelace can be undone in under a minute:
+
+### 1. *"Help! I entered `140` instead of `14000` and listed a £140 stay for £1.40 a night!"*
+- **Why it happened:** On the **Rates & Preview** screen, seasonal rate rules ask for the price **in pence** (`14000` = `£140.00`).
+- **How to fix it right now:** Open **Inventory & Holds → Rates & Preview**, scroll down to your rules list, click **Archive** next to the `£1.40` rule, and add a new rule with `14000`. Use the **Tariff Preview Calculator** at the top of that page to double-check the total in `£`!
+
+### 2. *"I meant to close one pitch/room/cottage, and accidentally closed our WHOLE site all summer!"*
+- **How to fix it right now:** Open **Inventory & Holds → Bulk Blockouts**, scroll down to **Blockout Groups**, and click **Release** next to the accidental blockout. Every pitch, pod, or room reopens within one second.
+
+### 3. *"Heavy rain flooded our lower camping meadow (or we booked our own B&B holiday)!"*
+- **Campsite washout:** Move incoming campers on the **Booking Calendar** onto dry pitches first, then open **Bulk Blockouts**, tick the muddy pitches under `Selected Multiple Units`, choose **`WEATHER_CLOSURE`**, and preview & confirm.
+- **B&B owner holiday:** Open **Bulk Blockouts**, choose `All Units on Property` + **`OWNER_USE`** — Lovelace automatically warns you if any guest is already booked on those dates!
+
+### 4. *"A guest wanted Friday AND Saturday night, so I put Arrival = Friday, Departure = Saturday — and only booked 1 night!"*
+- **Why it happened:** **Departure Date** always means **the morning the guest packs up and leaves** (so Friday + Saturday night means Arrival = **Friday**, Departure = **Sunday**).
+- **How to fix it right now:** Open **Reservations**, click the guest's booking reference, and extend their departure date to Sunday (or move them to a free space if Saturday was taken). Always glance at the **`Nights`** count (`2 nights`) to be sure!
+
+### 5. *"We repaired a torn bell-tent canvas / leaking shower and marked it Completed — why is that unit STILL blocked?"*
+- **Why it happened:** Lovelace keeps `UNAVAILABLE` repairs closed until someone confirms the tent, hut, or room is clean, safe, and guest-ready! *(Tip for glamping hosts: if only an outdoor hot tub is awaiting a part while the hut itself is fine to sleep in, choose `PARTIAL` impact instead of `UNAVAILABLE`.)*
+- **How to fix it right now:** Open **Maintenance & Facilities → Maintenance**, click that repair job, and mark the **Inspection** as **PASSED**. The unit reopens automatically.
+
+### 6. *"Why did Lovelace quote £280 just to bring one dog to our campsite?!"*
+- **Why it happened:** When setting up your **Dog Fee (£10)** in **Extras & Add-ons**, the billing type was set to *per person per night* instead of **once per stay (`per_stay`)** or **per night (`per_night`)**!
+- **How to fix it right now:** Open **Inventory & Holds → Extras & Add-ons** and change its billing model to `per_stay` or `per_night`.
+
+### 7. *"I run more than one property — and I just edited prices (or copied website code) while on the WRONG property!"*
+- **How to fix wrong edits:** Open **Settings → Audit Log** — it shows your exact previous numbers (`before_state`) so you can copy them straight back! Then use the **Switch** dropdown at the top-left of the dark green sidebar to pick the right property. *(Tip: give each property its own distinct brand colour in **Site Settings** so you can tell them apart at a glance!)*
+- **How to fix the wrong website booking box:** Switch to the right property in the top-left corner first, check the blue **`Property: ...`** badge in **Site Settings → Website Booking Section**, and re-copy the code (or update **Property Slug** in WordPress **Settings → Lovelace Booking**).
+
+### 8. *"Guests keep ringing to say our website says 'Online Card Checkout Unavailable'!"*
+- **Why it happened:** New properties start with live card payments switched **off** for safety until you turn them on.
+- **How to fix it right now:** Once your Stripe account is connected, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
+
+### 9. *"I typed the wrong password too many times and got locked out (or lost my 8 recovery codes)!"*
+- **If you typed wrong passwords 8 times:** Wait **15 minutes** with a cup of tea — the safety lock clears automatically after 15 minutes.
+- **If another owner/partner has an Owner Admin login:** Ask them to sign in, go to **Settings → Admin Users**, and give you a temporary password.
+- **If you are the only owner and lost both your password AND your 8 recovery codes:** Ask the person who looks after your server/hosting to follow **Catastrophe 2** in the [Deep Troubleshooting & Hospitality Catastrophe Playbook](../guides/05-troubleshooting-and-disaster-recovery.md#catastrophe-2-the-total-owner-lockout-lost-password--lost-recovery-codes--rate-limited) — they can issue you a fresh temporary password in 60 seconds without losing a single booking!
+
