@@ -18,6 +18,7 @@ Welcome! This handbook is written in plain English — with zero technical jargo
 8. [Checking or Changing Seasonal & Weekend Prices](#task-8-checking-or-changing-seasonal--weekend-prices)
 9. [Putting Your Booking Box onto Your Own Website (or WordPress)](#task-9-putting-your-booking-box-onto-your-own-website-or-wordpress)
 10. [Saving a Safety Copy (Backup) of All Your Bookings](#task-10-saving-a-safety-copy-backup-of-all-your-bookings)
+11. ["Don't Panic!" — Quick Fixes When Something Goes Wrong](#dont-panic--quick-fixes-when-something-goes-wrong)
 
 ---
 
@@ -187,3 +188,34 @@ For complete peace of mind, we recommend downloading a safety copy of your booki
 - **Switching between multiple properties:** If you look after more than one cottage or site, use the property selector right underneath the **LOVELACE** badge at the top-left of the screen to switch between them.
 - **Online card payments stay safely off until you are ready:** Guests cannot accidentally pay live card money while you are still setting up. Whenever you are ready to take live card payments with Stripe, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
 - **Signing out on a shared reception computer:** Always click **Sign out** at the bottom-left of the dark green sidebar if other people use the same computer.
+
+---
+
+## "Don't Panic!" — Quick Fixes When Something Goes Wrong
+
+Even on a busy Friday afternoon with the phone ringing, almost every mistake in Lovelace can be undone in under a minute:
+
+### 1. *"Help! I entered `140` instead of `14000` and listed our £140 room for £1.40 a night!"*
+- **Why it happened:** On the **Rates & Preview** screen, seasonal rate rules ask for the price **in pence** (`14000` = `£140.00`).
+- **How to fix it right now:** Open **Inventory & Holds → Rates & Preview**, scroll down to your rules list, click **Archive** next to the `£1.40` rule, and add a new rule with `14000`. Use the **Tariff Preview Calculator** at the top of that page to double-check the total in `£`!
+
+### 2. *"I meant to close Room 2 for decorating, and accidentally closed our WHOLE hotel all summer!"*
+- **How to fix it right now:** Open **Inventory & Holds → Bulk Blockouts**, scroll down to **Blockout Groups**, and click **Release** next to the accidental blockout. Every room will be open for bookings again within one second.
+
+### 3. *"A guest wanted Friday AND Saturday night, so I put Arrival = Friday, Departure = Saturday — and only booked 1 night!"*
+- **Why it happened:** **Departure Date** always means **the morning the guest checks out and goes home** (so Friday + Saturday night means Arrival = **Friday**, Departure = **Sunday**).
+- **How to fix it right now:** Open **Reservations**, click the guest's booking reference, and extend their departure date to Sunday (or move them to a free room if Saturday was taken). Always glance at the **`Nights`** count (`2 nights`) to be sure!
+
+### 4. *"The plumber finished fixing the shower and marked the job Completed, so why is that room STILL blocked?"*
+- **Why it happened:** Lovelace keeps repaired rooms closed until someone checks that the room is clean and ready for guests!
+- **How to fix it right now:** Open **Maintenance & Facilities → Maintenance**, click that repair job, and mark the **Inspection** as **PASSED**. The room reopens automatically.
+
+### 5. *"Guests keep ringing to say our website says 'Online Card Checkout Unavailable'!"*
+- **Why it happened:** New properties start with live card payments switched **off** for safety until you turn them on.
+- **How to fix it right now:** Once your Stripe account is connected, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
+
+### 6. *"I typed the wrong password too many times and now it won't let me sign in (or I lost my 8 recovery codes)!"*
+- **If you typed wrong passwords 8 times:** Wait **15 minutes** with a cup of tea — the safety lock clears automatically after 15 minutes.
+- **If another owner/partner has an Owner Admin login:** Ask them to sign in, go to **Settings → Admin Users**, and give you a temporary password.
+- **If you are the only owner and lost both your password AND your 8 recovery codes:** Ask the person who looks after your server/hosting to follow **Catastrophe 2** in the [Deep Troubleshooting & Catastrophe Playbook](../guides/05-troubleshooting-and-disaster-recovery.md#catastrophe-2-the-total-owner-lockout) — they can issue you a fresh temporary password in 60 seconds without losing a single booking!
+
