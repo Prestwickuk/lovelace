@@ -1,15 +1,15 @@
-# Guide 5: Deep Troubleshooting & The "Hotel Owner Catastrophe" Playbook
+# Guide 5: Deep Troubleshooting & The Hospitality Catastrophe Playbook
 
 This runbook has two halves:
 
 - **Part I — Infrastructure & Deployment Troubleshooting:** Deep technical diagnostics and exact fixes for **1) Local & Self-Hosted Linux Servers**, **2) AWS, Google Cloud (GCP) & Microsoft Azure**, and **3) Railway & PaaS Platforms**.
-- **Part II — The "Friday Night at Reception" Catastrophe Playbook:** 14 realistic ways a busy, non-technical hotel, B&B, cottage, or campsite owner can accidentally "break" their setup, lock themselves out, misprice their suites at £1.50 a night, or close their hotel for August — and **how to fix every single one in minutes without losing data**.
+- **Part II — The Hospitality Catastrophe Playbook (21 Real-World Disasters & Rescues):** Every realistic way a busy owner or helper can accidentally break their setup across **any property**, plus dedicated disaster rescues for **Campsites & Holiday Parks**, **Glamping Retreats**, **B&Bs & Guesthouses**, and **Multi-Site Portfolio Operators**.
 
 ---
 
 ## Rapid 60-Second Triage (Start Here First)
 
-Before changing any configuration, check these three health probes to pinpoint which layer is unhappy:
+Before changing any configuration, check these four probes to pinpoint which layer is unhappy:
 
 ```bash
 # 1. Is the Go Admin/Backend process alive? (Should return 200 OK)
@@ -27,10 +27,10 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
 
 | Probe Result | Root Layer | Jump To |
 | :--- | :--- | :--- |
-| `/healthz` connection refused / `502 Bad Gateway` | `lovelace-app` exited at startup (fail-closed config guard) or proxy port mismatch | Sections 1.1–1.4, 2.5, 3.1 |
-| `/healthz` `200`, `/readyz` `503` | Database role/migration mismatch, missing `TIRBACH_PUBLIC_API_SECRET`, or `TIRBACH_REQUIRE_EMAIL=true` without SMTP | Sections 1.2–1.3, 2.1 |
-| `/api/healthz` `200`, `/api/public/catalog` `502`/`401`/`500` | `LOVELACE_API_BASE_URL` unreachable (e.g. IPv6 binding) or `LOVELACE_PUBLIC_API_SECRET` mismatch | Sections 2.1, 3.1 |
-| All 4 probes `200 OK`, but bookings/prices/logins look wrong | Operational / configuration mistake inside the Admin Console | **Part II (Catastrophes 1–14)** |
+| `/healthz` connection refused / `502 Bad Gateway` | `lovelace-app` exited at startup (fail-closed config guard) or proxy port mismatch | Part I, Sections 1.1–1.4, 2.5, 3.1 |
+| `/healthz` `200`, `/readyz` `503` | Database role/migration mismatch, missing `TIRBACH_PUBLIC_API_SECRET`, or `TIRBACH_REQUIRE_EMAIL=true` without SMTP | Part I, Sections 1.2–1.3, 2.1 |
+| `/api/healthz` `200`, `/api/public/catalog` `502`/`401`/`500` | `LOVELACE_API_BASE_URL` unreachable (e.g. IPv6 binding) or `LOVELACE_PUBLIC_API_SECRET` mismatch | Part I, Sections 2.1, 3.1 |
+| All 4 probes `200 OK`, but bookings/prices/logins/sites look wrong | Operational or configuration mistake inside the Admin Console | **Part II (Catastrophes 1–21)** |
 
 ---
 
@@ -80,7 +80,7 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
   1. You are visiting `http://` instead of `https://` while `TIRBACH_COOKIE_SECURE=true` (browser refuses to store/send the `Secure` cookie).
   2. Your Nginx/Apache/Cloudflare proxy is stripping the `Origin` header or rewriting `Host` (`Host` must match `Origin` for Lovelace's pre-session Login CSRF guard). Ensure `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Proto https;` are set.
 - **`413 Request Entity Too Large` when uploading a backup `.zip` or high-res property logo:**
-  - Nginx defaults `client_max_body_size` to `1m`! Set `client_max_body_size 52m;` on your Nginx admin `server` block (or `request_body { max_size 52MB }` in Caddy) so 48 MiB backup archives upload cleanly.
+  - Nginx defaults `client_max_body_size` to `1m`. Set `client_max_body_size 52m;` on your Nginx admin `server` block (or `request_body { max_size 52MB }` in Caddy) so 48 MiB backup archives upload cleanly.
 - **Stripe Webhooks Returning `400` Signature Verification Errors:**
   - A proxy/WAF or JSON-formatting middleware modified whitespace in the POST body to `/api/webhooks/stripe`. Stripe's `Stripe-Signature` HMAC is computed over the exact raw bytes — pass `/api/webhooks/stripe` straight through unmodified.
 
@@ -115,8 +115,7 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
     az postgres flexible-server parameter set -g <RG> -s <SERVER> --name azure.extensions --value "PGCRYPTO,BTREE_GIST"
     ```
 - **`ERROR: permission denied for table ...` as `lovelace_app` after a Manual Migration:**
-  - **Why:** If new tables were created outside `docker-compose.yml` without re-running `ensure-roles.sh`, `lovelace_app` may lack `SELECT, INSERT, UPDATE, DELETE` on the newly added table.
-  - **Fix:** Run `./scripts/postgres/ensure-roles.sh` once after running `tirbach-migrate` — it is 100% idempotent and grants strict DML-only access across all tables, views, and sequences.
+  - **Fix:** Run `./scripts/postgres/ensure-roles.sh` once after running `tirbach-migrate` — it is 100% idempotent and grants strict DML-only access across all newly created tables, views, and sequences.
 
 ### 2.2 GCP Cloud Run: Basket Holds Never Expire, Emails Stay Stuck in `PENDING`, Nightly Backups Never Run
 - **Symptom:** HTTP pages load fast, but 15-minute checkout holds stay stuck past expiry, confirmation emails sit in the outbox until someone clicks a page, and scheduled 24-hour S3/GCS backups never trigger overnight.
@@ -154,9 +153,8 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
 ## 3. Railway (and Container PaaS Platforms: Fly.io & Render)
 
 ### 3.1 `public-web` Shows *"Unable to connect to the reservation system right now"* on Railway
-- **Symptom:** Both `lovelace-app` and `lovelace-public-web` show green `SUCCESS` deployments in Railway, `/readyz` on `lovelace-app` returns `200 OK`, yet opening the public booking site fails to load accommodation!
 - **Root Cause (3 common culprits on Railway):**
-  1. **IPv4-only bind on an IPv6 private network:** Railway's `.railway.internal` private DNS resolves to IPv6 (`fd12::/16`) addresses! If `TIRBACH_LISTEN_ADDR` on `lovelace-app` was set to `0.0.0.0:8080` instead of `:8080`, Go listens on IPv4 only and refuses internal IPv6 connections from `lovelace-public-web`! Similarly, `lovelace-public-web` needs `HOSTNAME=::`.
+  1. **IPv4-only bind on an IPv6 private network:** Railway's `.railway.internal` private DNS resolves to IPv6 (`fd12::/16`) addresses. If `TIRBACH_LISTEN_ADDR` on `lovelace-app` was set to `0.0.0.0:8080` instead of `:8080`, Go listens on IPv4 only and refuses internal IPv6 connections from `lovelace-public-web`! Similarly, `lovelace-public-web` needs `HOSTNAME=::`.
   2. **Secret mismatch:** `LOVELACE_PUBLIC_API_SECRET` on `lovelace-public-web` does not match `TIRBACH_PUBLIC_API_SECRET` on `lovelace-app` (or has an accidental trailing newline).
   3. **Default slug mismatch:** `LOVELACE_PROPERTY_SLUG` on `lovelace-public-web` is still set to `tir-bach`, whereas you named your property `orchard-cottages` in the Setup Wizard!
 - **Fix:**
@@ -165,10 +163,7 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
   3. Include `100.64.0.0/10,fd12::/16` in both `TIRBACH_TRUSTED_PROXIES` and `LOVELACE_TRUSTED_PROXIES`.
 
 ### 3.2 Railway CLI Fails with `prefix not found` or Deploys the Wrong Dockerfile to `public-web`
-- **Symptom:** Running `railway up .` fails with `prefix not found`, or deploying `lovelace-public-web` builds the Go backend instead of the Next.js frontend!
-- **Root Cause:**
-  1. `railway up` matches your current working directory's real path (`realpath`) against `~/.railway/config.json` (on macOS, `/tmp` is a symlink to `/private/tmp`).
-  2. Deploying `public-web` without `--path-as-root` uploads the repo root `Dockerfile` instead of `apps/public-web/Dockerfile`.
+- **Root Cause:** `railway up` matches your current working directory's real path (`realpath`) against `~/.railway/config.json` (on macOS, `/tmp` is a symlink to `/private/tmp`), and deploying `public-web` without `--path-as-root` uploads the repo root `Dockerfile` instead of `apps/public-web/Dockerfile`.
 - **Fix:**
   ```bash
   cd "$(pwd -P)"
@@ -177,50 +172,53 @@ Inspect `docker logs tir-bach-app` (or `journalctl -u lovelace-app -n 50`). Love
   railway up apps/public-web --path-as-root --service lovelace-public-web --environment production --detach
   ```
 
-### 3.3 Railway Monthly Spend Limit Reached Mid-Month or Forgotten Public TCP Proxy
+### 3.3 Railway Spend Limit Reached Mid-Month or Forgotten Public TCP Proxy
 - **Spend Cap:** If services pause because the workspace hit a low trial/hard spend limit, raise the workspace usage cap in **Railway → Workspace → Billing / Usage** and redeploy/wake the service — persistent volumes (`pg17` and `attachments`) remain intact.
 - **Security Check:** Verify in **Railway → `lovelace-pg17` → Settings → Networking** that **no TCP Proxy** is left enabled after running initial migrations — `lovelace-pg17` should only show its `.railway.internal` private hostname.
 
 ---
 
-# Part II: The "Hotel Owner Catastrophe" Playbook (14 Real-World Disasters & Rescues)
+# Part II: The Hospitality Catastrophe Playbook (21 Real-World Disasters & Rescues)
 
-Hospitality owners are busy welcoming guests, cooking breakfast, and dealing with muddy boots — not reading software manuals. Here is every realistic way an owner or receptionist can accidentally cause chaos in Lovelace, and how to fix each one calmly.
+Hospitality owners are busy welcoming tired travellers, cooking fry-ups, unblocking drains, and rescuing tents in the rain — not reading software manuals. Below are **21 realistic disasters** across every type of hospitality business, along with how to rescue each one calmly without losing data:
+
+- **Section A (Scenarios 1–10):** Universal Mistakes That Can Happen at Any Property
+- **Section B (Scenarios 11–13):** Campsite, Touring & Holiday Park Catastrophes
+- **Section C (Scenarios 14–15):** Glamping, Bell Tent, Yurt & Hot-Tub Retreat Catastrophes
+- **Section D (Scenarios 16–17):** B&B, Guesthouse & Small Inn Catastrophes
+- **Section E (Scenarios 18–21):** Multi-Site & Portfolio Owner Catastrophes
 
 ---
 
-## Catastrophe 1: The Pence-vs-Pounds Pricing Disaster
-> *"Help! I tried to set our £140/night Sea View Room for August, typed `140` into the Seasonal Rate Rule box, and someone just booked 4 nights in August for £5.60 total!! (Or I typed `14000` in the Setup Wizard and our room is listed at £14,000 a night!)"*
+## Section A: Universal Owner & Reception Disasters (Scenarios 1–10)
+
+### Catastrophe 1: The Pence-vs-Pounds Pricing Disaster
+> *"Help! I tried to set our £140/night summer tariff, typed `140` into the Seasonal Rate Rule box, and someone just booked 4 nights in August for £5.60 total!! (Or I typed `14000` in the Setup Wizard and listed our cottage at £14,000 a night!)"*
 
 - **Why It Happened:**
   - In the **Guided Setup Wizard (`/onboarding`)**, money boxes take pounds & pence with a decimal point (e.g. `140.00`).
-  - In the advanced **Inventory & Holds → Rates & Preview (`/rates`) → Add Seasonal / Weekend Rate Rule** form, the field is labelled **Nightly Rate (pence)** (so `£140.00` is `14000`, whereas `140` means `£1.40`!).
-- **Immediate 60-Second Fix in the Browser:**
-  1. Go to **Inventory & Holds → Rates & Preview (`/rates`)**.
-  2. Scroll down to the **Active Rate Rules** table, find the `£1.40` (or `£14,000`) rule, and click **Archive** right next to it.
-  3. Create a fresh rule with `14000` (for `£140.00`), then test those August dates in the **Tariff Preview Calculator** at the top of `/rates` to see the exact night-by-night price in `£` before walking away!
-  4. If a guest already booked at `£1.40/night`, open **Reservations**, click their booking reference, contact them politely, and cancel/refund or adjust as appropriate under your booking terms.
+  - In **Inventory & Holds → Rates & Preview (`/rates`) → Add Seasonal / Weekend Rate Rule**, the field is labelled **Nightly Rate (pence)** (`14000` = `£140.00`, whereas `140` = `£1.40`!).
+- **Immediate 60-Second Fix:**
+  1. Go to **Inventory & Holds → Rates & Preview (`/rates`)**, find the `£1.40` (or `£14,000`) rule, and click **Archive**.
+  2. Add a new rule with `14000` (`£140.00`), then test those dates in the **Tariff Preview Calculator** at the top of `/rates` to confirm the exact `£` total.
+  3. If someone already booked at `£1.40/night`, open **Reservations**, click their booking reference, contact them politely, and cancel/refund or rebook under your booking terms.
 
 ---
 
-## Catastrophe 2: The Total Owner Lockout
-> *"I forgot my password, I lost the piece of paper with my 8 recovery codes during spring cleaning, AND I guessed my password 10 times in a row so now Lovelace won't even let me try!"*
+### Catastrophe 2: The Total Owner Lockout (Lost Password + Lost Recovery Codes + Rate-Limited)
+> *"I forgot my password, threw away the envelope with my 8 recovery codes during spring cleaning, AND guessed wrong 10 times so now Lovelace won't even let me try!"*
 
-- **Why It Happened:**
-  - After `8` failed sign-in attempts for an email (or `20` from one IP) within `15` minutes, Lovelace temporarily rate-limits login attempts to stop hackers guessing passwords.
-  - Because passwords and recovery codes are one-way cryptographically hashed in PostgreSQL, nobody can "read" the old password out of a file — and restarting the server with `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` intentionally **will not** overwrite an existing database with accounts in it!
-- **Rescue Path A — If a Spouse / Co-Owner Also Has an `owner_admin` Login:**
-  1. Have them sign in on their account → **Settings → Admin Users (`/users`)**.
-  2. Find your account and use **Reset Password** to set a temporary 12-character password for you.
-  3. Wait 15 minutes for the failed-attempt cooldown to clear, sign in with that temporary password, set your new password, and **print/download your new 8 recovery codes**!
+- **Why It Happened:** After `8` failed attempts for an email within `15` minutes, Lovelace rate-limits sign-in attempts. Passwords and recovery codes are one-way hashed in PostgreSQL, and restarting with `TIRBACH_BOOTSTRAP_ADMIN_PASSWORD` intentionally refuses to overwrite existing accounts.
+- **Rescue Path A — If a Partner / Co-Owner Also Has an `owner_admin` Login:**
+  1. Have them sign in → **Settings → Admin Users (`/users`)** → issue a temporary 12-character password for your account.
+  2. Wait 15 minutes for the failed-attempt cooldown to clear, sign in, set your new password, and **download/print your new 8 recovery codes**!
 - **Rescue Path B — Break-Glass Server Rescue (When You Are the ONLY `owner_admin`):**
-  Have your IT helper / server administrator run this safe break-glass reset against PostgreSQL (works on Docker Compose, Cloud, or Railway without touching any bookings or properties!):
+  Have your IT/hosting helper run this safe break-glass reset (preserves 100% of bookings, guests, and settings):
   ```bash
-  # 1. Clear the 15-minute failed-login cooldown for your email:
+  # 1. Clear the 15-minute failed-login cooldown:
   psql "$DATABASE_URL" -c "DELETE FROM login_attempts WHERE LOWER(email) = LOWER('you@yourdomain.com');"
 
-  # 2. Generate a valid Argon2id hash for a temporary password using Lovelace's own auth package
-  #    and set must_rotate_password = TRUE on your account:
+  # 2. Set an Argon2id-hashed temporary password with must_rotate_password = TRUE:
   go run -C /opt/lovelace /dev/stdin <<'EOF'
   package main
   import (
@@ -246,165 +244,188 @@ Hospitality owners are busy welcoming guests, cooking breakfast, and dealing wit
       if err != nil || tag.RowsAffected() == 0 {
           panic(fmt.Sprintf("update failed (rows=%d, err=%v)", tag.RowsAffected(), err))
       }
-      fmt.Println("Emergency temporary password set! Sign in now to rotate and generate 8 new recovery codes.")
+      fmt.Println("Emergency temporary password set! Sign in now to rotate and save 8 new recovery codes.")
   }
   EOF
   ```
 
 ---
 
-## Catastrophe 3: The Accidental Whole-Hotel Summer Blockout
-> *"I wanted to close Room 3 for two nights to repaint the ceiling, accidentally left `Target Scope` on `All Units on Property` for 1st July to 1st September, and now our entire hotel shows NO AVAILABILITY all summer!"*
+### Catastrophe 3: The Accidental Whole-Property Summer Blockout
+> *"I meant to close one unit for two days of repairs, left `Target Scope` on `All Units on Property` for July–September, and now our website says SOLD OUT all summer!"*
 
-- **Immediate 30-Second Fix in the Browser:**
-  1. Open **Inventory & Holds → Bulk Blockouts (`/blocks`)** in the left-hand menu.
-  2. Scroll down to **Blockout Groups** — you will see your `PROPERTY` blockout right at the top with the reason you typed.
-  3. Click **Release** (or expand it to release every room except Room 3!).
-  4. Every room is back on sale immediately — zero bookings were harmed.
+- **Immediate 30-Second Fix:** Open **Inventory & Holds → Bulk Blockouts (`/blocks`)**, scroll down to **Blockout Groups**, and click **Release** next to that blockout (or release every unit except the one being repaired). Availability returns online within 1 second.
 
 ---
 
-## Catastrophe 4: The Check-Out Date Off-By-One Trap
-> *"Mr. Evans phoned to book Friday night AND Saturday night (2 nights). I put Arrival = Friday 14th and Departure = Saturday 15th. Now Mrs. Patel booked Saturday 15th online and both families want the same cottage on Saturday night!"*
+### Catastrophe 4: The Check-Out Date Off-By-One Trap
+> *"Mr. Evans phoned to book Friday night AND Saturday night (2 nights). I put Arrival = Friday 14th and Departure = Saturday 15th. Now Mrs. Patel booked Saturday 15th online and both families want the same space on Saturday night!"*
 
-- **Why It Happened:** In all hotel systems, **Departure Date** is the **morning the guest hands back the keys and leaves** (so a Friday + Saturday stay is Arrival `Friday 14th` → Departure `Sunday 16th`).
+- **Why It Happened:** **Departure Date** always means **the morning the guest packs up and leaves** (Friday + Saturday night = Arrival `Friday 14th`, Departure `Sunday 16th`).
+- **Immediate Fix:** Check **Booking Calendar (`/calendar`)** for another free pitch/room/cottage of the same or upgraded category on Saturday 15th, reassign one of the two bookings onto the free unit so Mr. Evans has `Friday 14th → Sunday 16th`, and always glance at the **`Nights`** counter (`2 nights`) right after creating a phone booking.
+
+---
+
+### Catastrophe 5: The "Tidy-Up" Archive Spree
+> *"I didn't like how our unit codes looked, so I went into `Units & Pitches` and clicked **Archive** on all of them. Now our website says `No accommodation available` for the entire year!"*
+
+- **Why It Happened:** **Unit Types** define the category and tariff, while **Units & Pitches** are the physical spaces guests actually stay in. Zero active physical units = zero bookable availability!
+- **Immediate Fix:** Open **Inventory & Holds → Units & Pitches (`/units`)** (or **Settings → Setup Wizard → Step 2**) to add active units — or have an admin un-archive the exact original rows (`UPDATE units SET archived_at = NULL, status = 'active', version = version + 1 WHERE property_id = '<UUID>' AND archived_at IS NOT NULL;`).
+
+---
+
+### Catastrophe 6: The "Three Weeks, Zero Online Card Bookings" Mystery
+> *"I put the booking box onto our website three weeks ago, and callers keep saying our website says `Online Card Checkout Unavailable`!"*
+
+- **Why It Happened:** Every new property starts in **Safe Dark-by-Default Mode** (`Enable Public Online Checkout (Stripe)` is **unticked** in **Site Settings**).
+- **Immediate Fix:** Once live `sk_live_...` and `whsec_...` (`https://<ADMIN_DOMAIN>/api/webhooks/stripe`) keys are configured, go to **Settings → Site Settings (`/property`)**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**. Also check **Payment Exceptions (`/payment-exceptions`)** if a guest ever paid right as their 15-minute hold expired.
+
+---
+
+### Catastrophe 7: Clicking "Anonymise Guest (GDPR)" Instead of "Cancel Booking"
+> *"A guest rang to cancel next month's stay, and instead of cancelling their reservation, I went into `Guest Directory` and tried to click `Anonymise Guest`!"*
+
+- **Built-In Safety Net:** Lovelace **blocks** anonymisation whenever a guest has any active or upcoming reservation (`PENDING`, `CONFIRMED`, or `CHECKED_IN`)! To cancel a stay, always open **Reservations (`/reservations`) → click the booking reference → Cancel Reservation**.
+
+---
+
+### Catastrophe 8: Merging Two Different "David Jones" Guests Together
+> *"We have two guests named David Jones — one is a lovely regular, and one broke house rules last summer — and I merged them in `Duplicate Merge Review`!"*
+
+- **Immediate Fix:** Open **Guests & Comms → Guest Directory (`/guests`)**, clarify both email addresses/phone numbers inside **Internal Staff Notes**, and in future click **Dismiss (Not Same Person)** on `/guests/merge` whenever two guests merely share a common surname.
+
+---
+
+### Catastrophe 9: "Backup Restore Refused — Environment Is Not Empty!"
+> *"Our old server died! I booted a new Lovelace server, clicked through Step 1 of the Setup Wizard to test it, and now `/settings/backups` refuses to restore last Sunday's `.zip` backup!"*
+
+- **Why It Happened:** Lovelace refuses to overwrite any database that already has properties or bookings (`properties > 0`) so nobody accidentally wipes a live business with an old backup! Clicking Step 1 of `/onboarding` created `1` property.
+- **Immediate Fix:** Start the replacement server with `0` properties (`1` bootstrapped `owner_admin` only), go **straight** to **Settings → Backups & Cloud Sync (`/settings/backups`)** *before* touching `/onboarding`, and upload your `.zip` / `.zip.enc` archive. *(Note: Even if you lost `TIRBACH_ENCRYPTION_KEY`, 100% of bookings, guests, rooms, prices, and photos restore cleanly — you only re-type external OTA and cloud-bucket API keys once.)*
+
+---
+
+### Catastrophe 10: Guests Are Booking Fine, But Confirmation Emails Aren't Arriving
+> *"Guests appear on our Booking Calendar, yet three people phoned today saying they haven't received a confirmation email!"*
+
+- **Why It Happened:** Lovelace records every booking first and queues emails safely in `email_outbox` so an SMTP hiccup never loses a reservation. Usually `TIRBACH_SMTP_ADDR` / API key / domain SPF-DKIM needs attention.
+- **Immediate Fix:** Check `failed emails` on **Operations Centre (`/`)**, inspect **Guests & Comms → Templates & Automation (`/communications/settings`)**, and verify `TIRBACH_SMTP_*` + verified `TIRBACH_EMAIL_FROM`.
+
+---
+
+## Section B: Campsite, Touring & Holiday Park Catastrophes (Scenarios 11–13)
+
+### Catastrophe 11: The Overnight Flash-Flood / Waterlogged Lower Meadow
+> *"45mm of rain fell overnight! Grass Pitches 1 to 10 by the stream are ankle-deep in mud, and 8 families in heavy campervans are already driving down the motorway for Friday check-in!"*
+
+- **Step-by-Step Campsite Rescue:**
+  1. Open **Booking Calendar (`/calendar`)** and identify which higher-ground / gravel / hardstanding pitches are `Open` for this weekend.
+  2. Reassign the incoming campervans off `MP-01`..`MP-10` onto dry pitches (or contact any overflow guests before they arrive).
+  3. Open **Inventory & Holds → Bulk Blockouts (`/blocks`)** → choose **`Selected Multiple Units`**, tick `MP-01`..`MP-10`, select category **`WEATHER_CLOSURE`**, set today → expected dry-out date, and click **Preview Affected Inventory & Conflicts**. Lovelace immediately flags if *any* guest booking is still sitting on one of those muddy pitches so nobody is forgotten at the gate!
+  4. Once dry weather returns, click **Release** on that blockout group (or release pitches one by one as the grass firms up).
+
+---
+
+### Catastrophe 12: The Premature Next-Season Stampede (or Forgotten Scheduled Release!)
+> **Variant A:** *"I set up our pitches in October before deciding next year's August Bank Holiday prices — and regulars just booked all 15 Electric Hook-Up pitches for August next year at winter £22/night base rates!"*  
+> **Variant B:** *"It's 1st March, campers are phoning saying next summer shows Completely Unavailable, and I forgot I set a Scheduled Release hold back in autumn!"*
+
+- **How to Prevent Variant A (Season Hold):** Use **Inventory & Holds → Scheduled Releases (`/releases`)** to hold next year's summer dates in **`UNRELEASED`** state until you have entered next year's Bank Holiday & school-holiday rate rules on `/rates` — or set your `Base Nightly Rate` to your *mid/high-season* rate rather than your cheapest winter rate!
+- **How to Fix Variant B in 10 Seconds:** Open **Inventory & Holds → Scheduled Releases (`/releases`)** (or look for purple `UNRELEASED` cells on **Booking Calendar**) and click **Release Now** to open the season immediately!
+
+---
+
+### Catastrophe 13: The £280 Dog Fee & 8-Metre Twin-Axle Caravan on a Small Tent Pitch
+> *"A couple with 2 children booked 7 nights with 1 dog — why did Lovelace quote them £280 just for the dog?! And yesterday someone booked an 8-metre caravan onto a tiny walk-in backpacker tent pitch!"*
+
+- **Why the £280 Dog Fee Happened:**
+  - When creating the **Dog Stay (£10)** add-on in **Inventory & Holds → Extras & Add-ons (`/extras`)**, the **Pricing Model** was set to `per_person_per_night` (`4` people × `7` nights × `£10` = `£280`!) instead of **`per_stay`** (`£10` flat) or **`per_night`** (`£10` × `7` = `£70`)!
+  - **Fix:** Edit the extra on `/extras` (or archive it and create a new one with `per_stay` or `per_night`).
+- **How to Stop Caravans Booking Tent Pitches:**
+  - Separate **Tent Pitches (`tent_pitch`)** and **Touring / Campervan / EHU Pitches (`touring_pitch`)** into distinct **Unit Types (`/unit-types`)**, state max vehicle/tent length clearly in the Unit Type **Description** (e.g. *"Tents only — no vehicles on grass; max 5m × 5m"*), and set accurate `Max Adults`, `Max Guests`, and `Max Pets` caps per category.
+
+---
+
+## Section C: Glamping, Yurt, Shepherd's Hut & Hot-Tub Catastrophes (Scenarios 14–15)
+
+### Catastrophe 14: Ripped Bell-Tent Canvas or Failed Wood-Fired Hot Tub on Changeover Day
+> *"A storm tore the canvas on Safari Tent 3 (unsafe to sleep in) — AND on Shepherd's Hut 1, the hut itself is fine, the repairman fixed the hot tub pump and marked the job `COMPLETED`, yet Shepherd's Hut 1 is STILL blocked from next week's bookings!"*
+
+- **Two Crucial Glamping Controls in `/maintenance`:**
+  1. **Partial vs Full Closure:** When only an outdoor amenity (like a private hot tub or fire-pit) has a minor fault while the hut itself remains safe to occupy, set **Availability Impact = `PARTIAL`** rather than `UNAVAILABLE` so future bookings aren't blocked while you call tonight's guest to offer a goodwill discount/bottle of wine. Use **`UNAVAILABLE`** for torn canvas, wood-burner flue faults, or water/power loss.
+  2. **Post-Repair Inspection Sign-Off:** Any `UNAVAILABLE` maintenance ticket stays blocked on the calendar even after the technician marks it `COMPLETED` **until you open the ticket in `/maintenance` and mark the Post-Completion Inspection as `PASSED`** (confirming canvas tension, CO alarm, and cleanliness are guest-ready)!
+
+---
+
+### Catastrophe 15: Back-to-Back 1-Night Stays Causing Hot-Tub & Linen Changeover Burnout
+> *"We left `Minimum Nights = 1` on our 4 Luxury Geodomes, and now Saturday, Sunday, Monday, and Tuesday are all separate 1-night stays — draining, scrubbing, refilling, and heating 4 wood-fired hot tubs in a 4-hour window every day is impossible!"*
+
 - **Immediate Fix:**
-  1. Check **Booking Calendar (`/calendar`)** right away to see if another room/cottage/pitch of the same (or nicer!) category is free on Saturday 15th.
-  2. If another unit is free: open **Reservations**, click either Mr. Evans's or Mrs. Patel's booking, move/rebook onto the free unit so Mr. Evans has `Friday 14th → Sunday 16th`, and drop them a quick courtesy note if their room number changed.
-  3. **Habit to prevent this forever:** Glance at the **`Nights`** counter on the booking summary right after saving — a Friday + Saturday weekend stay will always say **`2 nights`**.
+  1. Open **Inventory & Holds → Unit Types (`/unit-types`)** and change **Min Nights** from `1` to **`2`** (and use `Min Nights = 3` on Bank Holiday rate rules in `/rates`). Existing bookings stay untouched, while all new bookings must stay at least 2 nights!
+  2. Need a 1-night breathing gap right after a big group checks out? Add a 1-night **`OPERATIONAL_BUFFER`** blockout in **Bulk Blockouts (`/blocks`)**.
 
 ---
 
-## Catastrophe 5: The "Tidy-Up" Archive Spree
-> *"I didn't like how our pitch codes looked (`MP-01`..`MP-06`), so I went into `Units & Pitches` and clicked **Archive** on all of them. Now our public website says `No accommodation available` for every single date of the year!"*
+## Section D: B&B, Guesthouse & Small Inn Catastrophes (Scenarios 16–17)
 
-- **Why It Happened:**
-  - **Unit Types** (e.g. *Meadow Grass Pitch*) describe the category and price, while **Units & Pitches** (`MP-01`..`MP-06`) are the actual physical spaces guests sleep in. If `0` active physical units exist under a Unit Type, Lovelace knows you have `0` spaces to sell!
-- **Immediate Fix in the Browser:**
-  1. Open **Inventory & Holds → Units & Pitches (`/units`)** (or open **Settings → Setup Wizard → Step 2** to bulk-create a fresh batch in one click!).
-  2. Add your active rooms/pitches under that Unit Type — availability returns immediately!
-- **Optional IT Helper SQL (to un-archive the exact original units if preferred):**
-  ```sql
-  UPDATE units
-  SET archived_at = NULL, status = 'active', version = version + 1, updated_at = NOW()
-  WHERE property_id = '<PROPERTY_UUID>' AND archived_at IS NOT NULL;
-  ```
+### Catastrophe 16: Missed Coeliac Breakfast Allergy or Steep-Stairs Mobility Request
+> *"Mrs. Clarke has coeliac disease and cannot climb the steep Georgian stairs to our Attic Room — we didn't spot her note until she arrived with her suitcase at 5:30 PM!"*
+
+- **How to Make Guest Notes Impossible to Miss in a B&B:**
+  1. Check your morning **Operations Centre (`/`)** — look at the **`upcoming arrival preferences`** counter inside **Guest Relations & Communications** and click **Front Desk (Arrivals & Departures)** to read every incoming guest's special requests *before* doing the morning food shop!
+  2. For returning B&B regulars, save permanent dietary/room needs (e.g. *"Coeliac — separate toaster; prefers Ground Floor Garden Room"*) into **Structured Preferences** on their profile in **Guest Directory (`/guests`)** so it appears automatically on every future stay!
+  3. Mention stair access clearly in upper-floor **Unit Type Descriptions** (*"Second floor via historic spiral staircase — no lift"*).
 
 ---
 
-## Catastrophe 6: The "Fixed Boiler That Still Blocks Bookings" Mystery
-> *"Our handyman fixed the leaking shower in Shepherd's Hut 1 yesterday and marked the Maintenance job `COMPLETED` — why is Shepherd's Hut 1 STILL blocked on the Booking Calendar?!"*
+### Catastrophe 17: Live-In B&B Hosts Forgot to Block Off Their Own Two-Week Holiday!
+> *"Unlike a hotel with night porters, my wife and I ARE the B&B! We booked two weeks in Portugal in November, forgot to close the calendar, and two guests just booked rooms while the house will be locked up!"*
 
-- **Why It Happened (Intentional Safety Feature):**
-  - When a maintenance ticket is logged with **Availability Impact = `UNAVAILABLE`**, Lovelace holds that room offline not just while the repair is happening, but **until a manager or housekeeper confirms the room is clean, safe, and inspected**! (`COMPLETED` means *"repair done, awaiting sign-off"*; `CLOSED` after inspection means *"ready for paying guests"*.)
-- **Immediate 20-Second Fix in the Browser:**
-  1. Open **Maintenance & Facilities → Maintenance (`/maintenance`)** on the left.
-  2. Click the `COMPLETED` work order for Shepherd's Hut 1.
-  3. Fill in the **Post-Completion Inspection** box, mark it **PASSED**, and submit — the maintenance hold releases automatically and Shepherd's Hut 1 is back on sale!
+- **Immediate Rescue & Prevention Habit:**
+  1. The moment you book personal time away (even a family wedding weekend!), open **Inventory & Holds → Bulk Blockouts (`/blocks`)**, set **Target Scope = `All Units on Property`**, category **`OWNER_USE`**, and click **Preview Affected Inventory & Conflicts**.
+  2. If `Preview` shows `1` or `2` guests already booked during those dates, Lovelace highlights their names and booking references immediately so you can ring them straight away (months in advance!) to offer alternative dates or help arrange a neighbouring B&B.
 
 ---
 
-## Catastrophe 7: The "Three Weeks, Zero Online Card Bookings" Mystery
-> *"I pasted the booking widget onto our website three weeks ago. People keep ringing us saying 'Your website says Online Card Checkout Unavailable — please contact the property team'!"*
+## Section E: Multi-Site & Portfolio Owner Catastrophes (Scenarios 18–21)
 
-- **Why It Happened:**
-  - Every new property in Lovelace starts in **Safe Dark-by-Default Launch Mode** (`Enable Public Online Checkout (Stripe)` is **unticked** in **Site Settings**!) so you never take real card payments before your prices and terms are ready.
+Running two or more properties inside one Lovelace account (for instance, **Meadowbrook Campsite**, **Harbour View Cottage**, and **The Coaching Inn B&B**) unlocks the top-left **Property Switcher** — and introduces four unique multi-site pitfalls:
+
+### Catastrophe 18: Editing Prices, Rules, or Blockouts on the WRONG Property!
+> *"I just spent 25 minutes adding winter blockouts, changing check-in time to 4:00 PM, and editing rates — and then looked up at the top-left corner and realised I was still on `Meadowbrook Campsite` instead of `Harbour View Cottage`!!"*
+
+- **How to Undo Every Accidental Change Using the Audit Log:**
+  1. Don't guess what the old settings were! Open **Settings → Audit Log (`/audit-logs`)** while still on `Meadowbrook Campsite`.
+  2. Every single edit you just made is listed in chronological order with both **`before_state` (your exact previous numbers/times)** and **`after_state`**!
+  3. Copy the original values back into **Site Settings** / **Rates**, and click **Release** on any accidental blockout in **Bulk Blockouts (`/blocks`)**.
+  4. Now use the top-left **Switch** dropdown under **ACTIVE PROPERTY** to switch to `Harbour View Cottage` and apply your changes there.
+- **Best Trick to Prevent Multi-Site Mix-Ups Forever:**
+  - Give each property a **distinct Primary Colour and Sidebar Header Label** in **Site Settings → Property Branding** (e.g. **Forest Green** for the Campsite, **Deep Coastal Blue** for Harbour View Cottage, **Warm Burgundy** for the B&B). Your eyes will notice instantaneously which site you are editing!
+
+---
+
+### Catastrophe 19: Putting Property A's Website Booking Code (or WordPress Plugin) onto Property B's Website!
+> *"Guests visiting `harbourviewcottage.co.uk` are seeing Bell Tents and Grass Pitches from our campsite 12 miles inland — and booking them!"*
+
+- **Why It Happened:** You downloaded the WordPress `.zip` plugin (or copied the HTML embed snippet) from **Site Settings → Website Booking Section** while `Meadowbrook Campsite` was active in the top-left switcher!
 - **Immediate Fix:**
-  1. Ensure your server/cloud administrator has set `TIRBACH_STRIPE_SECRET_KEY` (`sk_live_...`) and `TIRBACH_STRIPE_WEBHOOK_SECRET` (`whsec_...` for `https://<ADMIN_DOMAIN>/api/webhooks/stripe`).
-  2. Sign in to Lovelace → **Settings → Site Settings (`/property`)**.
-  3. Scroll to **Public Direct Booking & Payment Policy**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
-- **Bonus Check — What if a guest paid right as their 15-minute basket timer ran out?**
-  - Check **Maintenance & Facilities → Payment Exceptions (`/payment-exceptions`)** (also flagged right on your morning **Operations Centre**!). Lovelace never loses track of a late Stripe payment: it automatically attempts a safe Stripe refund if the room was taken in the meantime, or logs a clear Payment Exception for you to review in one click.
+  - **On HTML / Squarespace / Wix:** Switch to `Harbour View Cottage` in the top-left sidebar first, open **Site Settings → Website Booking Section**, check that the badge at the top-right says **`Property: harbour-view-cottage`**, click **Copy Embed Code**, and replace the snippet on `harbourviewcottage.co.uk`.
+  - **On WordPress:** You don't even need to reinstall the plugin! Open your WordPress dashboard → **Settings → Lovelace Booking**, change **Property Slug** to `harbour-view-cottage`, and click **Save Settings** then **Test Connection & Sync Brand Colours**. *(And if you have ONE group WordPress website showcasing all 3 properties on different pages, simply pass `property="..."` per block or shortcode: `[lovelace_booking property="harbour-view-cottage"]` on the Cottage page and `[lovelace_booking property="meadowbrook-campsite"]` on the Campsite page!)*
 
 ---
 
-## Catastrophe 8: Clicking "Anonymise Guest (GDPR)" Instead of "Cancel Booking"
-> *"Mrs. Jenkins phoned to cancel next month's stay. Instead of cancelling her reservation, I opened `Guest Directory`, found Mrs. Jenkins, and tried to click `Anonymise Guest`!"*
+### Catastrophe 20: Multi-Site Staff Permissions Mix-Up (Manager Can't See Site B — or Cleaner Sees Wrong Site)
+> *"I hired a manager to help across BOTH of our cottages, added them in Step 5 of Cottage A's Setup Wizard, and they say they can only see Cottage A — OR I gave a seasonal warden my own `owner_admin` password and they saw financials for all three of our businesses!"*
 
-- **Good News First (Built-In Guardrail):**
-  - If Mrs. Jenkins has **any active or upcoming reservation** (`PENDING`, `CONFIRMED`, or `CHECKED_IN`), Lovelace **refuses to anonymise her** and displays an error telling you to resolve active bookings first!
-- **How to Actually Cancel a Booking:**
-  - Go to **Reservations (`/reservations`)** → click the booking reference (e.g. `TB-2026-...`) → use the **Cancel Reservation** action on the booking page! That frees up the room on the calendar while keeping Mrs. Jenkins's contact details intact.
-- **What if you *did* anonymise a past guest by mistake?**
-  - GDPR Erasure permanently replaces their name, email, phone, and notes with `REDACTED` in the live database (while keeping financial/VAT totals intact for your accountant). If you had a lawful business/tax obligation to retain that invoice contact, you can inspect an earlier weekly `.zip` backup offline without overwriting your live database.
+- **How Multi-Site Permissions Work in Lovelace:**
+  - **`owner_admin` (Global Owner):** Can see and switch between **all** properties, manage users, and download system backups. **Never share your `owner_admin` password with seasonal staff!**
+  - **Property-Scoped Roles (`manager`, `staff`, `housekeeping_staff`, `maintenance_staff`, `viewer`):** Locked at the database level (`property_id`) to the specific property they are assigned to — a cleaner at the Campsite cannot view guests or bookings at your B&B!
+  - If one trusted manager looks after two separate properties without needing global owner powers, create separate property-scoped logins per site (e.g. `sam+cottage1@domain.com` and `sam+cottage2@domain.com`) or promote only a trusted business partner to `owner_admin`.
 
 ---
 
-## Catastrophe 9: Merging Two Different "David Jones" Guests Together
-> *"We have two guests called David Jones — one is a lovely retired teacher from Swansea, and the other brought 4 unauthorised dogs last year — and I just clicked Merge on them in `Duplicate Merge Review`!"*
+### Catastrophe 21: Mixing Up VAT-Registered and Non-VAT Properties in Accounting Exports
+> *"Our Campsite is run through a VAT-registered Limited Company (`20%` VAT), while our Holiday Cottage is owned personally below the VAT threshold (`0%` VAT). My bookkeeper says I sent them the Campsite CSV instead of the Cottage CSV!"*
 
-- **Why It Happened:** Clicked merge on two guests who shared a name without checking their email/phone/postcode first.
-- **How to Handle It Cleanly:**
-  1. Open **Guests & Comms → Guest Directory (`/guests`)**, open the merged David Jones profile, and edit the **Internal Staff Notes** to clearly distinguish the two email addresses/phone numbers so reception doesn't turn away the retired teacher!
-  2. When the *other* David Jones books next time by phone, enter his distinct email address and add a clear note directly on his specific **Reservation** rather than relying on the shared surname.
-  3. In future on **Duplicate Merge Review (`/guests/merge`)**, click **Dismiss (Not Same Person)** whenever two guests merely share a common surname — Lovelace remembers your dismissal permanently so it won't ask again!
-
----
-
-## Catastrophe 10: Changing Domains or Brand Colours Broke the Website Booking Box
-> *"Our web designer moved our website to a new domain (or switched us to WordPress), and now the booking box on our website won't resize or says `Booking Section Temporarily Unavailable`!"*
-
-- **Why It Happened (Check These 3 Things):**
-  1. **WordPress stripped `<script>` tags:** If someone pasted the raw HTML `<iframe> + <script>` snippet into WordPress as a non-Admin editor, WordPress strips `<script>`, stopping auto-resize.
-     - **Fix:** Go to Lovelace **Settings → Site Settings → Website Booking Section**, click **Download WordPress Plugin (.zip)**, upload it in **WordPress → Plugins → Add New → Upload Plugin**, and use the `[lovelace_booking]` shortcode or Gutenberg block!
-  2. **Wrong URL in WordPress Settings:** WordPress **Settings → Lovelace Booking → Public Booking Site URL** must point to your **Public Booking Website** (`https://book.yourdomain.com`), *not* your Admin Console URL (`https://admin.yourdomain.com`)! Click **Test Connection & Sync Brand Colours** in WordPress to verify.
-  3. **Public domain changed without updating `TIRBACH_PUBLIC_ORIGIN`:** If you changed your public booking domain (`book.yourdomain.com`), update both `TIRBACH_PUBLIC_ORIGIN` (on `lovelace-app`) and `NEXT_PUBLIC_SITE_URL` (on `lovelace-public-web`), then re-copy your embed snippet or click **Test Connection** in WordPress.
-
----
-
-## Catastrophe 11: "Backup Restore Refused — Environment Is Not Empty!"
-> *"Our old laptop/server died! I set up a brand-new Lovelace server, clicked through Step 1 of the Setup Wizard to test it, and now when I try to upload last Sunday's `.zip` backup on `/settings/backups`, Lovelace refuses to restore it!"*
-
-- **Why It Happened (Safety Interlock):**
-  - Lovelace's **Restore Into Empty Environment** feature intentionally **refuses** to wipe a database that already has properties or bookings in it — that stops someone from accidentally uploading an old 2025 backup over their live 2026 hotel bookings!
-  - Because you clicked **Save** on Step 1 of the Setup Wizard on the new server, the new database now has `1` property in it instead of `0`!
-- **Immediate Fix on the New Replacement Server:**
-  Start with a genuinely empty database (`0` properties, `1` bootstrapped `owner_admin`), go **straight** to **Settings → Backups & Cloud Sync (`/settings/backups`)** *before* creating any property in `/onboarding`, and upload your `.zip` / `.zip.enc` backup!
-- **What if I forgot my `.zip.enc` Encryption Passphrase vs my Admin Password?**
-  - Remember there are **two** password boxes when restoring an encrypted `.zip.enc` file:
-    1. **Current Admin Password:** The password you *just* used to sign in to the new Lovelace screen today.
-    2. **Archive Encryption Passphrase:** The 12+ character passphrase you chose when creating the `.zip.enc` backup (if you left that blank when downloading a plain `.zip`, leave it blank on restore too!).
-- **What if we lost `TIRBACH_ENCRYPTION_KEY` when moving servers?**
-  - **Don't panic!** All of your **properties, rooms, pitches, bookings, calendar dates, guest records, prices, logos, and photos** are restored 100%! `TIRBACH_ENCRYPTION_KEY` is only used for external API keys stored in the vault — so after restoring onto a new server with a new `TIRBACH_ENCRYPTION_KEY`, simply re-enter your OTA Channel Manager API key (`/settings/integrations/channel-manager`) and your Cloud Backup bucket key (`/settings/backups`) once.
-
----
-
-## Catastrophe 12: Double-Booking From an Unconnected Airbnb / Booking.com Listing
-> *"Lovelace let Mrs. Brown book Cottage 1 on our website for the exact same weekend Mr. Green booked Cottage 1 on Airbnb!"*
-
-- **Why It Happened:**
-  - Lovelace guarantees zero double-bookings across your direct website, embedded WordPress widget, telephone bookings, blockouts, **and any connected Channel Manager**. However, if you list Cottage 1 separately on Airbnb/Booking.com *without* connecting a Channel Manager (or if you changed your Beds24/Smoobu/Lodgify/Channex API password so the connection went into `CONNECTION_ERROR`), Lovelace isn't told about Airbnb bookings!
-- **Immediate Fix:**
-  1. Open **Settings → Channel Manager (`/settings/integrations/channel-manager`)** and check the status badge:
-     - Green **`CONNECTED`**: Sync is healthy.
-     - Red **`CONNECTION_ERROR`** or Amber **`CONFIGURATION_REQUIRED`**: Re-enter your channel credentials and test sync immediately.
-  2. Until Channel Manager sync is active, whenever an external Airbnb/Pitchup booking arrives by email, add it straight into Lovelace via **+ New Reservation** (choosing `AIRBNB` or `OTA` under **Booking Source / Channel**) within a couple of minutes so those nights are immediately blocked on your direct website!
-
----
-
-## Catastrophe 13: Two People Editing at Once ("Version Conflict") or Cleaner Accidentally Changing Settings
-> *"My husband and I both had `Site Settings` open on two computers, I clicked Save, and Lovelace gave me a conflict error — AND earlier our cleaner accidentally clicked into `Rates` on the reception iPad!"*
-
-- **Why the Conflict Error Happened:**
-  - Lovelace uses *version checking* on settings, rates, and bookings: if two tabs open Version `3` at 9:00 AM, Person A saves at 9:05 AM (bumping it to Version `4`), and Person B clicks Save on their stale tab at 9:30 AM, Lovelace stops Person B from accidentally wiping out Person A's 9:05 AM change!
-  - **Fix:** Just refresh the page (`Cmd+R` / `F5`), review the current values, and click Save again.
-- **How to Stop Cleaners or Reception Helpers Touching Prices & Backups:**
-  - Never leave your **Owner Admin** account signed in on a shared reception iPad!
-  - Go to **Settings → Admin Users (`/users`)** and create separate logins with the right role:
-    - **`housekeeping_staff`** — can update cleaning/changeover boards and report a broken lamp, *cannot* touch prices, bookings, or settings.
-    - **`maintenance_staff`** — can manage repairs and inspections, *cannot* touch prices or settings.
-    - **`staff` (Front Desk)** — can take phone bookings and check guests in/out, *cannot* delete backups, manage users, or alter core site settings.
-    - **`viewer`** — strictly read-only view.
-
----
-
-## Catastrophe 14: Guests Are Booking Fine, But Nobody Is Getting Confirmation Emails
-> *"Guests are booking and paying fine, they appear on our Booking Calendar, yet three guests rang today asking 'Did my booking go through? I haven't had an email!'"*
-
-- **Why It Happened:**
-  - Lovelace saves every confirmation email safely into a durable database **Outbox (`email_outbox`)** *inside* the booking transaction before ever talking to your email provider. That way, even if your email provider (Resend / Postmark / SES) is down, **you never lose a booking**!
-  - Usually either `TIRBACH_SMTP_ADDR` wasn't configured yet, your SMTP API key expired, or your domain's DNS (`SPF` / `DKIM`) record was edited by your web host.
-- **Immediate Fix:**
-  1. Look at your morning **Operations Centre (`/`)** under **Guest Relations & Communications** — check if **`failed emails`** is greater than `0`.
-  2. Open **Guests & Comms → Templates & Automation (`/communications/settings`)** to inspect outbox delivery status and any SMTP error message.
-  3. Have your administrator verify `TIRBACH_SMTP_ADDR`, `TIRBACH_SMTP_USERNAME`, `TIRBACH_SMTP_PASSWORD`, and `TIRBACH_EMAIL_FROM` (ensuring the `From` domain is verified in Resend / Postmark / AWS SES). Once fixed, pending/retriable outbox emails send automatically — and you can view every guest's communication history directly on their profile in **Guest Directory (`/guests`)**.
+- **Immediate Fix & Safeguard:**
+  1. Check **Settings → Site Settings (`/property`)** on *each* property separately (using the top-left property switcher) to confirm `VAT Registered` is ticked **only** on the VAT-registered entity, and verify `Tax Rate` on its Unit Types (`/unit-types`) and Extras (`/extras`).
+  2. In **Inventory & Holds → Reports & BI (`/reports`)**, accounting CSV exports (`lovelace.accounting.v1`) are **strictly per-property** (they never commingle two businesses' revenue into one spreadsheet!). Always check the active property name at the top of `/reports` before clicking **Export Accounting CSV**, and name the downloaded file clearly per business entity.
