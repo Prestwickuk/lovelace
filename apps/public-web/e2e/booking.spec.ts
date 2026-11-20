@@ -58,7 +58,18 @@ test.describe("Tir Bach Public Direct Booking Engine", () => {
 
   test("embeddable /embed/[slug] widget allows external HTTPS framing while non-embed routes stay DENY", async ({
     page,
+    request,
   }) => {
+    // Verify public catalog endpoint consumed by the official WordPress plugin
+    const catResp = await request.get("/api/public/catalog?property=tir-bach");
+    expect(catResp.status()).toBe(200);
+    const catJson = (await catResp.json()) as {
+      property?: { slug?: string };
+      unit_types?: unknown[];
+    };
+    expect(catJson.property?.slug).toBe("tir-bach");
+    expect((catJson.unit_types || []).length).toBeGreaterThan(0);
+
     const arr = futureDate(84);
     const dep = futureDate(86);
     const embedResp = await page.goto(

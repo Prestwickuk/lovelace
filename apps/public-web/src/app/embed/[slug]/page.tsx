@@ -2,13 +2,16 @@ import { EmbedBookingWidget } from "@/components/EmbedBookingWidget";
 import { sanitizePropertySlug } from "@/lib/branding";
 import { defaultSearchDates } from "@/lib/format";
 import {
+  computePublicPricing,
   fetchPublicCatalog,
   LovelaceApiError,
   searchPublicAvailability,
 } from "@/lib/lovelace-api";
 import type {
+  BookingQuote,
   PublicAvailabilityResponse,
   PublicCatalogResponse,
+  PublicUnitTypeView,
 } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -55,9 +58,16 @@ export default async function EmbedPropertyBookingPage({
     30,
     Math.max(0, Math.trunc(Number(sp.infants || 0) || 0)),
   );
+  const category =
+    typeof sp.category === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(sp.category.trim())
+      ? sp.category.trim()
+      : "";
+  const preselectUnitType =
+    typeof sp.unit_type === "string" ? sanitizePropertySlug(sp.unit_type, "") : "";
 
   let catalog: PublicCatalogResponse | null = null;
   let availability: PublicAvailabilityResponse | null = null;
+  let initialSelectedStay: { unitType: PublicUnitTypeView; quote: BookingQuote } | null = null;
   let initialError = "";
 
   try {
@@ -90,12 +100,39 @@ export default async function EmbedPropertyBookingPage({
       adults,
       children,
       infants,
+      category: category || undefined,
     });
   } catch (err) {
     initialError =
       err instanceof LovelaceApiError
         ? err.message
         : "Could not check availability for those dates.";
+  }
+
+  if (preselectUnitType && availability) {
+    const match = availability.items.find(
+      (item) => item.unit_type.code === preselectUnitType && item.available_units > 0,
+    );
+    if (match) {
+      try {
+        const priced = await computePublicPricing({
+          property_slug: cleanSlug,
+          unit_type_code: match.unit_type.code,
+          arrival_date: arrival,
+          departure_date: departure,
+          adults,
+          children,
+          infants,
+          extras: [],
+        });
+        initialSelectedStay = {
+          unitType: match.unit_type,
+          quote: priced.quote,
+        };
+      } catch {
+        initialSelectedStay = null;
+      }
+    }
   }
 
   return (
@@ -109,6 +146,8 @@ export default async function EmbedPropertyBookingPage({
         initialAdults={adults}
         initialChildren={children}
         initialInfants={infants}
+        initialCategory={category}
+        initialSelectedStay={initialSelectedStay}
         initialError={initialError}
       />
     </main>

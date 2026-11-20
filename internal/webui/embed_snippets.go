@@ -3,11 +3,17 @@ package webui
 import (
 	"fmt"
 	"html"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+
+	"github.com/tirbach/tir-bach/integrations/wordpress"
 	"github.com/tirbach/tir-bach/internal/branding"
 	"github.com/tirbach/tir-bach/internal/domain"
+	"github.com/tirbach/tir-bach/internal/service"
 )
 
 // WebsiteEmbedSnippets holds ready-to-paste HTML snippets for embedding a property's booking flow on an external website.
@@ -146,4 +152,54 @@ func buildWebsiteEmbedSnippets(rawPublicOrigin string, prop domain.Property, pb 
 		SearchBarSnippet: searchBarSnippet,
 		ButtonSnippet:    buttonSnippet,
 	}
+}
+
+func (h *Handler) handleWordPressPluginDownloadGet(w http.ResponseWriter, r *http.Request, actor service.Actor) {
+	base, err := h.buildBaseView(r.Context(), r, actor, "Site Settings", "property")
+	if err != nil {
+		h.renderDomainError(w, err, "WordPress Plugin Unavailable", "Unable to load property configuration.")
+		return
+	}
+	if !base.CanReadProperty {
+		h.renderError(w, http.StatusForbidden, "Access Denied", "Your administrative role does not have permission to download site integration packages.")
+		return
+	}
+
+	prop := base.Property
+	pb := base.PropertyBranding
+	if qID := parseOptionalUUID(r.URL.Query().Get("property_id")); qID != nil && *qID != uuid.Nil {
+		p, gerr := h.svc.GetProperty(r.Context(), actor, *qID)
+		if gerr != nil {
+			h.renderDomainError(w, gerr, "Property Not Found", "The requested property could not be loaded.")
+			return
+		}
+		prop = p
+		if loadedPB, berr := h.svc.GetPropertyBranding(r.Context(), actor, p.ID); berr == nil {
+			pb = loadedPB
+		}
+	}
+
+	displayName := strings.TrimSpace(pb.PublicProjection.DisplayName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(prop.Name)
+	}
+
+	zipBytes, filename, err := wordpress.BuildPluginZip(wordpress.BundleConfig{
+		BookingOrigin:  h.cfg.PublicOrigin,
+		PropertySlug:   prop.Slug,
+		PropertyName:   displayName,
+		PrimaryColor:   pb.PublicProjection.PrimaryColor,
+		PrimaryOnColor: pb.PublicProjection.PrimaryOnColor,
+	})
+	if err != nil {
+		h.renderError(w, http.StatusInternalServerError, "Package Error", "Unable to generate WordPress plugin archive.")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Content-Length", strconv.Itoa(len(zipBytes)))
+	w.Header().Set("Cache-Control", "no-store, private")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(zipBytes)
 }

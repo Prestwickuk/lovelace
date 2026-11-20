@@ -442,6 +442,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /{$}", h.requirePageAuth(false, h.handleDashboard))
 	mux.HandleFunc("GET /property", h.requirePageAuth(false, h.handlePropertyGet))
+	mux.HandleFunc("GET /property/wordpress-plugin.zip", h.requirePageAuth(false, h.handleWordPressPluginDownloadGet))
 	mux.HandleFunc("POST /property", h.requirePageAuth(true, h.handlePropertyPost))
 	mux.HandleFunc("POST /property/booking-policy", h.requirePageAuth(true, h.handleBookingPolicyPost))
 

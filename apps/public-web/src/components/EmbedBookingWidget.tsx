@@ -33,6 +33,8 @@ export function EmbedBookingWidget({
   initialAdults,
   initialChildren,
   initialInfants,
+  initialCategory = "",
+  initialSelectedStay = null,
   initialError = "",
 }: {
   initialProperty: PublicPropertyView;
@@ -43,6 +45,8 @@ export function EmbedBookingWidget({
   initialAdults: number;
   initialChildren: number;
   initialInfants: number;
+  initialCategory?: string;
+  initialSelectedStay?: SelectedStay | null;
   initialError?: string;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -59,7 +63,9 @@ export function EmbedBookingWidget({
   const [searching, setSearching] = useState(false);
   const [quotingCode, setQuotingCode] = useState("");
   const [errorMsg, setErrorMsg] = useState(initialError);
-  const [selectedStay, setSelectedStay] = useState<SelectedStay | null>(null);
+  const [selectedStay, setSelectedStay] = useState<SelectedStay | null>(
+    initialSelectedStay,
+  );
 
   const cssVars = buildPropertyBrandCssVars(activeProperty.branding);
   const displayName =
@@ -128,6 +134,7 @@ export function EmbedBookingWidget({
           adults,
           children: childrenCount,
           infants,
+          category: initialCategory || undefined,
         }),
       });
       const data = await res.json();
