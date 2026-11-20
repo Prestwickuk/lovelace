@@ -961,7 +961,7 @@ func (s *Service) AddOnboardingTeamMember(ctx context.Context, actor Actor, prop
 	})
 }
 
-// SetOnboardingStep advances or updates the saved onboarding step (1..6) for resumable navigation.
+// SetOnboardingStep advances or updates the saved onboarding step (1..7) for resumable navigation.
 func (s *Service) SetOnboardingStep(ctx context.Context, actor Actor, propertyID uuid.UUID, step int) (domain.Property, error) {
 	if err := s.requirePerm(actor, auth.PermPropertyWrite); err != nil {
 		return domain.Property{}, err
@@ -972,8 +972,8 @@ func (s *Service) SetOnboardingStep(ctx context.Context, actor Actor, propertyID
 	if step < 1 {
 		step = 1
 	}
-	if step > 6 {
-		step = 6
+	if step > 7 {
+		step = 7
 	}
 	now := s.nowUTC()
 	var updated domain.Property
@@ -1022,7 +1022,7 @@ func (s *Service) CompleteOnboarding(ctx context.Context, actor Actor, propertyI
 		if !ok {
 			st = domain.OnboardingState{Preset: domain.OnboardingPresetCampsite, StartedAt: &now}
 		}
-		st.CurrentStep = 6
+		st.CurrentStep = 7
 		st.UpdatedAt = &now
 		st.CompletedAt = &now
 		settingsJSON, err := domain.MergeOnboardingState(before.Settings, st)

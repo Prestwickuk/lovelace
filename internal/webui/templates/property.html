@@ -327,6 +327,68 @@
   </form>
 </div>
 
+<div class="card" id="website-embed">
+  <div class="ops-section-head">
+    <div>
+      <h2>Website Booking Section — Copy &amp; Paste Embed Code</h2>
+      <p class="subtitle">Drop any of the ready-made HTML blocks below straight into WordPress (Custom HTML block), Squarespace (Code Block), Wix, Webflow, or your own static website. Colours automatically use your saved contrast-verified brand palette.</p>
+    </div>
+    <span class="badge badge-info">Property: {{.EmbedSnippets.PropertySlug}}</span>
+  </div>
+
+  {{if not .Policy.StripeEnabled}}
+  <div class="alert alert-info mb-3" role="status">
+    <strong>Online card checkout is currently switched off:</strong> Guests using your embedded booking section can search live availability and view prices immediately. Enable <em>Public Online Checkout (Stripe)</em> in Booking Policy above whenever you are ready to accept live card payments.
+  </div>
+  {{end}}
+
+  <div class="embed-option-grid">
+    <div class="embed-option-card">
+      <div class="ops-section-head">
+        <div>
+          <h3>1. Full Embedded Live Booking Section (Recommended)</h3>
+          <p class="field-hint">Embeds the interactive availability search, live tariff quotes, extras picker, and guest booking form directly inside your webpage with automatic height resizing. Stripe 3DS card payment opens safely in the top window.</p>
+        </div>
+        <div class="days-row">
+          <button type="button" class="btn btn-primary btn-sm" data-copy-target="embed-iframe-code">Copy Embed Code</button>
+          <a href="{{.EmbedSnippets.EmbedURL}}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open Widget Preview ↗</a>
+        </div>
+      </div>
+      <label for="embed-iframe-code" class="sr-only">Embedded live booking section HTML code</label>
+      <textarea id="embed-iframe-code" class="mono embed-code-box" rows="9" readonly>{{.EmbedSnippets.IframeSnippet}}</textarea>
+    </div>
+
+    <div class="embed-option-card">
+      <div class="ops-section-head">
+        <div>
+          <h3>2. Drop-In Availability Search Bar (Pure HTML · Zero JavaScript)</h3>
+          <p class="field-hint">Lightweight Check-in / Check-out / Guests bar for website headers or hero banners. Works even on strict builders that block scripts or iframes.</p>
+        </div>
+        <div class="days-row">
+          <button type="button" class="btn btn-secondary btn-sm" data-copy-target="embed-searchbar-code">Copy Search Bar Code</button>
+        </div>
+      </div>
+      <label for="embed-searchbar-code" class="sr-only">Drop-in availability search bar HTML code</label>
+      <textarea id="embed-searchbar-code" class="mono embed-code-box" rows="9" readonly>{{.EmbedSnippets.SearchBarSnippet}}</textarea>
+    </div>
+
+    <div class="embed-option-card">
+      <div class="ops-section-head">
+        <div>
+          <h3>3. Branded &ldquo;Book Direct&rdquo; Button</h3>
+          <p class="field-hint">Simple call-to-action button for navigation menus, emails, or landing pages linking directly to your property&rsquo;s availability page.</p>
+        </div>
+        <div class="days-row">
+          <button type="button" class="btn btn-secondary btn-sm" data-copy-target="embed-button-code">Copy Button Code</button>
+          <a href="{{.EmbedSnippets.DirectBookingURL}}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open Public Booking Page ↗</a>
+        </div>
+      </div>
+      <label for="embed-button-code" class="sr-only">Direct booking button HTML code</label>
+      <textarea id="embed-button-code" class="mono embed-code-box" rows="4" readonly>{{.EmbedSnippets.ButtonSnippet}}</textarea>
+    </div>
+  </div>
+</div>
+
 {{if .PaymentExceptions}}
 <div class="card" id="payment-exceptions">
   <div class="ops-section-head">

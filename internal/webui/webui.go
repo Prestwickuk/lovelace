@@ -621,6 +621,7 @@ type baseView struct {
 	CanCreateProperty      bool
 	OnboardingIncomplete   bool
 	OnboardingStep         int
+	PublicBookingOrigin    string
 	PropertyBranding       domain.PropertyBrandingView
 	PropertyTerms          branding.AdminTerminology
 	PropertyCSSHref        string
@@ -783,6 +784,7 @@ func (h *Handler) buildBaseView(ctx context.Context, r *http.Request, actor serv
 		CanCreateProperty:     canCreateProperty,
 		OnboardingIncomplete:  onboardingIncomplete,
 		OnboardingStep:        onboardingStep,
+		PublicBookingOrigin:   h.cfg.PublicOrigin,
 		PropertyBranding:      propBranding,
 		PropertyTerms:         propTerms,
 		PropertyCSSHref:       propCSSHref,

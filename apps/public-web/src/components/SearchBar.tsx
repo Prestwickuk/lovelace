@@ -16,10 +16,12 @@ export function SearchBar({
   initial,
   targetPath = "/stays",
   compact = false,
+  propertySlug,
 }: {
   initial: SearchBarValues;
   targetPath?: string;
   compact?: boolean;
+  propertySlug?: string;
 }) {
   const router = useRouter();
   const [arrival, setArrival] = useState(initial.arrival);
@@ -43,6 +45,9 @@ export function SearchBar({
       children: String(children),
       infants: String(infants),
     });
+    if (propertySlug) {
+      q.set("property", propertySlug);
+    }
     if (initial.category) {
       q.set("category", initial.category);
     }

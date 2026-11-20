@@ -181,14 +181,17 @@ func (h *Handler) handlePropertyGet(w http.ResponseWriter, r *http.Request, acto
 	}
 	policy, _ := h.svc.GetBookingPolicy(r.Context(), actor, base.Property.ID)
 	exceptions, _ := h.svc.ListPaymentExceptions(r.Context(), actor, base.Property.ID)
+	embedSnippets := buildWebsiteEmbedSnippets(h.cfg.PublicOrigin, base.Property, base.PropertyBranding)
 	h.renderPage(w, "property.html", struct {
 		baseView
 		Policy            domain.PropertyBookingPolicy
 		PaymentExceptions []domain.PaymentException
+		EmbedSnippets     WebsiteEmbedSnippets
 	}{
 		baseView:          base,
 		Policy:            policy,
 		PaymentExceptions: exceptions,
+		EmbedSnippets:     embedSnippets,
 	})
 }
 

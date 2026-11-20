@@ -141,7 +141,7 @@
     {{end}}
     {{if and .OnboardingIncomplete .CanWriteProperty (ne .ActiveNav "onboarding")}}
     <div class="alert alert-info" role="status">
-      <strong>Property setup in progress:</strong> You are on Step {{.OnboardingStep}} of 6 for <strong>{{.Property.Name}}</strong>.
+      <strong>Property setup in progress:</strong> You are on Step {{.OnboardingStep}} of 7 for <strong>{{.Property.Name}}</strong>.
       <a href="/onboarding?property_id={{.Property.ID}}" class="ml-2"><strong>Resume Guided Setup →</strong></a>
     </div>
     {{end}}

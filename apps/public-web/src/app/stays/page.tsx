@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { SearchBar } from "@/components/SearchBar";
+import { sanitizePropertySlug } from "@/lib/branding";
 import {
   defaultSearchDates,
   formatAmenity,
@@ -28,6 +29,10 @@ export default async function StaysPage({
 }) {
   const sp = await searchParams;
   const defaults = defaultSearchDates();
+  const explicitProperty =
+    typeof sp.property === "string" && sp.property.trim()
+      ? sanitizePropertySlug(sp.property, "")
+      : "";
 
   const arrival =
     typeof sp.arrival === "string" && sp.arrival ? sp.arrival : defaults.arrival;
@@ -47,7 +52,7 @@ export default async function StaysPage({
   let searchError = "";
 
   try {
-    catalog = await fetchPublicCatalog();
+    catalog = await fetchPublicCatalog(explicitProperty || undefined);
   } catch {
     searchError = "Unable to connect to the reservation system right now.";
   }
@@ -55,6 +60,7 @@ export default async function StaysPage({
   if (catalog && arrival && departure) {
     try {
       availability = await searchPublicAvailability({
+        property_slug: explicitProperty || undefined,
         arrival_date: arrival,
         departure_date: departure,
         adults,
@@ -90,6 +96,7 @@ export default async function StaysPage({
       children: String(children),
       infants: String(infants),
     });
+    if (explicitProperty) q.set("property", explicitProperty);
     if (cat) q.set("category", cat);
     return `/stays?${q.toString()}`;
   }
@@ -122,6 +129,7 @@ export default async function StaysPage({
 
         <SearchBar
           initial={{ arrival, departure, adults, children, infants, category }}
+          propertySlug={explicitProperty || undefined}
         />
 
         <div
@@ -190,6 +198,9 @@ export default async function StaysPage({
                 children: String(children),
                 infants: String(infants),
               });
+              if (explicitProperty) {
+                bookParams.set("property", explicitProperty);
+              }
               return (
                 <article key={ut.id} className="stay-card">
                   <div className="stay-card-img-wrap">
