@@ -1,9 +1,10 @@
 # Guide 5: Deep Troubleshooting & The Hospitality Catastrophe Playbook
 
-This runbook has two halves:
+This runbook has three parts:
 
 - **Part I — Infrastructure & Deployment Troubleshooting:** Deep technical diagnostics and exact fixes for **1) Local & Self-Hosted Linux Servers**, **2) AWS, Google Cloud (GCP) & Microsoft Azure**, and **3) Railway & PaaS Platforms**.
 - **Part II — The Hospitality Catastrophe Playbook (21 Real-World Disasters & Rescues):** Every realistic way a busy owner or helper can accidentally break their setup across **any property**, plus dedicated disaster rescues for **Campsites & Holiday Parks**, **Glamping Retreats**, **B&Bs & Guesthouses**, and **Multi-Site Portfolio Operators**.
+- **Part III — 15 Deep Operational, Security & Integration Troubleshooting Scenarios (Issues 22–36):** Code-verified diagnostics and step-by-step fixes for fail-closed Stripe/Portal startup loops, `403 origin_not_allowed` & `400 query_token_forbidden`, missing Stripe webhook bookings & `rk_live_` refund permissions, `DISPATCH_UNKNOWN` outbox fencing & GDPR `409` locks, OTA `UNMAPPED` / `CONFLICT_OVERBOOKED` / `422` sync blocks / `401` webhook drift, non-auto-releasing maintenance restrictions, unready-unit alerts, `LOVELACE_ENCRYPTION_KEY` mismatches, `48 MiB` `.zip.enc` backup restores, Guest Portal edge cases, BI report warnings, and WordPress/iframe embeds.
 
 ---
 
@@ -31,6 +32,7 @@ curl -i "https://<YOUR_PUBLIC_WEB_DOMAIN>/api/public/catalog"
 | `/healthz` `200`, `/readyz` `503` | Database role/migration mismatch, missing `LOVELACE_PUBLIC_API_SECRET`, or `LOVELACE_REQUIRE_EMAIL=true` without SMTP | Part I, Sections 1.2–1.3, 2.1 |
 | `/api/healthz` `200`, `/api/public/catalog` `502`/`401`/`500` | `LOVELACE_API_BASE_URL` unreachable (e.g. IPv6 binding) or `LOVELACE_PUBLIC_API_SECRET` mismatch | Part I, Sections 2.1, 3.1 |
 | All 4 probes `200 OK`, but bookings/prices/logins/sites look wrong | Operational or configuration mistake inside the Admin Console | **Part II (Catastrophes 1–21)** |
+| Webhooks, Stripe, OTA sync, Guest Portal, Email outbox, Reports, or WordPress embeds failing | Security gate, HMAC/Origin check, lease fence, or integration state | **Part III (Issues 22–36)** |
 
 ---
 
@@ -81,8 +83,9 @@ Inspect `docker logs lovelace-app` (or `journalctl -u lovelace-app -n 50`). Love
   2. Your Nginx/Apache/Cloudflare proxy is stripping the `Origin` header or rewriting `Host` (`Host` must match `Origin` for Lovelace's pre-session Login CSRF guard). Ensure `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Proto https;` are set.
 - **`413 Request Entity Too Large` when uploading a backup `.zip` or high-res property logo:**
   - Nginx defaults `client_max_body_size` to `1m`. Set `client_max_body_size 52m;` on your Nginx admin `server` block (or `request_body { max_size 52MB }` in Caddy) so 48 MiB backup archives upload cleanly.
-- **Stripe Webhooks Returning `400` Signature Verification Errors:**
-  - A proxy/WAF or JSON-formatting middleware modified whitespace in the POST body to `/api/webhooks/stripe`. Stripe's `Stripe-Signature` HMAC is computed over the exact raw bytes — pass `/api/webhooks/stripe` straight through unmodified.
+- **Stripe Webhooks Returning `400` Signature Verification Errors (or `404 Not Found`):**
+  - Confirm your Stripe Dashboard endpoint URL is `https://<ADMIN_DOMAIN>/api/public/v1/webhooks/stripe` (not `/api/webhooks/stripe`).
+  - If returning `400`, a proxy/WAF or JSON-formatting middleware modified whitespace in the POST body to `/api/public/v1/webhooks/stripe`. Stripe's `Stripe-Signature` HMAC is computed over the exact raw bytes — pass `/api/public/v1/webhooks/stripe` straight through unmodified.
 
 ### 1.5 Server Disk 100% Full (`No space left on device`)
 - **Symptom:** Bookings fail with `500`, PostgreSQL stops accepting writes, or `docker compose up --build` fails mid-build.
@@ -145,8 +148,8 @@ Inspect `docker logs lovelace-app` (or `journalctl -u lovelace-app -n 50`). Love
 - **Symptom:** Your SMTP provider (Resend / SES / Postmark) has a brief 2-minute outage or an expired API key; suddenly AWS ECS / Cloud Run / Azure starts killing and restarting `lovelace-app` every 60 seconds!
 - **Root Cause:** `/readyz` checks external dependencies (including SMTP when `LOVELACE_REQUIRE_EMAIL=true`) and returns `503` when degraded. If a container orchestrator uses `/readyz` as a **container kill/liveness probe**, an email outage causes container restarts!
 - **Fix:**
-  - Point **container liveness / healthcheck probes** at **`/healthz`** (or `noteG-server -healthcheck`, which hits `/healthz`).
-  - Point **external uptime alerts & deployment gates** at **`/readyz`**.
+  - Point recurring **container kill / liveness probes** on AWS ECS, Cloud Run, Kubernetes, or Azure at **`GET /healthz`** (`curl -fsS http://127.0.0.1:8080/healthz`). *(Note: `noteG-server -healthcheck` probes **`/readyz`**, which is great for Docker Compose `service_healthy` startup ordering and deployment gates, but should not be wired as an aggressive container-kill liveness probe when external SMTP may flap.)*
+  - Point **external uptime alerts & deployment readiness gates** at **`/readyz`**.
 
 ---
 
@@ -160,7 +163,7 @@ Inspect `docker logs lovelace-app` (or `journalctl -u lovelace-app -n 50`). Love
 - **Fix:**
   1. On `lovelace-app`, set `LOVELACE_LISTEN_ADDR=:8080`.
   2. On `lovelace-public-web`, set `HOSTNAME=::`, `LOVELACE_API_BASE_URL=http://<app-service-name>.railway.internal:8080`, `LOVELACE_PROPERTY_SLUG=<your-actual-property-slug>`, and ensure `LOVELACE_PUBLIC_API_SECRET` matches `LOVELACE_PUBLIC_API_SECRET` exactly.
-  3. Include `100.64.0.0/10,fd12::/16` in both `LOVELACE_TRUSTED_PROXIES` and `LOVELACE_TRUSTED_PROXIES`.
+  3. Include `100.64.0.0/10,fd12::/16` in `LOVELACE_TRUSTED_PROXIES` on both `lovelace-app` and `lovelace-public-web`.
 
 ### 3.2 Railway CLI Fails with `prefix not found` or Deploys the Wrong Dockerfile to `public-web`
 - **Root Cause:** `railway up` matches your current working directory's real path (`realpath`) against `~/.railway/config.json` (on macOS, `/tmp` is a symlink to `/private/tmp`), and deploying `public-web` without `--path-as-root` uploads the repo root `Dockerfile` instead of `apps/public-web/Dockerfile`.
@@ -278,7 +281,7 @@ Hospitality owners are busy welcoming tired travellers, cooking fry-ups, unblock
 > *"I put the booking box onto our website three weeks ago, and callers keep saying our website says `Online Card Checkout Unavailable`!"*
 
 - **Why It Happened:** Every new property starts in **Safe Dark-by-Default Mode** (`Enable Public Online Checkout (Stripe)` is **unticked** in **Site Settings**).
-- **Immediate Fix:** Once live `sk_live_...` and `whsec_...` (`https://<ADMIN_DOMAIN>/api/webhooks/stripe`) keys are configured, go to **Settings → Site Settings (`/property`)**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**. Also check **Payment Exceptions (`/payment-exceptions`)** if a guest ever paid right as their 15-minute hold expired.
+- **Immediate Fix:** Once live `sk_live_...` and `whsec_...` (`https://<ADMIN_DOMAIN>/api/public/v1/webhooks/stripe`) keys are configured, go to **Settings → Site Settings (`/property`)**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**. Also check **Payment Exceptions (`/payment-exceptions`)** if a guest ever paid right as their 15-minute hold expired.
 
 ---
 
@@ -352,7 +355,7 @@ Hospitality owners are busy welcoming tired travellers, cooking fry-ups, unblock
 
 - **Two Crucial Glamping Controls in `/maintenance`:**
   1. **Partial vs Full Closure:** When only an outdoor amenity (like a private hot tub or fire-pit) has a minor fault while the hut itself remains safe to occupy, set **Availability Impact = `PARTIAL`** rather than `UNAVAILABLE` so future bookings aren't blocked while you call tonight's guest to offer a goodwill discount/bottle of wine. Use **`UNAVAILABLE`** for torn canvas, wood-burner flue faults, or water/power loss.
-  2. **Post-Repair Inspection Sign-Off:** Any `UNAVAILABLE` maintenance ticket stays blocked on the calendar even after the technician marks it `COMPLETED` **until you open the ticket in `/maintenance` and mark the Post-Completion Inspection as `PASSED`** (confirming canvas tension, CO alarm, and cleanliness are guest-ready)!
+  2. **Post-Repair Inspection Sign-Off & Manual Restriction Release:** Any `UNAVAILABLE` maintenance ticket stays open until you open the ticket in `/maintenance` and mark the Post-Completion Inspection as **`PASSED`** (confirming canvas tension, CO alarm, and cleanliness are guest-ready), transition the ticket to **`CLOSED`**, **and click `Release Restriction`** on the ticket (plus switch the unit's status back to `active` in `/units` if you changed it to `maintenance`). Lovelace intentionally never auto-releases maintenance blockouts without explicit operator release!
 
 ---
 
@@ -394,8 +397,8 @@ Running two or more properties inside one Lovelace account (for instance, **Mead
 > *"I just spent 25 minutes adding winter blockouts, changing check-in time to 4:00 PM, and editing rates — and then looked up at the top-left corner and realised I was still on `Meadowbrook Campsite` instead of `Harbour View Cottage`!!"*
 
 - **How to Undo Every Accidental Change Using the Audit Log:**
-  1. Don't guess what the old settings were! Open **Settings → Audit Log (`/audit-logs`)** while still on `Meadowbrook Campsite`.
-  2. Every single edit you just made is listed in chronological order with both **`before_state` (your exact previous numbers/times)** and **`after_state`**!
+  1. Don't guess what the old settings were! Open **Settings → Audit Log (`/audit-logs`)** while still on `Meadowbrook Campsite` to see the exact chronological list of every edit (`Timestamp`, `Actor`, `Action`, `Resource`, `IP`).
+  2. Need the exact previous numbers (`before_state` vs `after_state`)? In the same signed-in browser window, open `https://<YOUR_ADMIN_DOMAIN>/api/v1/audit-logs?limit=25` — each entry includes sanitized structural **`before_state`** (your previous check-in/out times, rates, and policy numbers) and **`after_state`**!
   3. Copy the original values back into **Site Settings** / **Rates**, and click **Release** on any accidental blockout in **Bulk Blockouts (`/blocks`)**.
   4. Now use the top-left **Switch** dropdown under **ACTIVE PROPERTY** to switch to `Harbour View Cottage` and apply your changes there.
 - **Best Trick to Prevent Multi-Site Mix-Ups Forever:**
@@ -429,3 +432,211 @@ Running two or more properties inside one Lovelace account (for instance, **Mead
 - **Immediate Fix & Safeguard:**
   1. Check **Settings → Site Settings (`/property`)** on *each* property separately (using the top-left property switcher) to confirm `VAT Registered` is ticked **only** on the VAT-registered entity, and verify `Tax Rate` on its Unit Types (`/unit-types`) and Extras (`/extras`).
   2. In **Inventory & Holds → Reports & BI (`/reports`)**, accounting CSV exports (`lovelace.accounting.v1`) are **strictly per-property** (they never commingle two businesses' revenue into one spreadsheet!). Always check the active property name at the top of `/reports` before clicking **Export Accounting CSV**, and name the downloaded file clearly per business entity.
+
+
+---
+
+# Part III: 15 Deep Operational, Security & Integration Troubleshooting Scenarios (Issues 22–36)
+
+These 15 scenarios cover subtle, code-verified edge cases across **Stripe webhooks**, **SMTP / email outbox fencing**, **GDPR erasure barriers**, **Phase 4 OTA Channel Manager sync**, **Maintenance restrictions & RBAC**, **`LOVELACE_ENCRYPTION_KEY` vault boundaries**, **Argon2id `.zip.enc` backups**, **Self-Service Guest Portal**, **Phase 5 BI Reports**, and **WordPress / Website iframe embeds**.
+
+---
+
+### Issue 22: Ticking "Enable Stripe" or "Enable Guest Portal" in `/property` Before `.env` Setup Crash-Loops `lovelace-app` (Plus Implicit TLS Port `:465` Hanging SMTP)
+- **Symptom:** Everything was running smoothly; you ticked **Enable Public Online Checkout (Stripe)** or **Enable Self-Service Guest Portal** in **Settings → Site Settings (`/property`)**, `/readyz` flipped to `503 Service Unavailable`, and the next time `lovelace-app` restarted it refused to boot! Or you set `LOVELACE_SMTP_ADDR=smtp.provider.com:465` and every email hangs for 30 seconds before failing.
+- **Root Cause (`internal/service/service.go`, `internal/mailer/mailer.go`):**
+  1. `ValidateProductionStartup` inspects `property_booking_policies` in PostgreSQL on boot: if **any** active public property has `stripe_enabled = true`, production **requires** both live `LOVELACE_STRIPE_SECRET_KEY` (`sk_live_` / `rk_live_`) + `LOVELACE_STRIPE_WEBHOOK_SECRET` (`whsec_`) **and** configured `LOVELACE_SMTP_ADDR` (even if `LOVELACE_REQUIRE_EMAIL=false`!). Likewise, if `LOVELACE_GUEST_PORTAL_ENABLED=true` and `guest_portal_enabled=true`, SMTP and a 32-byte `LOVELACE_ENCRYPTION_KEY` are mandatory.
+  2. `SMTPSender` connects via plain TCP and upgrades opportunistically using **`STARTTLS` (port `587`)**. Implicit TLS port `465` waits silently for a client TLS ClientHello and times out.
+- **Fix:**
+  - **Option A (Ready to go live):** Supply live `LOVELACE_STRIPE_SECRET_KEY`, `LOVELACE_STRIPE_WEBHOOK_SECRET`, and `LOVELACE_SMTP_ADDR=smtp.<provider>:587` (`STARTTLS`, never `:465`), then start `lovelace-app`.
+  - **Option B (Turn the DB toggle back off immediately so `lovelace-app` boots without keys):**
+    ```sql
+    UPDATE property_booking_policies
+    SET stripe_enabled = FALSE, guest_portal_enabled = FALSE, version = version + 1, updated_at = NOW();
+    ```
+
+---
+
+### Issue 23: Public Checkout or Guest Portal Fails with `403 origin_not_allowed` or `400 query_token_forbidden`
+- **Symptom:** Guests clicking **Proceed to Checkout**, looking up a booking on `/lookup`, or submitting a 6-digit OTP on `/portal` receive `403 origin_not_allowed` — OR clicking a shared confirmation link returns `400 query_token_forbidden`.
+- **Root Cause (`apps/public-web/src/lib/portal-bff.ts`, `internal/httpapi/public_handlers.go`):**
+  1. **`403 origin_not_allowed`:** `lovelace-public-web` enforces strict `Origin` matching on every POST mutation. It fails when:
+     - Visitors browse `https://www.book.yourdomain.com` while `NEXT_PUBLIC_SITE_URL` / `LOVELACE_PUBLIC_ORIGIN` only lists `https://book.yourdomain.com` (apex vs `www` mismatch);
+     - `LOVELACE_TRUST_PROXY=true` and `LOVELACE_TRUSTED_PROXIES` are missing on `lovelace-public-web`, so behind Nginx/ALB/Railway the Next.js container sees internal `Host: 0.0.0.0:3000` instead of `X-Forwarded-Host: book.yourdomain.com`; or
+     - A privacy browser extension or cross-site redirect strips `Origin` to `Origin: null`.
+  2. **`400 query_token_forbidden`:** To prevent bearer tokens from leaking into browser history, server access logs, or `Referer` headers, Lovelace **forbids** `?token=...`, `?confirmation_token=...`, or `?code=...` in URL query strings.
+- **Fix:**
+  1. Redirect `www` → canonical host at your DNS/proxy layer (or list comma-separated allowed origins in `LOVELACE_PUBLIC_ORIGIN`), and set `LOVELACE_TRUST_PROXY=true` + `LOVELACE_TRUSTED_PROXIES` + `NEXT_PUBLIC_SITE_URL=https://book.yourdomain.com` on `lovelace-public-web`.
+  2. Always direct guests to `/lookup` (where tokens are submitted via `POST` body / `Authorization: Bearer`) — never append `?token=` to custom email links.
+
+---
+
+### Issue 24: Customer Paid on Stripe, Yet No Booking Appeared on `/calendar` (Webhook Path, `EXPIRED_HOLD_PAID`, `rk_live_` Refund Scope, or `livemode_mismatch`)
+- **Symptom:** Stripe Dashboard shows a succeeded payment, yet `/reservations` and `/calendar` do not show the stay.
+- **Root Cause (`internal/service/public_booking_service.go` — 4 distinct cases):**
+  1. **Wrong Webhook Path (`404` in Stripe Dashboard):** Webhook registered as `/api/webhooks/stripe` instead of **`https://<ADMIN_DOMAIN>/api/public/v1/webhooks/stripe`**, or pointing at `book.yourdomain.com` (`:3000`) instead of `admin.yourdomain.com` (`:8080`).
+  2. **Late Payment After 15-Minute Hold Expired (`EXPIRED_HOLD_PAID`) or Concurrent Unit Claim (`OVERLAP_ON_CONFIRM`):** The guest completed 3DS authentication *after* `ExpireStaleBookingHolds` expired their 15-minute hold. Lovelace records an open row in **`/payment-exceptions`** and automatically calls Stripe's Refunds API outside the DB transaction — **unless** you used a restricted Stripe key (`rk_live_...`) without `Charges / Refunds: Write` permission, in which case the refund fails and awaits manual refund in Stripe!
+  3. **`AMOUNT_MISMATCH`:** Paid amount/currency differed from `payment_attempts.amount_pence`; logged to `/payment-exceptions` without confirming the hold.
+  4. **Silent `200 OK` on `livemode_mismatch`:** Sending a Stripe CLI test webhook (`livemode: false`) to a `LOVELACE_ENV=production` server returns HTTP `200` (so Stripe stops retrying) while recording `status = 'REJECTED'` in `payment_webhook_events` and `payment.webhook_livemode_mismatch` in `audit_logs`.
+- **Fix:**
+  1. Check **Inventory & Holds → Payment Exceptions (`/payment-exceptions`)** first — any late, overlapping, or mismatched payment is listed there with its Stripe PaymentIntent ID.
+  2. In Stripe Dashboard → **Developers → Webhooks**, verify the URL is `https://<ADMIN_DOMAIN>/api/public/v1/webhooks/stripe`, resend any failed `checkout.session.completed` event (idempotently safe!), and ensure any `rk_live_` key grants **Checkout Sessions (Write)**, **PaymentIntents (Read)**, and **Refunds (Write)**.
+
+---
+
+### Issue 25: Emails Stuck in `DISPATCH_UNKNOWN` (No Retry Button for Staff) Blocking Guest Edits & GDPR Erasure (`409 Conflict`)
+- **Symptom:** On `/communications/settings`, an email sits in red **`DISPATCH_UNKNOWN`** with no **Retry Send** button; reception `staff` see *"Manager/Owner approval required (`comms:reconcile`)"*; AND trying to update, merge, or GDPR-anonymise that guest returns **`409 Conflict`**.
+- **Root Cause (`internal/service/guest_crm_service.go`):**
+  - If an SMTP socket drops or worker lease (`60s` TTL) expires *after* `DATA` transmission starts, Lovelace cannot know whether the remote mail server accepted the message. Auto-retrying could send duplicate payment/confirmation emails, so Lovelace fences the row into `DISPATCH_UNKNOWN`.
+  - If `AnonymizeGuest` was attempted while a message was `DISPATCHING` or `DISPATCH_UNKNOWN`, Lovelace stamped `guests.erasure_requested_at` — which intentionally freezes profile edits, merges, and new emails until every uncertain dispatch is reconciled!
+- **Fix (Owner Admin or Manager):**
+  1. Sign in as **`owner_admin`** or **`manager`** and open **Guests & Comms → Templates & Automation (`/communications/settings#failed-emails`)**.
+  2. Check your SMTP provider's sent/activity logs (Resend / Postmark / SES) to see whether the email left their server:
+     - **If delivered/accepted:** Pick `Confirm Sent (Provider Accepted)` + `PROVIDER_WEBHOOK_ACCEPTED` (or `MTA_ACCEPTED` / `CONSERVATIVE_ASSUME_SENT`).
+     - **If never received by provider:** Pick `Confirm Failed` or `Cancel Without Re-Send` + `PROVIDER_NOT_SUBMITTED` (or `MTA_REJECTED` / `PROVIDER_WEBHOOK_FAILED`).
+  3. **Avoid `422` PII Rejection on Evidence Fields:** Enter a machine reason code (e.g. `SMTP_POST_DATA_TIMEOUT`), an opaque log/message ID (e.g. `resend_msg_01j9abc`), and a short non-PII note (e.g. `Checked relay dashboard; message not accepted`). **Never type the guest's email address or phone number** into `reason_code`, `evidence_ref`, or `note` — `ValidateNonPIIText` rejects emails and 7+ digit phone runs so audit logs remain 100% PII-free!
+  4. Once reconciled, re-run **Anonymise Guest** on `/guests/{id}` to complete erasure cleanly.
+
+---
+
+### Issue 26: Airbnb / Booking.com Reservations Arrive as `UNMAPPED` (Zero Calendar Block!) or `CONFLICT_OVERBOOKED`
+- **Symptom:** A guest arrives saying they booked on Airbnb or Booking.com, or `/reports` shows an orange completeness banner warning of `UNMAPPED` or `CONFLICT_OVERBOOKED` external reservations!
+- **Root Cause (`internal/service/channel_sync_service.go`):**
+  1. **`UNMAPPED`:** Your Channel Manager (`Beds24`, `Smoobu`, `Lodgify`, `Channex`) sent a booking for an `external_listing_id` that has no active row in `channel_listing_mappings` yet. Because Lovelace does not know which cottage/pitch it belongs to, **no `inventory_claims` row can be placed** until mapped!
+  2. **`CONFLICT_OVERBOOKED`:**
+     - `OVERBOOKING_INVENTORY_CONFLICT` — all units of the mapped `Unit Type` were already claimed on those dates (protected by PostgreSQL's `excl_inventory_claims_no_overlap` GiST constraint so existing direct guests are never overwritten); or
+     - `CURRENCY_MISMATCH` — the OTA booking arrived in e.g. `EUR` while your mapping/property currency is `GBP`.
+- **Fix:**
+  1. Open **Settings → Channel Manager (`/settings/integrations/channel-manager`)** and inspect the **External Reservation Exceptions** queue.
+  2. For **`UNMAPPED`:** Create the missing listing mapping (`external_listing_id` → local `Unit Type`, matching currency & timezone) and trigger **Pull Reservations** so Lovelace imports and claims the dates immediately.
+  3. For **`CONFLICT_OVERBOOKED`:** Check `/calendar` to see if another unit in the same or upgraded category is free, move the flexible direct booking onto the free unit (or contact the OTA guest immediately), and re-pull / resolve the conflict. *(Channex revisions intentionally remain un-acknowledged until `CONFLICT_OVERBOOKED` is cleared so nothing is silently lost.)*
+
+---
+
+### Issue 27: Outbound OTA Sync Returns `422 confirmation_required`, `422 capability_blocked` (Lodgify), or `SKIPPED_UNCHANGED`
+- **Symptom:** Triggering a manual OTA availability/rate push returns `422` — or succeeds in 50ms saying `0` updates pushed (`SKIPPED_UNCHANGED`).
+- **Root Cause (`internal/service/channel_sync_service.go`, `internal/channels/lodgify.go`):**
+  1. **`422 confirmation_required`:** High-blast-radius safety rail — pushing across **more than 1 listing** or a date window **`> 14` days** requires running **Sync Preview** first and passing `"confirm_scope": true`.
+  2. **`422 capability_blocked` on `lodgify`:** Lodgify's public REST API does not expose safe programmatic calendar availability writes outside Partner Connectivity integrations. Lovelace fails closed rather than pretending availability synced!
+  3. **`SKIPPED_UNCHANGED`:** `channel_sync_checkpoints` stores the canonical SHA-256 digest of the last pushed ARI payload per listing/window and skips redundant API calls when neither availability nor rates changed.
+- **Fix:**
+  - Always preview multi-week/multi-listing pushes first and tick/pass `confirm_scope = true`.
+  - For **Lodgify**, configure the mapping with `sync_availability = false` and `ownership_mode = READ_ONLY_IMPORT` (or use Channex/Beds24/Smoobu if you require two-way automated availability blocking).
+
+---
+
+### Issue 28: Incoming OTA Webhooks Fail with `401 webhook_unauthorized` (Clock Drift, Channex Secret Rotation, or Orphaned Webhooks)
+- **Symptom:** External OTA bookings only appear on scheduled background pulls rather than instantaneously, and logs show `401 webhook_unauthorized` on `POST /api/v1/webhooks/channels/{providerCode}/{connectionID}`.
+- **Root Cause (`internal/channels/signing.go`, `internal/channels/channex.go`):**
+  1. **Host Clock Skew `> 5 minutes`:** Smoobu/HMAC timestamp validation (`maxWebhookTimestampSkew = 5 * time.Minute`) rejects webhooks if your Linux VM clock has drifted!
+  2. **Zero-Downtime Secret Rotation Missed:** You rotated your Channex webhook secret without placing the old secret into `webhook_secret_previous` during the transition window.
+  3. **Revoking Remote API Keys *Before* Clicking `Disconnect`:** If you delete your API key inside Channex/Beds24 *before* clicking **Disconnect** in Lovelace, Lovelace cannot call the provider API to delete the remote webhook subscription (`webhook_error_code` surfaces on the card while keeping `webhook_id` visible).
+- **Fix:**
+  1. Enable NTP (`timedatectl status` → `System clock synchronized: yes`).
+  2. When rotating Channex webhook secrets, paste the outgoing secret into **Previous Webhook Secret (`webhook_secret_previous`)** and the new secret into **Webhook Secret**, save, update Channex, and clear `webhook_secret_previous` 24 hours later.
+  3. Always click **Disconnect** inside Lovelace *before* revoking the API key in the provider's dashboard (or delete any orphaned webhook manually in the provider's webhook settings).
+
+---
+
+### Issue 29: Maintenance Ticket Marked `PASSED` & `CLOSED`, Yet Unit Still Shows `BLOCKED` Online (Plus 3-Role RBAC Split)
+- **Symptom:** A plumber fixed a leaking shower, a manager recorded Inspection = **`PASSED`** and transitioned the ticket to **`CLOSED`**, yet guests STILL cannot book that cottage next week! Also, your maintenance technician says Lovelace gives `403 Forbidden` when they try to sign off their own repair or release the blockout.
+- **Root Cause (`internal/service/maintenance_service.go`, `internal/auth/rbac.go`):**
+  1. **Intentional Non-Auto-Release:** Completing, inspecting (`PASSED`), or closing a maintenance request **never automatically releases** linked `MAINTENANCE` blockouts (`maintenance_restriction_links` / `inventory_claims`), nor does it revert `units.status = 'maintenance'` back to `'active'`. Why? Because a room often still needs deep housekeeping changeover or paint drying before guests sleep in it!
+  2. **Segregation of Duties (RBAC):**
+     - `maintenance_staff` can update work orders (`maintenance:write`) and upload photos, **cannot** inspect/close (`maintenance:inspect`) or release blockouts (`blocks:write`).
+     - `staff` can create/release blockouts (`blocks:write`), **cannot** record formal post-repair inspections (`maintenance:inspect`).
+     - Only **`manager`** and **`owner_admin`** hold both `maintenance:inspect` and `blocks:write`.
+- **Fix:**
+  1. Sign in as **`manager`** or **`owner_admin`**, open the maintenance request in **`/maintenance/{id}`**, scroll to **Linked Inventory Restrictions**, and click **Release Restriction** (or release it on `/blocks`).
+  2. Also check **Inventory & Holds → Units & Pitches (`/units`)** — if someone set that unit's operational status dropdown to `maintenance` or `inactive`, switch it back to **`active`**!
+
+---
+
+### Issue 30: *"Arrival Today on Unready Unit"* Won't Clear Even After Marking Today's Clean `READY` (Plus Unassigned Preventative Schedules)
+- **Symptom:** Housekeeping marked today's changeover task **`READY`**, yet the red **"Arrival Today on Unready Unit"** alert stays at the top of Operations Centre (`/`)! Separately, monthly preventative maintenance jobs suddenly started appearing as **`Unassigned` (`REPORTED`)** with `[Schedule Assignment Warning]`.
+- **Root Cause (`internal/store/postgres/operations_repo.go`, `maintenance_repo.go`):**
+  1. **Worst-Open-Task Safety Rule:** `ListArrivalReadinessIssues` evaluates **all** tasks on that `unit_id` with `scheduled_date <= today`. If a task from **yesterday or last week** on the same unit was left sitting in `CLEANING_REQUIRED` or `INSPECTION_REQUIRED`, Lovelace treats the unit as unready until every open task on that unit is `READY`!
+  2. **Assignee Re-Validation on Sweep:** When you deactivate a seasonal staff member (`/users`) or contractor (`/maintenance/facilities`), `AcquireDueSchedulesAndGenerateRequests` refuses to assign new preventative tickets to an inactive person, clears the stale assignee with `[Schedule Assignment Warning]`, and places the ticket into `Unassigned` so it isn't silently forgotten!
+- **Fix:**
+  1. Filter **Operations Centre (`/`)** (or inspect previous dates `?date=YYYY-MM-DD`) for older unfinished housekeeping tasks on that unit and advance them to **`READY`**.
+  2. Open **Maintenance → Workload & Schedule (`/maintenance/schedule`)**, edit the recurring schedule, and pick the replacement active staff member or contractor.
+
+---
+
+### Issue 31: Moving PostgreSQL to a New Server with a Different `LOVELACE_ENCRYPTION_KEY` Breaks Recovery Codes, Guest Portal OTPs, OTAs & Cloud Backups
+- **Symptom:** You migrated your PostgreSQL database (`pg_dump` / volume move) onto a new server, generated a *brand-new* `LOVELACE_ENCRYPTION_KEY` instead of copying your old one, and suddenly:
+  1. Admin Recovery Codes say `Invalid recovery code` on `/login/recover`;
+  2. Active Guest Portal 6-digit OTPs fail verification;
+  3. Channel Manager (`Beds24`/`Smoobu`/`Lodgify`/`Channex`) fails decryption (`cipher: message authentication failed`); and
+  4. Scheduled Cloud Backups fail to decrypt bucket credentials!
+- **Root Cause (`internal/auth/recovery.go`, `internal/secrets/box.go`, `internal/service/portal_service.go`):**
+  - All four subsystems derive keys from `LOVELACE_ENCRYPTION_KEY` (`AES-256-GCM` for `channel_connections` and `backup_targets`, plus domain-separated `HMAC-SHA256` keys for `admin_recovery_codes` and `guest_portal_challenges`). Reservations, guests, prices, units, and admin passwords (`Argon2id`) are completely unaffected!
+- **Fix:**
+  - **Best Fix (10 seconds):** Copy your original 64-hex-char `LOVELACE_ENCRYPTION_KEY` from your password vault into `.env` / cloud secrets and restart `lovelace-app` — all 4 subsystems work immediately!
+  - **If the old `LOVELACE_ENCRYPTION_KEY` is permanently lost (3-minute re-key):**
+    1. Sign in with your normal password → **My Account (`/account`)** → **Generate New Recovery Codes** (re-keys all 8 codes under the new key).
+    2. Open **Settings → Channel Manager (`/settings/integrations/channel-manager`)**, re-paste your OTA API keys, and click **Save** then **Verify Live Connection**.
+    3. Open **Settings → Backups & Cloud Sync (`/settings/backups`)**, re-enter your S3/R2/GCS/Azure bucket secret, and save.
+    4. Any guest at `/portal` simply clicks **Send a new code** (new OTPs use the new key immediately).
+
+---
+
+### Issue 32: Portable Backup Hits the `48 MiB` Ceiling, Fails Passphrase Decryption, or Locks Other Staff Logins After Empty-DB Restore
+- **Symptom:**
+  - **A:** Exporting or uploading a `.zip` / `.zip.enc` backup returns `archive exceeds maximum portable size (48 MiB)`.
+  - **B:** Verifying a `.zip.enc` fails decryption because you pasted `LOVELACE_ENCRYPTION_KEY` into the passphrase box.
+  - **C:** After restoring a `.zip` backup into a fresh server, your own login works, but your manager and receptionists say their old passwords no longer work!
+- **Root Cause (`internal/backup/crypto_archive.go`, `internal/store/postgres/backup_repo.go`):**
+  1. Portable UI backups bundle PostgreSQL JSONL tables + `LOVELACE_ATTACHMENT_DIR` photos up to **`48 MiB` (`MaxArchiveSizeBytes`)** to keep memory bounded inside 512 MiB–1 GiB containers.
+  2. `.zip.enc` (`LVBK1` header) uses **`Argon2id (t=2, m=64 MiB, p=2) + AES-256-GCM`** keyed by the **human passphrase you typed when creating/configuring that backup** — *not* `LOVELACE_ENCRYPTION_KEY`!
+  3. For security, portable backups **never export `password_hash` or session tokens**. During `RestoreIntoEmptyDatabase`, your currently signed-in `owner_admin` keeps their live password/session, while all *other* imported `admin_users` receive a locked placeholder hash and `must_rotate_password = true`.
+- **Fix:**
+  - **If > 48 MiB of high-res maintenance photos:** Use `pg_dump -Fc` + filesystem `rsync` / cloud volume snapshots for full disaster backups (and keep uploaded maintenance images compressed to 1–2 MiB JPEGs/WebPs).
+  - **Post-restore staff unlock:** Open **Settings → Admin Users (`/users`)** and issue each active colleague a fresh 12-character temporary password so they can sign in and pick their own new passphrase.
+
+---
+
+### Issue 33: Guest Portal Returns `404`, `409 duplicate_guest_verification_required`, `409 ota_managed_booking`, `403 step_up_required`, or `403 do_not_contact_restricted`
+- **Symptom:** Guests using `/portal` encounter `404 Not Found` or specific `403`/`409` status banners.
+- **Root Cause & Exact Resolution (`internal/service/portal_service.go`):**
+  - **`404 Not Found`:** **Both** gates must be enabled: `LOVELACE_GUEST_PORTAL_ENABLED=true` on `lovelace-app` **AND** **Enable Self-Service Guest Portal** ticked in `/property` for that property!
+  - **`409 duplicate_guest_verification_required`:** Two or more unmerged rows in `guests` share that email address (`normalized_email`), so Lovelace refuses to guess which record owns the inbox! **Fix:** Open **Guests & Comms → Duplicate Merge Review (`/guests/merge`)** and merge the duplicate guest profiles (or trigger staff-verified email confirmation from `/guests/{id}`).
+  - **`409 ota_managed_booking`:** Guests can view stay details, but date-amendment and cancellation requests for externally managed OTA stays (`BOOKING_COM`, `AIRBNB`, etc.) must be made on the original booking platform so OTA commissions and refunds stay consistent.
+  - **`403 step_up_required`:** Sensitive mutations (requesting cancellation or submitting a GDPR privacy request) require fresh authentication within the last **`15` minutes** (`StepUpFreshnessWindow`). Prompt the guest to complete the quick 6-digit step-up OTP shown on screen.
+  - **`403 do_not_contact_restricted`:** That guest's CRM profile status is set to **`DO_NOT_CONTACT`** (or has a pending GDPR erasure `erasure_requested_at`), which blocks automated portal actions and emails. Review their status in `/guests/{id}`.
+
+---
+
+### Issue 34: Understanding `/reports` Completeness Warnings & Accounting CSV `NOT IMPLEMENTED` / Leading `'` Columns
+- **Symptom:** `/reports` shows a yellow **Data Completeness & Integrity Notices** banner (`inventory_history_incomplete`, `ManualUnquotedBookingsCount`, `MultiCurrencyDetected`, or legacy refunds), or your accountant asks why 3 columns in the exported CSV say `NOT IMPLEMENTED` and why a note starting with `-` has a leading apostrophe `'`.
+- **Root Cause (`internal/service/reporting.go`, `internal/domain/reporting.go`):**
+  1. **Completeness Banners Are Truthfulness Guards (Not Errors):**
+     - `inventory_history_incomplete`: Your report date range reaches back before migration `0021` started recording exact daily `unit_status_history` transitions. Narrow `start_date` to on/after `inventory_history_reliable_from` for exact historical sellable-night denominators.
+     - `ManualUnquotedBookingsCount`: Telephone/manual bookings without an online quote snapshot prorate `reservations.total_pence` evenly across stay nights.
+     - `unresolved_legacy_refund_payments_count`: Pre-`0021` refunded payments without a dated `refunds` row are excluded from cash-flow date buckets rather than misattributed to `paid_at`.
+     - Open `UNMAPPED` / `CONFLICT_OVERBOOKED` OTA rows or open `/payment-exceptions` are flagged so you resolve them before filing month-end accounts!
+  2. **`NOT IMPLEMENTED` Columns (`ota_commission_pence`, `payout_settlement_date`, `net_of_fee_settlement_pence`):** Lovelace records gross booking totals, Stripe payments, and refunds accurately, but does not ingest bank payout batch settlements or OTA commission invoices — so it explicitly outputs `NOT IMPLEMENTED` rather than outputting misleading `0`s!
+  3. **Leading `'` in CSV Cells (`SanitizeCSVCell`):** Any text cell starting with `=`, `+`, `-`, or `@` is prefixed with `'` to prevent Excel/Google Sheets CSV formula injection while keeping numeric money columns (`-5000`) pure signed integers.
+
+---
+
+### Issue 35: Website / WordPress Booking Embed Shows *"Refused to Connect"*, Disappears for Logged-Out Visitors, Returns `404`, or Stays Stuck at `680px`
+- **Symptom:** Your embedded booking widget shows a grey browser error box (*"book.yourdomain.com refused to connect"*), vanishes as soon as you log out of WordPress Admin, shows `404`, or fails to auto-resize beyond `680px`.
+- **Root Cause & Fix (`apps/public-web/next.config.ts`, `lovelace-frontend.js`):**
+  1. ***"Refused to connect"* (`X-Frame-Options` / `CSP frame-ancestors`):**
+     - Standard storefront pages (`/`, `/stays`, `/book`, `/portal`) send `frame-ancestors 'none'` + `X-Frame-Options: DENY` to block clickjacking. **Only `/embed/<property-slug>` allows cross-origin framing (`frame-ancestors *`)!** Make sure your `<iframe>` `src` uses `https://book.yourdomain.com/embed/<slug>` — and check that Nginx/Cloudflare in front of `book.yourdomain.com` is **not** injecting a blanket `add_header X-Frame-Options DENY;` header!
+  2. **Widget Visible to WordPress Admin, Invisible to Logged-Out Visitors:**
+     - `class-lovelace-booking-plugin.php` intentionally hides embeds from public visitors if **Public Booking Site URL** in **WordPress → Settings → Lovelace Booking** uses `http://` instead of `https://` (only localhost loopback is allowed over `http://`). Update it to `https://book.yourdomain.com`!
+  3. **`404` Inside `/embed/<slug>`:** Either the `slug` has a typo, or the property is inactive (`public_enabled = false`).
+  4. **Iframe Stuck at `680px` Without Auto-Resizing:** `lovelace-frontend.js` verifies `event.origin === configuredBookingOrigin` on `lovelace:embed:resize` `postMessage` events. If `https://book.yourdomain.com` HTTP-redirects to `https://www.book.yourdomain.com`, `event.origin` won't match! Update **Public Booking Site URL** (or re-copy the HTML snippet) to match the final non-redirecting origin.
+
+---
+
+### Issue 36: WordPress `[lovelace_accommodation]` Cards Show Old Prices — or Clicking *"Book Direct"* Does Nothing in Modal Mode
+- **Symptom:** You updated room rates or descriptions in Lovelace 5 minutes ago, `/stays` shows the new price, yet your WordPress page's `[lovelace_accommodation]` cards still show the old price! Or clicking *"Book Direct"* (`mode="modal"`) does nothing on your WordPress page.
+- **Root Cause & Fix (`class-lovelace-api-client.php`, `lovelace-frontend.js`):**
+  1. **15-Minute WordPress Transient + Page Cache:** `Lovelace_Booking_API_Client` caches `/api/public/catalog` in a WordPress transient (`lovelace_cat_<md5>`) for **15 minutes (`900s`)** so your WordPress site stays fast even under heavy traffic.
+     - **Instant Refresh:** In WordPress Admin → **Settings → Lovelace Booking**, click **Save Changes** or **Test Connection & Sync Brand Colours** (clears the transient immediately), then purge any full-page cache plugin (**WP Rocket**, **LiteSpeed Cache**, **W3 Total Cache**, **Cloudflare APO**).
+  2. **Modal Button Does Nothing (`mode="modal"` / `target="modal"`):**
+     - **Parent Website CSP:** If your WordPress security plugin (Wordfence / HTTP Headers) sets a restrictive `Content-Security-Policy: frame-src 'self'` on your marketing website, the browser blocks the modal iframe from loading `https://book.yourdomain.com`. Add `https://book.yourdomain.com` to your WordPress site's `frame-src` directive — **or** switch shortcode attribute `mode="new_tab"` (`[lovelace_book_button mode="new_tab"]`), which works with zero iframes or JS!
+     - **Aggressive JS Deferral / Minification:** Exclude `lovelace-frontend.js` from "Delay JS Execution" in WP Rocket / Autoptimize so modal click handlers attach immediately on page load.

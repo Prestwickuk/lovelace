@@ -6,7 +6,7 @@ This guide covers running Lovelace **locally on your laptop/workstation** for de
 
 ## Part A: Quick Local Evaluation (2 Minutes)
 
-Use `docker-compose.dev.yml` when testing Lovelace locally on macOS, Linux, or Windows (WSL2). It automatically provisions PostgreSQL 17, runs all migrations, seeds a sample campsite (**Meadowbrook Estate**) and demo Owner Admin account, and enables local Stripe Sandbox checkout.
+Use `docker-compose.dev.yml` when testing Lovelace locally on macOS, Linux, or Windows (WSL2). It automatically provisions PostgreSQL 17, runs all migrations (`0001`–`0031`), seeds a sample venue (**Meadowbrook Estate**, slug `demo-property`) and demo Owner Admin account, and enables local Stripe Sandbox checkout.
 
 ### 1. Prerequisites
 - **Docker Engine 24+** & **Docker Compose v2** (`docker compose version`)
@@ -39,7 +39,8 @@ docker compose -f docker-compose.dev.yml down
 docker compose -f docker-compose.dev.yml down -v
 ```
 
-> **Warning:** Never run `docker compose down -v` on a production server — `-v` permanently deletes Docker volumes!
+> [!CAUTION]
+> Never run `docker compose down -v` on a production server — `-v` permanently deletes Docker volumes!
 
 ---
 
@@ -47,17 +48,30 @@ docker compose -f docker-compose.dev.yml down -v
 
 This is the recommended setup for running Lovelace on a dedicated Ubuntu 24.04 LTS or Debian 12 server (e.g. Hetzner, DigitalOcean, Linode, OVH, Vultr, or on-premise hardware).
 
+### Production Startup & Network Isolation Architecture
+
+`docker-compose.yml` enforces two separate internal Docker networks (`backend_net` and `bff_net`) so `public-web` has **zero network route** to PostgreSQL 17, and runs a strict 5-stage startup dependency chain:
+
+```mermaid
+flowchart LR
+    PG["1. postgres\n(PG 17 on backend_net)"] --> Boot["2. db-bootstrap\n(ensure-roles.sh:\nlovelace_migrator + lovelace_app)"]
+    Boot --> Mig["3. migrate\n(lovelace-migrate:\n0001..0031 DDL)"]
+    Mig --> App["4. app (noteG-server :8080)\nlovelace_app DML-only\n+ /var/lib/lovelace/attachments"]
+    App -->|"noteG-server -healthcheck\n(/readyz == 200)"| Web["5. public-web (:3000)\nNext.js BFF on bff_net only"]
+```
+
 ### 1. Server & DNS Preparation
 
 1. **Recommended Server Specs:**
    - **Small / Single Property:** 2 vCPU, 4 GB RAM, 40 GB NVMe SSD
    - **Multi-Property / High Traffic:** 4 vCPU, 8 GB RAM, 80+ GB NVMe SSD
 2. **DNS Records:** Point two `A` (and optional `AAAA`) records at your server's public IP:
-   - `admin.yourdomain.com` → `<SERVER_PUBLIC_IP>` (Lovelace Admin Console & Stripe webhooks)
-   - `book.yourdomain.com` → `<SERVER_PUBLIC_IP>` (Public Guest Booking Site & `/embed/[slug]` widgets)
-3. **Firewall (`ufw`):** Expose **only** SSH (`22`), HTTP (`80`), and HTTPS (`443`). Both `docker-compose.yml` ports (`127.0.0.1:8080` and `127.0.0.1:3000`) bind strictly to loopback so containers can never bypass your TLS proxy:
+   - `admin.yourdomain.com` → `<SERVER_PUBLIC_IP>` (Lovelace Admin Console & Stripe/Email/OTA webhooks)
+   - `book.yourdomain.com` → `<SERVER_PUBLIC_IP>` (Public Guest Booking Site, `/embed/[slug]` widgets & optional `/portal`)
+3. **Firewall (`ufw`) & NTP Clock Sync:** Expose **only** SSH (`22`), HTTP (`80`), and HTTPS (`443`). Ensure system NTP (`systemd-timesyncd`) is active so Stripe (`<= 5m`) and Smoobu/OTA (`<= 5m`) webhook HMAC timestamp checks never drift. Both `docker-compose.yml` ports (`127.0.0.1:8080` and `127.0.0.1:3000`) bind strictly to loopback so containers can never bypass your TLS proxy:
    ```bash
-   sudo apt update && sudo apt install -y ca-certificates curl git ufw openssl
+   sudo apt update && sudo apt install -y ca-certificates curl git ufw openssl systemd-timesyncd
+   sudo timedatectl set-ntp true
    sudo ufw default deny incoming
    sudo ufw default allow outgoing
    sudo ufw allow OpenSSH
@@ -100,8 +114,6 @@ LOVELACE_ENV=production
 LOVELACE_COOKIE_SECURE=true
 LOVELACE_TRUST_PROXY=true
 LOVELACE_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8
-LOVELACE_TRUST_PROXY=true
-LOVELACE_TRUSTED_PROXIES=127.0.0.1/32,::1/128,172.16.0.0/12,10.0.0.0/8
 
 # Loopback-only host bindings (Caddy/Nginx proxies TLS 443 -> 127.0.0.1:8080 & :3000)
 LOVELACE_BIND_ADDR=127.0.0.1
@@ -135,19 +147,20 @@ LOVELACE_PUBLIC_API_SECRET=<PASTE_64_CHAR_PUBLIC_API_SECRET>
 # Safe dark-by-default flags (enable Stripe later once your property is configured)
 LOVELACE_GUEST_PORTAL_ENABLED=false
 LOVELACE_STRIPE_SANDBOX=false
-LOVELACE_STRIPE_SANDBOX=false
 LOVELACE_STRIPE_SECRET_KEY=
 LOVELACE_STRIPE_WEBHOOK_SECRET=
 
-# Transactional SMTP (set LOVELACE_REQUIRE_EMAIL=false temporarily if configuring SMTP later)
+# Transactional SMTP (use STARTTLS port 587; set LOVELACE_REQUIRE_EMAIL=false temporarily if configuring SMTP later)
 LOVELACE_REQUIRE_EMAIL=true
 LOVELACE_EMAIL_FROM=bookings@yourdomain.com
 LOVELACE_SMTP_ADDR=smtp.resend.com:587
 LOVELACE_SMTP_USERNAME=resend
 LOVELACE_SMTP_PASSWORD=<YOUR_SMTP_PASSWORD_OR_API_KEY>
+LOVELACE_EMAIL_WEBHOOK_SECRET=
 ```
 
-> **CRITICAL:** Save `LOVELACE_ENCRYPTION_KEY` in a secure offline password vault (1Password, Bitwarden, etc.) immediately. It encrypts OTA channel tokens and cloud backup credentials at rest in PostgreSQL.
+> [!IMPORTANT]
+> Save `LOVELACE_ENCRYPTION_KEY` in a secure offline password vault (1Password, Bitwarden, etc.) immediately. It seals OTA channel tokens and cloud backup credentials with AES-256-GCM and keys the HMAC-SHA256 digests for admin recovery codes and Guest Portal OTPs.
 
 ---
 
@@ -243,7 +256,12 @@ server {
 }
 ```
 
-> **Note on Stripe Webhooks:** Once you enable Stripe online payments, register `https://admin.yourdomain.com/api/webhooks/stripe` as your Stripe webhook endpoint URL (events: `checkout.session.completed`, `checkout.session.expired`, `charge.refunded`). Never apply body-rewriting middleware on your reverse proxy so Stripe's raw HMAC signature remains intact.
+> [!IMPORTANT]
+> - **Inbound Webhook Endpoints on `admin.yourdomain.com`:**
+>   - **Stripe Payments:** `https://admin.yourdomain.com/api/public/v1/webhooks/stripe` (`checkout.session.completed`, `checkout.session.expired`, `charge.refunded`)
+>   - **Email Delivery Receipts (Optional):** `https://admin.yourdomain.com/api/v1/webhooks/email-events` (`X-Email-Signature: sha256=<hex>`)
+>   - **OTA Channel Push Webhooks (Optional):** `https://admin.yourdomain.com/api/v1/webhooks/channels/{providerCode}/{connectionID}`
+> - Never apply body-rewriting middleware on `admin.yourdomain.com` so raw webhook HMAC signatures remain intact, and never inject global `X-Frame-Options: DENY` on `book.yourdomain.com` if you plan to embed `/embed/<property-slug>` iframes on external websites (`next.config.ts` already sets route-specific `CSP frame-ancestors`).
 
 ---
 
@@ -262,11 +280,12 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
      LOVELACE_APP_PASSWORD="<APP_PW>" \
      /opt/lovelace/scripts/postgres/ensure-roles.sh
    ```
-3. **Compile Binaries & Run Migrations:**
+3. **Compile All 3 Binaries & Run Migrations:**
    ```bash
    cd /opt/lovelace
    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/noteG-server ./cmd/server
    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/lovelace-migrate ./cmd/migrate
+   CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/lovelace-seed ./cmd/seed
 
    MIGRATION_DATABASE_URL="postgres://lovelace_migrator:<MIGRATOR_PW>@127.0.0.1:5432/lovelace?sslmode=disable" \
      /usr/local/bin/lovelace-migrate
@@ -279,6 +298,8 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
      LOVELACE_APP_PASSWORD="<APP_PW>" \
      /opt/lovelace/scripts/postgres/ensure-roles.sh
    ```
+   *(Optional alternative to `LOVELACE_BOOTSTRAP_ADMIN_*` env vars: you can provision the initial `owner_admin` once via `DATABASE_URL="postgres://lovelace_app:<APP_PW>@127.0.0.1:5432/lovelace?sslmode=disable" /usr/local/bin/lovelace-seed -admin-only -admin-email you@yourdomain.com -admin-name "Property Owner" -admin-password "<TEMP_12_CHAR_PW>"`.)*
+
 4. **Build `public-web` Standalone Bundle:**
    ```bash
    cd /opt/lovelace/apps/public-web
@@ -287,19 +308,77 @@ If you prefer running native binaries directly on Ubuntu/Debian without Docker:
    cp -R public .next/standalone/public
    cp -R .next/static .next/standalone/.next/static
    ```
-5. **Create Unprivileged System User & Attachment Directory:**
+5. **Create Unprivileged System User, Env Files & Attachment Directory:**
    ```bash
    sudo useradd --system --no-create-home --shell /usr/sbin/nologin lovelace
-   sudo mkdir -p /var/lib/lovelace/attachments
+   sudo mkdir -p /var/lib/lovelace/attachments /etc/lovelace
    sudo chown -R lovelace:lovelace /var/lib/lovelace
    sudo chmod 750 /var/lib/lovelace/attachments
+   sudo chmod 750 /etc/lovelace
    ```
-6. **Create `systemd` Units (`/etc/systemd/system/lovelace-app.service` & `lovelace-public-web.service`):**
-   - Run `/usr/local/bin/noteG-server` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/app.env` (`LOVELACE_LISTEN_ADDR=127.0.0.1:8080`).
-   - Run `/usr/bin/node /opt/lovelace/apps/public-web/.next/standalone/server.js` as `User=lovelace` with `EnvironmentFile=/etc/lovelace/web.env` (`HOSTNAME=127.0.0.1`, `PORT=3000`).
-   - Place behind Caddy or Nginx identically to Section 4 above.
+   Place backend env vars in `/etc/lovelace/app.env` (`LOVELACE_LISTEN_ADDR=127.0.0.1:8080`, `chmod 600`) and frontend env vars in `/etc/lovelace/web.env` (`HOSTNAME=127.0.0.1`, `PORT=3000`, `chmod 600`).
+
+6. **Create Hardened `systemd` Units:**
+
+   `/etc/systemd/system/lovelace-app.service`:
+   ```ini
+   [Unit]
+   Description=Lovelace Hospitality Backend & Admin Console (noteG-server)
+   After=network-online.target postgresql.service
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=lovelace
+   Group=lovelace
+   EnvironmentFile=/etc/lovelace/app.env
+   WorkingDirectory=/var/lib/lovelace
+   ExecStart=/usr/local/bin/noteG-server
+   Restart=on-failure
+   RestartSec=5s
+   NoNewPrivileges=true
+   PrivateTmp=true
+   ProtectSystem=strict
+   ProtectHome=true
+   ReadWritePaths=/var/lib/lovelace/attachments
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   `/etc/systemd/system/lovelace-public-web.service`:
+   ```ini
+   [Unit]
+   Description=Lovelace Public Booking Frontend (Next.js Standalone BFF)
+   After=network-online.target lovelace-app.service
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=lovelace
+   Group=lovelace
+   Environment=NODE_ENV=production
+   EnvironmentFile=/etc/lovelace/web.env
+   WorkingDirectory=/opt/lovelace/apps/public-web/.next/standalone
+   ExecStart=/usr/bin/node /opt/lovelace/apps/public-web/.next/standalone/server.js
+   Restart=on-failure
+   RestartSec=5s
+   NoNewPrivileges=true
+   PrivateTmp=true
+   ProtectSystem=strict
+   ProtectHome=true
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   Enable and start both services behind Caddy or Nginx (Section 4):
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now lovelace-app.service lovelace-public-web.service
+   ```
 
 ---
 
 ## Next Step
-Proceed to **[Guide 4: First-Boot Setup, Website Embeds & Maintenance](04-first-login-configuration-and-maintenance.md)** to sign in, save your 8 recovery codes, run the 7-Step Property Setup Wizard, and configure off-site backups.
+Proceed to **[Guide 4: First-Boot Setup, Advanced Configuration, Embeds & Maintenance](04-first-login-configuration-and-maintenance.md)** to sign in, save your 8 recovery codes, run the 7-Step Property Setup Wizard, and configure off-site backups.

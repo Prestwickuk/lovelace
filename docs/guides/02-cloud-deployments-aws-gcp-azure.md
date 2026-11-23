@@ -4,6 +4,26 @@ This guide covers deploying Lovelace on managed cloud infrastructure across **Am
 
 ---
 
+## Managed Cloud Reference Topology
+
+Across AWS, GCP, and Azure, every managed Lovelace deployment follows the same security-isolated layout:
+
+```mermaid
+flowchart TD
+    HTTPS["Managed HTTPS Ingress / Load Balancer (:443)\n• admin.yourdomain.com -> lovelace-app (:8080)\n• book.yourdomain.com -> lovelace-public-web (:3000)"]
+    HTTPS --> App["lovelace-app (min=1, max=1)\nnoteG-server (:8080) — Always-On CPU"]
+    HTTPS --> Web["lovelace-public-web (min=1, max=1)\nNext.js 16 Storefront BFF (:3000)"]
+    Web -->|"Private VPC / Service Connect\nX-Lovelace-Public-Key"| App
+    Secrets["Cloud Secret Manager\n(AWS Secrets Manager / GCP Secret Manager / Azure Key Vault)"] -.-> App
+    Secrets -.-> Web
+    MigJob["One-Shot Migration Job\n(lovelace-migrate as lovelace_migrator)"] -->|"DDL only"| DB["Managed PostgreSQL 17\n(RDS / Cloud SQL / Azure Flexible Server)\npgcrypto + btree_gist"]
+    App -->|"DML-only (lovelace_app)\nsslmode=require"| DB
+    App -->|"POSIX uid=100, gid=101"| Vol["Shared Attachment Storage\n(AWS EFS / GCS Mount / Azure Files)"]
+    App -->|"Scheduled Argon2id + AES-256-GCM\n.zip.enc archives"| Bucket["Off-Site Backup Bucket\n(AWS S3 / GCS / Azure Blob)"]
+```
+
+---
+
 ## Shared Prerequisite: Initializing Managed PostgreSQL 17
 
 All three major clouds provide managed PostgreSQL 17 where the initial admin account (`postgres` / `rds_superuser` / `cloudsqlsuperuser` / `azure_pg_admin`) is **not** a full OS superuser. Follow these exact steps once after creating your managed PostgreSQL 17 instance so `scripts/postgres/ensure-roles.sh` and `lovelace-migrate` succeed cleanly:
@@ -44,7 +64,7 @@ SQL
 # 2. Run Lovelace's idempotent role & extension bootstrapper:
 ./scripts/postgres/ensure-roles.sh
 
-# 3. Apply all embedded SQL migrations as lovelace_migrator:
+# 3. Apply all embedded SQL migrations (0001..0031) as lovelace_migrator:
 MIGRATION_DATABASE_URL="postgres://lovelace_migrator:${LOVELACE_MIGRATOR_PASSWORD}@${PGHOST}:5432/lovelace?sslmode=require" \
   go run ./cmd/migrate
 
@@ -54,8 +74,14 @@ MIGRATION_DATABASE_URL="postgres://lovelace_migrator:${LOVELACE_MIGRATOR_PASSWOR
 
 Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_PASSWORD` (for runtime `DATABASE_URL`) in your cloud Secret Manager.
 
-> **Important Scaling Rule Across All Clouds:**  
-> Pin both `lovelace-app` and `lovelace-public-web` to **`1` active instance (`min=1, max=1`)**. Both services run fast in-memory sliding-window rate limiters per process, and `lovelace-app` runs background workers (15-minute basket hold expiry, email outbox delivery, OTA channel sync, and scheduled cloud backups) that expect an always-on instance.
+> [!IMPORTANT]
+> **Scaling & Liveness Rules Across All Clouds:**
+> 1. Pin both `lovelace-app` and `lovelace-public-web` to **`1` active instance (`min=1, max=1`)**. Both services run fast in-memory sliding-window rate limiters per process, and `lovelace-app` runs 8 background workers (15-minute basket hold expiry, email outbox delivery, communication automation, preventative maintenance, OTA sync, stale auth/portal pruning, and scheduled cloud backups) that expect an always-on instance.
+> 2. Point **container kill/liveness probes** at **`/healthz`**, and point **external uptime monitors & deployment readiness gates** at **`/readyz`** (so a transient upstream SMTP hiccup does not cause your orchestrator to restart containers).
+> 3. Register external webhooks against `admin.yourdomain.com`:
+>    - Stripe: `https://admin.yourdomain.com/api/public/v1/webhooks/stripe`
+>    - Email MTA (optional): `https://admin.yourdomain.com/api/v1/webhooks/email-events`
+>    - OTA Channels (optional): `https://admin.yourdomain.com/api/v1/webhooks/channels/{providerCode}/{connectionID}`
 
 ---
 
@@ -66,7 +92,7 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
 - **Database:** **Amazon RDS for PostgreSQL 17** (`db.t4g.medium`, Multi-AZ in production, Private Subnets, Storage Encrypted)
 - **Attachments Volume:** **Amazon EFS** with an **EFS Access Point** enforcing POSIX user `uid=100, gid=101` (`lovelace:lovelace` in Alpine) and root directory `/lovelace-attachments` (`0750`) mounted at `/var/lib/lovelace/attachments` on `lovelace-app`
 - **Ingress & TLS:** **Application Load Balancer (ALB)** with AWS Certificate Manager (ACM) HTTPS listener (`:443`) routing:
-  - `Host == admin.yourdomain.com` → `lovelace-app` Target Group (port `8080`, healthcheck `/readyz`)
+  - `Host == admin.yourdomain.com` → `lovelace-app` Target Group (port `8080`, target healthcheck `/healthz`, deploy readiness check `/readyz`)
   - `Host == book.yourdomain.com` → `lovelace-public-web` Target Group (port `3000`, healthcheck `/api/healthz`)
 - **Internal BFF Discovery:** **AWS Cloud Map (ECS Service Connect)** so `lovelace-public-web` reaches `http://lovelace-app.internal:8080` privately inside the VPC without hair-pinning through the public internet
 - **Secrets:** **AWS Secrets Manager** injected via ECS Task Definition `secrets`
@@ -129,7 +155,7 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
 
 ### Recommended GCP Architecture
 - **Compute:** **Google Cloud Run** (`lovelace-app` + `lovelace-public-web`)
-  - **CRITICAL Cloud Run Flags for `lovelace-app`:** Always deploy `lovelace-app` with **`--min-instances=1 --max-instances=1 --no-cpu-throttling`** (instance-based billing) so Go background tickers (15-minute hold expiry, email outbox worker, OTA sync, and scheduled cloud backups) continue running between HTTP requests!
+  - **CRITICAL Cloud Run Flags for `lovelace-app`:** Always deploy `lovelace-app` with **`--min-instances=1 --max-instances=1 --no-cpu-throttling`** (instance-based billing) so Go background tickers (15-minute hold expiry, email outbox worker, communication automation, preventative maintenance, OTA sync, and scheduled cloud backups) continue running between HTTP requests!
   - Deploy `lovelace-public-web` with `--min-instances=1 --max-instances=1`.
 - **Database:** **Cloud SQL for PostgreSQL 17** (Private IP via **Direct VPC Egress** — avoids Cloud SQL Auth Proxy sidecar complexity and enforces TLS with `sslmode=require`)
 - **Attachments Volume:** **Cloud Run GCS Volume Mount** (or Cloud Filestore NFS) mounted at `/var/lib/lovelace/attachments` on `lovelace-app`
@@ -203,7 +229,7 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
 ### Recommended Azure Architecture
 - **Compute:** **Azure Container Apps** inside a VNet-integrated Container Apps Environment (`minReplicas: 1`, `maxReplicas: 1` for both `lovelace-app` and `lovelace-public-web`)
 - **Database:** **Azure Database for PostgreSQL — Flexible Server (Version 17)** (`Burstable B2s` or `General Purpose D2ds_v5`, Private Access VNet Integration, `PGCRYPTO,BTREE_GIST` allowlisted in `azure.extensions`)
-- **Attachments Volume:** **Azure Files** share mounted into `lovelace-app` at `/var/lib/lovelace/attachments` (`AccessMode: ReadWrite`)
+- **Attachments Volume:** **Azure Files** share mounted into `lovelace-app` at `/var/lib/lovelace/attachments` (`AccessMode: ReadWrite`, `uid=100,gid=101`)
 - **Secrets:** **Azure Key Vault** referenced by Container Apps managed identity
 - **Off-Site Backups:** **Azure Blob Storage** container in a paired secondary region (`AZURE_BLOB` provider in **Settings → Backups & Cloud Sync**, authenticated via Account Key or scoped Container SAS token)
 
@@ -250,4 +276,4 @@ Store `LOVELACE_MIGRATOR_PASSWORD` (for future upgrade jobs) and `LOVELACE_APP_P
 ---
 
 ## Next Step
-Proceed to **[Guide 4: First-Boot Setup, Website Embeds & Maintenance](04-first-login-configuration-and-maintenance.md)** for first-login setup, recovery codes, onboarding wizard, WordPress/website embeds, and ongoing backup/upgrade operations.
+Proceed to **[Guide 4: First-Boot Setup, Advanced Configuration, Embeds & Maintenance](04-first-login-configuration-and-maintenance.md)** for first-login setup, recovery codes, onboarding wizard, WordPress/website embeds, and ongoing backup/upgrade operations.
