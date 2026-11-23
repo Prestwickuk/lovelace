@@ -1,20 +1,36 @@
 # Guide 3: Deploying Lovelace on Railway (and Similar Container PaaS Platforms)
 
-This guide walks through deploying a production-grade Lovelace instance on **[Railway](https://railway.com)** (with brief adaptation notes at the end for **Fly.io** and **Render**).
+This guide walks through deploying a production-grade Lovelace instance on **[Railway](https://railway.com)** (with adaptation notes at the end for **Fly.io** and **Render**).
 
 Railway is an ideal low-ops platform for Lovelace because it supports multi-Dockerfile monorepos, persistent SSD volumes, private internal service networking (`.railway.internal`), automatic Let's Encrypt HTTPS domains, and hard monthly spend caps.
 
 ---
 
-## 1. Railway Project Topology
+## 1. Railway Project Topology & Provisioning Sequence
 
 Create a single Railway Project (e.g. `lovelace-production`) containing **three services**:
 
 | Service Name | Source / Image | Persistent Volume | Public Domain? |
 | :--- | :--- | :--- | :--- |
 | `lovelace-pg17` | Docker image `postgres:17-alpine` | Mounted at `/var/lib/postgresql/data` | **No** (Private `.railway.internal` only) |
-| `lovelace-app` | Repo root `Dockerfile` | Mounted at `/var/lib/lovelace/attachments` | **Yes** (`admin.yourdomain.com` or `*.up.railway.app`, port `8080`) |
+| `lovelace-app` | Repo root `Dockerfile` (`noteG-server`) | Mounted at `/var/lib/lovelace/attachments` (`100:101`) | **Yes** (`admin.yourdomain.com` or `*.up.railway.app`, port `8080`) |
 | `lovelace-public-web` | `apps/public-web/Dockerfile` (`--path-as-root`) | None (stateless Next.js BFF) | **Yes** (`book.yourdomain.com` or `*.up.railway.app`, port `3000`) |
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator Workstation
+    participant PG as lovelace-pg17 (.railway.internal:5432)
+    participant App as lovelace-app (:8080 dual-stack)
+    participant Web as lovelace-public-web (:3000 HOSTNAME=::)
+
+    Note over Op,PG: One-Time Bootstrap Only (Temporary TCP Proxy)
+    Op->>PG: 1. ensure-roles.sh (lovelace_migrator + lovelace_app)
+    Op->>PG: 2. lovelace-migrate (0001..0031 DDL)
+    Op->>PG: 3. ensure-roles.sh (finalize DML grants) & delete TCP Proxy
+    Note over PG,Web: Steady-State Production Runtime (Private IPv6 Mesh)
+    App->>PG: DATABASE_URL (lovelace_app over fd12::/16 private mesh)
+    Web->>App: LOVELACE_API_BASE_URL + X-Lovelace-Public-Key (.railway.internal:8080)
+```
 
 ---
 
@@ -51,7 +67,7 @@ Create a single Railway Project (e.g. `lovelace-production`) containing **three 
    # 1. Create non-superuser roles (lovelace_migrator + lovelace_app) & btree_gist:
    ./scripts/postgres/ensure-roles.sh
 
-   # 2. Apply all SQL migrations as lovelace_migrator:
+   # 2. Apply all SQL migrations (0001..0031) as lovelace_migrator:
    MIGRATION_DATABASE_URL="postgres://lovelace_migrator:${LOVELACE_MIGRATOR_PASSWORD}@${PGHOST}:${PGPORT}/lovelace?sslmode=disable" \
      go run ./cmd/migrate
 
@@ -66,7 +82,7 @@ Create a single Railway Project (e.g. `lovelace-production`) containing **three 
 
 1. Create empty service **`lovelace-app`** in your Railway project and attach a **Volume** mounted at `/var/lib/lovelace/attachments`.
 2. **Important Volume Permission Detail:** Railway mounts brand-new volumes owned by `root:root` (`0:0`), whereas Lovelace's `Dockerfile` runs as non-root `USER lovelace` (`uid=100, gid=101` on `alpine:3.21`).
-   - Either set Railway variable **`RAILWAY_RUN_UID=0`** *only* if running a one-time init command `chown -R 100:101 /var/lib/lovelace/attachments`, **or** run a 5-second one-shot Alpine init deploy on `lovelace-app` before deploying Lovelace so `/var/lib/lovelace/attachments` is owned by `100:101` (`lovelace:lovelace`).
+   - Either set Railway variable **`RAILWAY_RUN_UID=0`** *only* while running a one-time init command `chown -R 100:101 /var/lib/lovelace/attachments` (then delete `RAILWAY_RUN_UID`), **or** run a 5-second one-shot `alpine:3.21` init deploy on `lovelace-app` before deploying Lovelace so `/var/lib/lovelace/attachments` is owned by `100:101` (`lovelace:lovelace`).
 3. Generate a Railway public domain (or attach custom domain `admin.yourdomain.com`) targeting port **`8080`**.
 4. Configure **Variables** on `lovelace-app` (never pass `POSTGRES_BOOTSTRAP_PASSWORD` or `LOVELACE_MIGRATOR_PASSWORD` to `lovelace-app`):
 
@@ -148,8 +164,8 @@ curl -fsS https://<YOUR_PUBLIC_WEB_DOMAIN>/api/healthz
 
 - **Fly.io:**
   - Create two Fly apps (`lovelace-app` and `lovelace-public-web`) in the same region/org so `.internal` WireGuard DNS (`http://lovelace-app.internal:8080`) works privately over IPv6 (`LOVELACE_LISTEN_ADDR=:8080`, `HOSTNAME=::`).
-  - Set `auto_stop_machines = "off"` and `min_machines_running = 1` in `fly.toml` so background hold-expiry, email outbox, and scheduled cloud backup workers stay running continuously.
-  - Attach a `fly volumes create lovelace_attachments` volume mounted at `/var/lib/lovelace/attachments`.
+  - Set `auto_stop_machines = "off"` and `min_machines_running = 1` in `fly.toml` so background hold-expiry, email outbox, communication automation, preventative maintenance, OTA sync, and scheduled cloud backup workers stay running continuously.
+  - Attach a `fly volumes create lovelace_attachments` volume mounted at `/var/lib/lovelace/attachments` (`chown -R 100:101`).
 - **Render:**
   - Provision a **Render PostgreSQL 17** instance + two **Web Services** (`Docker` runtime: root `Dockerfile` for `lovelace-app` with a Render Persistent Disk at `/var/lib/lovelace/attachments`, and root directory `apps/public-web` for `lovelace-public-web`).
   - Connect `LOVELACE_API_BASE_URL` to `lovelace-app`'s private Render `hostport` (`http://lovelace-app:8080`).
@@ -157,4 +173,4 @@ curl -fsS https://<YOUR_PUBLIC_WEB_DOMAIN>/api/healthz
 ---
 
 ## Next Step
-Proceed to **[Guide 4: First-Boot Setup, Website Embeds & Maintenance](04-first-login-configuration-and-maintenance.md)** to sign in for the first time, save your recovery codes, launch the 7-Step Setup Wizard, and configure automated cloud backups.
+Proceed to **[Guide 4: First-Boot Setup, Advanced Configuration, Embeds & Maintenance](04-first-login-configuration-and-maintenance.md)** to sign in for the first time, save your recovery codes, launch the 7-Step Setup Wizard, and configure automated cloud backups.

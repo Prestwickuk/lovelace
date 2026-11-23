@@ -1,6 +1,6 @@
 # The Property Owner's Everyday Guide to Lovelace
 
-Welcome! This handbook is written in plain English — with zero technical jargon — to walk you step by step through the everyday tasks of running your campsite, holiday cottage, Airbnb, B&B, or small hotel with **Lovelace**.
+Welcome! This handbook is written in plain English — with zero technical jargon — to walk you step by step through **every everyday tool** for running your campsite, glamping retreat, holiday cottage, Airbnb, B&B, or small hotel with **Lovelace**.
 
 > **Reassurance before you start:** You cannot "break" your website by clicking around and exploring. Every important action has a clear confirmation button, and Lovelace will never double-book a room, cottage, or pitch — even if two people try to book at the exact same moment.
 
@@ -9,16 +9,21 @@ Welcome! This handbook is written in plain English — with zero technical jargo
 ## Quick Jump to Any Task
 
 1. [Signing In (and What to Do If You Forget Your Password)](#task-1-signing-in-and-what-to-do-if-you-forget-your-password)
-2. [Making the Writing Bigger & Easier to Read](#task-2-making-the-writing-bigger--easier-to-read)
-3. [Setting Up Your Property for the First Time](#task-3-setting-up-your-property-for-the-first-time)
-4. [Checking Who Is Arriving & Leaving Today](#task-4-checking-who-is-arriving--leaving-today)
-5. [Reading Your Booking Calendar](#task-5-reading-your-booking-calendar)
-6. [Taking a Telephone or Walk-In Booking](#task-6-taking-a-telephone-or-walk-in-booking)
-7. [Blocking Off Dates for Family Use, Repairs, or Winter](#task-7-blocking-off-dates-for-family-use-repairs-or-winter)
-8. [Checking or Changing Seasonal & Weekend Prices](#task-8-checking-or-changing-seasonal--weekend-prices)
-9. [Putting Your Booking Box onto Your Own Website (or WordPress)](#task-9-putting-your-booking-box-onto-your-own-website-or-wordpress)
-10. [Saving a Safety Copy (Backup) of All Your Bookings](#task-10-saving-a-safety-copy-backup-of-all-your-bookings)
-11. ["Don't Panic!" — Quick Fixes When Something Goes Wrong](#dont-panic--quick-fixes-when-something-goes-wrong)
+2. [Making the Writing Bigger & Tailoring Your Personal Workspace](#task-2-making-the-writing-bigger--tailoring-your-personal-workspace)
+3. [Setting Up Your Property (or Adding a Second Site & Custom Logo)](#task-3-setting-up-your-property-or-adding-a-second-site--custom-logo)
+4. [Morning Check: Arrivals, Departures & Housekeeping Changeovers](#task-4-morning-check-arrivals-departures--housekeeping-changeovers)
+5. [Reading Your Booking Calendar & Saving Favourite Views](#task-5-reading-your-booking-calendar--saving-favourite-views)
+6. [Taking Phone Bookings, Checking Guests In/Out & Amending Stays](#task-6-taking-phone-bookings-checking-guests-inout--amending-stays)
+7. [Managing Rooms, Cottages, Pitches & Optional Guest Extras](#task-7-managing-rooms-cottages-pitches--optional-guest-extras)
+8. [Blocking Off Dates & Holding Next Season's Dates Back](#task-8-blocking-off-dates--holding-next-seasons-dates-back)
+9. [Checking or Changing Seasonal & Weekend Prices](#task-9-checking-or-changing-seasonal--weekend-prices)
+10. [Repairs, Safety Inspections, Contractors & Recurring Maintenance](#task-10-repairs-safety-inspections-contractors--recurring-maintenance)
+11. [Guest Directory, Dietary Notes, Enquiries & Automated Emails](#task-11-guest-directory-dietary-notes-enquiries--automated-emails)
+12. [Connecting Airbnb, Booking.com & Travel Channel Managers](#task-12-connecting-airbnb-bookingcom--travel-channel-managers)
+13. [Staff Logins, Reports & Downloading Spreadsheets for Your Accountant](#task-13-staff-logins-reports--downloading-spreadsheets-for-your-accountant)
+14. [Putting Your Booking Box onto Your Own Website (or WordPress)](#task-14-putting-your-booking-box-onto-your-own-website-or-wordpress)
+15. [Saving, Testing & Restoring a Safety Copy (Backup) of Your Bookings](#task-15-saving-testing--restoring-a-safety-copy-backup-of-your-bookings)
+16. ["Don't Panic!" — Quick Fixes When Something Goes Wrong](#dont-panic--quick-fixes-when-something-goes-wrong)
 
 ---
 
@@ -27,12 +32,12 @@ Welcome! This handbook is written in plain English — with zero technical jargo
 ### How to sign in normally
 1. Open your Lovelace Admin web address in your browser (tip: bookmark it on your computer or iPad so it is always one click away).
 2. Type your **Email** and **Password**.
-3. Click the green **Sign in** button.
+3. Click the green **Sign in** button. *(The very first time you sign in, Lovelace will ask you to swap your starter password for a private 12-character password of your own choosing.)*
 
 ![Signing in to Lovelace](images/01-sign-in-screen.png)
 
 ### Saving your 8 Emergency Recovery Codes (do this once!)
-The first time you choose your own password, Lovelace gives you **8 Emergency Recovery Codes**. Think of these like a spare set of house keys kept in a kitchen drawer:
+Right after you set your password, Lovelace gives you **8 Emergency Recovery Codes**. Think of these like a spare set of house keys kept in a kitchen drawer:
 
 1. Click **Settings → My Account** in the left-hand menu.
 2. When your 8 codes appear, click **Download .txt** (or write them on a card / print the page) and keep them somewhere safe.
@@ -43,27 +48,32 @@ The first time you choose your own password, Lovelace gives you **8 Emergency Re
 You **do not** need to wait for a reset email or look inside any computer files:
 1. On the sign-in screen, click **Forgot password? Use a recovery code**.
 2. Type your email address, **any one** of your 8 emergency codes, and the new password you would like to use.
-3. Click **Reset Password** — you will be signed straight back in! *(Cross that code off your list, as each code is used once.)*
+3. Click **Reset Password** — you will be signed straight back in! *(Cross that code off your list, as each code works once.)*
 
 ---
 
-## Task 2: Making the Writing Bigger & Easier to Read
+## Task 2: Making the Writing Bigger & Tailoring Your Personal Workspace
 
-If you find computer screens tiring on the eyes, Lovelace can make all writing and buttons noticeably larger just for you:
-
-1. Look down the dark green menu on the left-hand side, open **Settings**, and click **My Account**.
-2. Scroll down to **Global Appearance, Accessibility & Navigation**.
-3. Under **Colour Mode**, pick **Light** (warm cream paper background) or **Dark**.
-4. Under **Text Size**, change *Default* to **Large** or **Extra Large**. *(You can also tick **High Contrast Borders & Surfaces** for sharper outlines.)*
-5. Click **Save Global Preferences**.
+### Making the writing larger and easier on the eyes
+1. Open **Settings → My Account** on the left-hand menu and scroll down to **Global Appearance, Accessibility & Navigation**.
+2. Under **Colour Mode**, pick **Light** (warm cream paper background) or **Dark**.
+3. Under **Text Size**, change *Default* to **Large** or **Extra Large**. *(You can also tick **High Contrast Borders & Surfaces** and pin up to **6 favourite links** to the top of your left menu!)*
+4. Click **Save Global Preferences** — this changes the screen *only* for your own login without affecting anyone else.
 
 ![Making the writing larger and easier to read](images/03-make-text-bigger.png)
 
+### Arranging your Personal Workspace (`My Workspace`)
+Click **My Workspace** near the top-left of the dark green sidebar:
+- **Switch Role Layouts:** Pick a ready-made layout for **Owner / Administrator**, **Duty Manager**, **Front Desk**, **Housekeeping**, or **Maintenance**.
+- **Customise Cards:** Click **Customise Layout** (`?edit=1`) to add, remove, or reorder summary cards (such as *Arrivals & Departures Today*, *30-Day Performance*, or *Operational Alerts*) to suit your morning routine.
+
+![Customising your Personal Workspace and role layouts](images/13-my-workspace-and-role-profiles.png)
+
 ---
 
-## Task 3: Setting Up Your Property for the First Time
+## Task 3: Setting Up Your Property (or Adding a Second Site & Custom Logo)
 
-When you sign in to a brand-new Lovelace system (or click **Settings → Setup Wizard** on the left), Lovelace asks you a simple series of questions to set everything up for you:
+When you sign in to a brand-new Lovelace system (or click **Settings → Setup Wizard** on the left), Lovelace walks you through 7 simple steps:
 
 1. **Step 1 — Pick Your Style:** Click **Campsite, Glamping & Holiday Park**, **Holiday Let, Cottage or Airbnb**, or **Boutique Hotel, B&B or Guesthouse**, and type the name of your business. Lovelace fills in sensible check-in times and wording automatically.
 2. **Step 2 — Add Your Rooms, Cottages, or Pitches:** Tell Lovelace what guests stay in and how many you have (for example, *"6 Meadow Pitches"* — Lovelace numbers them `01` to `06` for you automatically!).
@@ -73,121 +83,192 @@ When you sign in to a brand-new Lovelace system (or click **Settings → Setup W
 6. **Step 6 — Automatic Cloud Backup *(Optional)*:** Click **Skip for Now** unless you already have a cloud storage bucket you want to connect.
 7. **Step 7 — Review & Finish:** Check your summary and click **Finish Setup & Open Operations Centre →**.
 
+> **Uploading your logo or adding a second property later:** Open **Settings → Site Settings** anytime to upload your property's PNG/JPEG logo, test new brand colours safely with **Preview**, or click **+ Add Another Property** if you manage more than one site.
+
 ![Step 1 of the Guided Property Setup Wizard](images/04-setup-wizard-step1.png)
 
 ---
 
-## Task 4: Checking Who Is Arriving & Leaving Today
+## Task 4: Morning Check: Arrivals, Departures & Housekeeping Changeovers
 
 Every morning with your cup of tea, click **Operations Centre** at the very top of the left-hand menu:
 
 - **Occupied / Capacity:** Shows how many of your rooms, cottages, or pitches are occupied tonight and how many are free.
-- **Arrivals & Departures:** Shows how many guests are due to check in today and check out today.
-- **Daily Changeover:** Shows which rooms or pitches need cleaning or checking before the next guest arrives.
-- **What Needs Attention:** Highlights anything waiting on you (such as a guest enquiry or a cancellation request). If everything is sorted, it says **All clear** in green!
+- **Arrivals & Departures:** Shows everyone due to check in today (including any dietary or room notes!) and everyone checking out today.
+- **5-Stage Daily Changeover Board (Housekeeping):** Tracks each departing space step by step so no guest ever walks into an uncleaned room:
+  1. `GUEST_DEPARTING` → 2. `CLEANING_REQUIRED` (queued automatically as soon as you check a guest out!) → 3. `CLEANING_IN_PROGRESS` → 4. `INSPECTION_REQUIRED` → 5. **`READY`**.
+- **What Needs Attention:** Highlights anything waiting on you (such as an unanswered guest enquiry, an unready room with an arrival today, or a payment exception). When everything is sorted, it says **All clear** in green!
 
 ![The Daily Operations Centre](images/05-daily-operations-centre.png)
 
 ---
 
-## Task 5: Reading Your Booking Calendar
+## Task 5: Reading Your Booking Calendar & Saving Favourite Views
 
-To see your diary across the next fortnight or month:
+To see your diary across the next week, fortnight, or month:
 
-1. In the left-hand menu (under **Maintenance & Facilities**), click **Booking Calendar**.
+1. In the left-hand menu, click **Booking Calendar**.
 2. Along the left column you will see each of your rooms, cottages, or pitches. Across the top are the dates.
    - **Open** cells are free to book.
-   - **Green** cells show confirmed guest stays with the guest's name.
-   - Use **← Prev** and **Next →** to flip backward or forward through the calendar.
+   - **Green** cells show confirmed guest stays with the guest's name (click any booking to open its full details).
+   - **Amber / Grey / Purple** cells show temporary basket holds, maintenance/owner blockouts, or unreleased future season dates.
+   - Use **← Prev** and **Next →** to flip backward or forward, and use **Save View** if you want to save a favourite filter (such as *"Bell Tents — 30-Day View"*).
 
 ![The Booking & Availability Calendar](images/06-booking-calendar.png)
 
 ---
 
-## Task 6: Taking a Telephone or Walk-In Booking
+## Task 6: Taking Phone Bookings, Checking Guests In/Out & Amending Stays
 
-When a guest rings up on the telephone or walks into reception wanting to stay:
-
-1. From **Operations Centre** or **Booking Calendar**, click the green **+ New Reservation** button in the top-right corner.
+### Taking a new telephone or walk-in booking
+1. From **Operations Centre**, **Booking Calendar**, or **Reservations**, click **+ New Reservation**.
 2. Type the guest's **Full Name**, **Email** (if they have one), and **Telephone** number.
-3. Choose their **Arrival Date** (the afternoon they arrive) and **Departure Date** (the morning they leave), plus the number of **Adults** and **Children**.
-4. Tick the box next to the **room, cottage, or pitch** they want.
-5. Scroll to the bottom and click **Create Reservation**.
-
-Lovelace checks immediately that those dates are free and puts their name straight onto your calendar so nobody else can book that space online!
+3. Choose their **Arrival Date** (the afternoon they arrive) and **Departure Date** (**the morning they pack up and leave**), plus **Adults**, **Children**, and **Infants**.
+4. Tick one or more **rooms, cottages, or pitches** (great when two friends want adjacent pitches on one booking!).
+5. Scroll down and click **Create Reservation**.
 
 ![Taking a telephone or walk-in booking](images/07-phone-booking-form.png)
 
+### Checking guests in, checking them out, amending dates & checking payments
+Click any booking on your **Booking Calendar** or in **Reservations** to open its booking card:
+- **Check-In / Check-Out / Cancel:** Use the status transition box to mark guests **`CHECKED_IN`** when they arrive and **`CHECKED_OUT`** when they leave (which automatically queues cleaning on the Housekeeping board!), or **`CANCELLED` / `NO_SHOW`** (which immediately frees those dates).
+- **Change Dates, Party Size, or Notes:** Update stay dates, guest counts, or private staff notes right on the page — Lovelace checks automatically that the new dates don't clash with anyone else.
+- **Payment Ledger & Payment Exceptions:** View deposits paid, balances due, and refunds. If a website guest ever pays seconds *after* their 15-minute checkout timer expired, Lovelace flags it clearly in **Payment Exceptions** (left menu) and initiates an automatic Stripe refund so you are never caught out.
+
+![Checking guests in or out and amending a reservation](images/12-reservation-check-in-and-payments.png)
+
 ---
 
-## Task 7: Blocking Off Dates for Family Use, Repairs, or Winter
+## Task 7: Managing Rooms, Cottages, Pitches & Optional Guest Extras
 
-Need to close a cottage while the plumber visits, keep a room back for visiting family, or close your campsite for winter?
+Under **Inventory & Holds** in the left-hand menu, you have three simple lists for managing what you sell:
 
-1. Click **Bulk Blockouts** (top-right of the **Booking Calendar**, or under **Inventory & Holds → Bulk Blockouts** on the left).
-2. Under **Target Scope**, pick whether you are closing **Single Unit**, **Selected Multiple Units**, or **All Units on Property** (your whole site).
-3. Under **Restriction Category**, pick why:
-   - **OWNER_USE** (family or personal use)
-   - **MAINTENANCE** (repairs or decorating)
-   - **SEASONAL_CLOSURE** (closed for winter)
-4. Pick the **Start Date** and the **End / Reopen Date**, type a short note to remind yourself why, and click **Preview Affected Inventory & Conflicts**.
-5. Lovelace will check that no existing guest is already booked on those nights, then give you a green **Confirm & Commit Bulk Blockout** button to lock it in.
+1. **Unit Types (`/unit-types`):** Your accommodation categories (e.g. *Furnished Bell Tent* or *Harbour Cottage*), where you set maximum adults/children/dogs, **Minimum Nights** (e.g. `2` nights minimum), and base nightly price in pence (`12000` = `£120.00`).
+2. **Units & Pitches (`/units`):** Your individual numbered rooms, cottages, or pitches (e.g. `BT-OAK`, `GP-01`) where you can add gate/keybox notes or mark an individual space `active` or `inactive`.
+3. **Extras & Add-ons (`/extras`):** Optional items guests can add to their stay — such as a **Dog Fee**, **Firewood Basket**, **Breakfast Hamper**, or **Late Check-Out** — billed *once per stay (`per_stay`)*, *per night (`per_night`)*, or *per person*.
+
+![Managing accommodation categories, capacities, and base prices](images/14-rooms-pitches-and-extras.png)
+
+---
+
+## Task 8: Blocking Off Dates & Holding Next Season's Dates Back
+
+### Blocking off dates for family use, repairs, weather, or winter (`Bulk Blockouts`)
+1. Click **Inventory & Holds → Bulk Blockouts**.
+2. Under **Target Scope**, choose **Single Unit**, **Selected Multiple Units**, **Accommodation Type**, or **All Units on Property** (your whole site).
+3. Under **Restriction Category**, pick **OWNER_USE**, **MAINTENANCE**, **WEATHER_CLOSURE**, or **SEASONAL_CLOSURE**.
+4. Choose the **Start Date** and **End / Reopen Date** and click **Preview Affected Inventory & Conflicts** — Lovelace warns you if any guest is already booked before you click **Confirm & Commit**. *(Click **Release** anytime to reopen early!)*
 
 ![Blocking off dates for repairs, family use, or winter](images/08-block-off-dates.png)
 
+### Holding next year's summer dates back until you are ready (`Scheduled Releases`)
+Want to stop regulars snapping up next August before you have decided next year's prices — or let **Direct website guests** book summer two weeks before Airbnb opens?
+1. Click **Inventory & Holds → Scheduled Releases**.
+2. Pick the dates you want to hold back, choose **`ALL Channels`** (or just an external channel like `AIRBNB`), and pick the **Release Date & Time** when bookings should open automatically.
+3. Change your mind and want to open the season today? Just click **Release Now**!
+
+![Holding future season dates back with Scheduled Availability Releases](images/15-scheduled-season-releases.png)
+
 ---
 
-## Task 8: Checking or Changing Seasonal & Weekend Prices
+## Task 9: Checking or Changing Seasonal & Weekend Prices
 
 Wondering *"How much will Lovelace charge for 3 nights over the August Bank Holiday?"* or want to raise your summer weekend rate?
 
-1. In the left-hand menu under **Inventory & Holds**, click **Rates & Preview**.
-2. **To check a price safely:** Pick the accommodation type, Arrival Date, and Departure Date in the top **Tariff Preview Calculator** box and click **Preview Nights**. It shows you a night-by-night price breakdown without changing anything!
-3. **To add a summer or weekend price:** Use the **Add Seasonal / Weekend Rate Rule** box on the right — give it a clear name (such as *"Summer Holidays"*), enter the nightly price in pence (for example, `12500` for `£125.00`), pick the start and end dates, and save.
+1. Click **Inventory & Holds → Rates & Preview**.
+2. **To check a price safely:** Pick the accommodation type, Arrival Date, and Departure Date in the top **Tariff Preview Calculator** box and click **Preview Nights**. It shows a night-by-night breakdown without changing anything!
+3. **To add a summer or weekend price:** Use **Add Seasonal / Weekend Rate Rule** — give it a clear name (such as *"Summer School Holidays"*), enter the nightly price **in pence** (for example, `14500` for `£145.00`), pick the start and end dates, and save.
 
 ![Checking and setting seasonal prices](images/09-seasonal-prices.png)
 
 ---
 
-## Task 9: Putting Your Booking Box onto Your Own Website (or WordPress)
+## Task 10: Repairs, Safety Inspections, Contractors & Recurring Maintenance
 
-Already have a website for your business? You can let guests check dates and book directly on your website without paying commission to big travel sites:
+Under **Maintenance & Facilities** on the left-hand menu:
 
-1. In the left-hand menu under **Settings**, click **Site Settings** and scroll down to **Website Booking Section — Copy & Paste Embed Code**.
+1. **Report & Track Repairs (`Maintenance`):** Log any repair job (e.g. leaking tap, torn bell-tent canvas, or boiler service), upload photos from your phone, and choose whether the space is still fine to sleep in (`NONE` / `PARTIAL`) or needs closing (`UNAVAILABLE`).
+   - **Important Safety Check:** Once a serious repair is finished, a Manager or Owner marks the **Inspection** as **`PASSED`**, closes the job, **and clicks `Release Restriction`** when the room/pitch is clean and ready to welcome guests again.
+2. **Facilities & Contractors (`Facilities & Assets`):** Keep a tidy list of your site areas (shower block, boiler room), appliances/warranties, and trusted local tradespeople (plumber, electrician, Gas Safe engineer).
+3. **Recurring Safety Checks (`Workload & Schedule`):** Set up automatic weekly, monthly, or annual reminders — such as *Monthly Water Temperature Checks*, *Chimney Sweeping*, or *Annual Gas Safety Certificates* — so compliance jobs appear on your list automatically!
+
+![Setting up recurring safety and maintenance schedules](images/16-maintenance-repairs-and-schedules.png)
+
+---
+
+## Task 11: Guest Directory, Dietary Notes, Enquiries & Automated Emails
+
+Under **Guests & Comms** on the left-hand menu:
+
+1. **Guest Directory (`Guest Directory`):** Click any guest's name to see all their past and upcoming stays, mark loyal regulars as **`VIP`**, record permanent **Preferences** (such as *"Coeliac — gluten-free breakfast"* or *"Ground-floor room — no steep stairs"*), or jot down private **Internal Staff Notes** (which are *never* emailed or shown to guests).
+2. **Merging Duplicate Guests (`Duplicate Merge Review`):** If the same guest booked twice with a slight typo, Lovelace spots the match so you can **Merge** their history cleanly (or click **Dismiss** if they are two different people with the same surname).
+3. **Guest Enquiries (`Enquiries`):** Keep track of special questions, group requests, or lost-property messages in one place until resolved.
+
+![Viewing a guest's stay history and recording dietary or room preferences](images/17-guest-directory-and-enquiries.png)
+
+4. **Automated Emails (`Templates & Automation`):** Customize your booking confirmation, pre-arrival directions (e.g. gate code & arrival instructions 3 days before check-in!), and thank-you emails, or pause/enable any automated rule in one click.
+5. **How Guests Check Their Own Booking Online:** Every confirmation email gives direct guests a link to **Manage Booking (`/lookup`)** (and, if you choose to switch it on in Site Settings, the passwordless **Self-Service Guest Portal `/portal`**) where they can check their dates, balance, and arrival times without needing to phone reception.
+
+![Managing automated pre-arrival and confirmation emails](images/18-email-templates-and-automation.png)
+
+---
+
+## Task 12: Connecting Airbnb, Booking.com & Travel Channel Managers
+
+If you also list cottages, rooms, or glamping pods on Airbnb, Booking.com, Expedia, or VRBO through **Beds24**, **Smoobu**, **Lodgify**, or **Channex**:
+
+1. Click **Settings → Channel Manager** in the left-hand menu.
+2. Paste your provider API key into the encrypted vault, click **Save Configuration**, and click **Verify Live Connection**.
+3. Match each external listing to your Lovelace accommodation category so incoming bookings block your calendar automatically! *(If an external booking ever arrives for an unmapped listing or clashes with a phone booking you took seconds earlier, Lovelace highlights it clearly as an alert so you can move one guest onto a free space calmly.)*
+
+![Connecting Beds24, Smoobu, Lodgify, or Channex in Channel Manager](images/19-channel-manager-ota-sync.png)
+
+---
+
+## Task 13: Staff Logins, Reports & Downloading Spreadsheets for Your Accountant
+
+### Giving helpers their own login (`Settings → Admin Users`)
+Never share your own Owner password with seasonal helpers! In **Settings → Admin Users**, you can create individual logins in 30 seconds:
+- **Cleaner (`housekeeping_staff`):** Sees today's cleaning list and can report faults — cannot see guest emails, phone numbers, or finances.
+- **Handyman (`maintenance_staff`):** Sees repair jobs and photos — cannot edit bookings or prices.
+- **Receptionist (`staff`):** Can take bookings, check guests in/out, and answer enquiries — cannot alter room tariffs or export company accounts.
+- **Manager (`manager`):** Runs day-to-day operations, prices, and reports for that property.
+
+### Checking Occupancy, Revenue & Downloading Accountant CSVs (`Reports & BI`)
+Click **Reports & BI** in the left-hand menu:
+1. Pick any date range (such as last month or your tax quarter) and click **Run Report** to see your **Occupancy %**, **Average Nightly Rate (ADR)**, **30-Day Forward Forecast**, **Repeat Guest %**, and **Direct vs OTA Channel Mix**.
+2. Scroll down to **Accounting Exports** to download ready-made **CSV spreadsheets** (*Bookings*, *Payments*, and *Refunds*) that open straight in Excel, Numbers, Xero, or QuickBooks for your bookkeeper — with zero personal guest emails or phone numbers inside the spreadsheet!
+
+![Viewing occupancy, revenue forecasts, and downloading accountant CSVs](images/20-reports-and-accountant-csv.png)
+
+---
+
+## Task 14: Putting Your Booking Box onto Your Own Website (or WordPress)
+
+Already have a website for your business? Let guests check dates and book directly on your website with zero commission:
+
+1. Click **Settings → Site Settings** and scroll down to **Website Booking Section — Copy & Paste Embed Code**.
 2. **If your website uses WordPress:**
    - Click **Download WordPress Plugin (.zip)**.
-   - Sign in to your WordPress site, click **Plugins → Add New → Upload Plugin**, choose that `.zip` file, and click **Install Now** then **Activate**.
-   - Everything is already pre-filled with your property's details! Edit any page in WordPress and add the **Lovelace Live Booking Section** block (or type `[lovelace_booking]`).
+   - In your WordPress dashboard, click **Plugins → Add New → Upload Plugin**, choose that `.zip` file, and click **Install Now** then **Activate**.
+   - Everything comes pre-filled with your property's details and colours! Edit any page in WordPress and add the **Lovelace Live Booking Section** block (or type `[lovelace_booking]`).
 3. **If your website uses Squarespace, Wix, Webflow, or a web designer:**
-   - Click **Copy Embed Code** (it will briefly say **Copied!**).
-   - Paste it into a "Custom HTML" or "Code" block on your website — or email the copied code to whoever looks after your website.
+   - Click **Copy Embed Code** (it will briefly say **Copied!**) and paste it into a "Custom HTML" / "Code" block on your website — or email it to whoever looks after your site.
 
 ![Downloading your WordPress plugin or copying your website booking code](images/10-website-and-wordpress-embed.png)
 
 ---
 
-## Task 10: Saving a Safety Copy (Backup) of All Your Bookings
+## Task 15: Saving, Testing & Restoring a Safety Copy (Backup) of Your Bookings
 
 For complete peace of mind, we recommend downloading a safety copy of your bookings once a week (for instance, every Sunday evening) onto your computer or a USB memory stick:
 
-1. In the left-hand menu under **Settings**, click **Backups & Cloud Sync**.
-2. In box **1. Download Local Portable Backup (.zip)**:
-   - *(Optional)* Type a memorable 12-character passphrase if you want the backup file locked with encryption, or leave that box blank for a standard `.zip` file.
-   - Type your **Current Admin Password** in the right-hand box.
-   - Click **Download Local Backup Archive**.
-3. Your computer will save a single `.zip` file into your **Downloads** folder containing all of your bookings, guest records, prices, and uploaded photos!
+1. Click **Settings → Backups & Cloud Sync**.
+2. **To save a copy now (`Box 1`):** Optionally type a memorable 12-character passphrase to lock the file (`.zip.enc`), type your **Current Admin Password**, and click **Download Local Backup Archive**.
+3. **To test a backup safely (`Verify Backup Integrity`):** Upload any saved `.zip` or `.zip.enc` file into the verification box — Lovelace checks every single file inside and gives you a green **✓ Integrity Verified** badge without touching your live bookings!
+4. **If your computer/server ever needs replacing (`Restore Into Empty Environment`):** Sign in to your fresh empty Lovelace installation *before* adding any property in the Setup Wizard, open **Backups & Cloud Sync**, and upload your `.zip` / `.zip.enc` safety copy to bring all your properties, bookings, guests, and photos straight back.
 
-*(And if you or an IT helper ever want Lovelace to save backups automatically every night to Amazon, Cloudflare, Google, or Microsoft cloud storage, you can fill in box **2. Cloud Bucket Destinations** right underneath.)*
-
-![Saving a safety backup copy of all your bookings](images/11-backups-safety-copy.png)
-
----
-
-## Handy Everyday Tips
-
-- **Switching between multiple properties:** If you look after more than one cottage or site, use the property selector right underneath the **LOVELACE** badge at the top-left of the screen to switch between them.
-- **Online card payments stay safely off until you are ready:** Guests cannot accidentally pay live card money while you are still setting up. Whenever you are ready to take live card payments with Stripe, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
-- **Signing out on a shared reception computer:** Always click **Sign out** at the bottom-left of the dark green sidebar if other people use the same computer.
+![Saving, verifying, and restoring safety backup copies](images/11-backups-safety-copy.png)
 
 ---
 
@@ -210,24 +291,23 @@ Whether you run a grassy campsite, luxury glamping pods, a cosy B&B, a holiday c
 - **Why it happened:** **Departure Date** always means **the morning the guest packs up and leaves** (so Friday + Saturday night means Arrival = **Friday**, Departure = **Sunday**).
 - **How to fix it right now:** Open **Reservations**, click the guest's booking reference, and extend their departure date to Sunday (or move them to a free space if Saturday was taken). Always glance at the **`Nights`** count (`2 nights`) to be sure!
 
-### 5. *"We repaired a torn bell-tent canvas / leaking shower and marked it Completed — why is that unit STILL blocked?"*
-- **Why it happened:** Lovelace keeps `UNAVAILABLE` repairs closed until someone confirms the tent, hut, or room is clean, safe, and guest-ready! *(Tip for glamping hosts: if only an outdoor hot tub is awaiting a part while the hut itself is fine to sleep in, choose `PARTIAL` impact instead of `UNAVAILABLE`.)*
-- **How to fix it right now:** Open **Maintenance & Facilities → Maintenance**, click that repair job, and mark the **Inspection** as **PASSED**. The unit reopens automatically.
+### 5. *"We repaired a torn bell-tent canvas / leaking shower and marked Inspection PASSED — why is that unit STILL blocked?"*
+- **Why it happened:** Lovelace never reopens a maintenance blockout behind your back before you confirm the room/tent is dry, cleaned, and ready! *(Tip for glamping hosts: if only an outdoor hot tub is awaiting a part while the hut itself is fine to sleep in, choose `PARTIAL` impact instead of `UNAVAILABLE`.)*
+- **How to fix it right now:** Open **Maintenance & Facilities → Maintenance**, click that repair job, make sure **Inspection** is **`PASSED`**, **and click `Release Restriction`** inside the repair card (also check **Units & Pitches** to make sure the unit is set to `active`).
 
 ### 6. *"Why did Lovelace quote £280 just to bring one dog to our campsite?!"*
 - **Why it happened:** When setting up your **Dog Fee (£10)** in **Extras & Add-ons**, the billing type was set to *per person per night* instead of **once per stay (`per_stay`)** or **per night (`per_night`)**!
 - **How to fix it right now:** Open **Inventory & Holds → Extras & Add-ons** and change its billing model to `per_stay` or `per_night`.
 
 ### 7. *"I run more than one property — and I just edited prices (or copied website code) while on the WRONG property!"*
-- **How to fix wrong edits:** Open **Settings → Audit Log** — it shows your exact previous numbers (`before_state`) so you can copy them straight back! Then use the **Switch** dropdown at the top-left of the dark green sidebar to pick the right property. *(Tip: give each property its own distinct brand colour in **Site Settings** so you can tell them apart at a glance!)*
+- **How to fix wrong edits:** Open **Settings → Audit Log** to see every edit you just made in exact time order (and if you need the exact previous numbers, your IT helper or browser can view `/api/v1/audit-logs` to read `before_state`), then copy your original settings back and use the **Switch** dropdown at the top-left of the green sidebar to pick the right property! *(Tip: give each property its own distinct brand colour in **Site Settings** so you can tell them apart at a glance!)*
 - **How to fix the wrong website booking box:** Switch to the right property in the top-left corner first, check the blue **`Property: ...`** badge in **Site Settings → Website Booking Section**, and re-copy the code (or update **Property Slug** in WordPress **Settings → Lovelace Booking**).
 
 ### 8. *"Guests keep ringing to say our website says 'Online Card Checkout Unavailable'!"*
 - **Why it happened:** New properties start with live card payments switched **off** for safety until you turn them on.
-- **How to fix it right now:** Once your Stripe account is connected, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
+- **How to fix it right now:** Once your Stripe account is connected on the server, open **Settings → Site Settings**, tick **Enable Public Online Checkout (Stripe)**, and click **Save Booking Policy**.
 
 ### 9. *"I typed the wrong password too many times and got locked out (or lost my 8 recovery codes)!"*
 - **If you typed wrong passwords 8 times:** Wait **15 minutes** with a cup of tea — the safety lock clears automatically after 15 minutes.
 - **If another owner/partner has an Owner Admin login:** Ask them to sign in, go to **Settings → Admin Users**, and give you a temporary password.
 - **If you are the only owner and lost both your password AND your 8 recovery codes:** Ask the person who looks after your server/hosting to follow **Catastrophe 2** in the [Deep Troubleshooting & Hospitality Catastrophe Playbook](../guides/05-troubleshooting-and-disaster-recovery.md#catastrophe-2-the-total-owner-lockout-lost-password--lost-recovery-codes--rate-limited) — they can issue you a fresh temporary password in 60 seconds without losing a single booking!
-
